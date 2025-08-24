@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B站番剧分析系统</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+<header class="header">
+    <div class="container">
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center">
+                <img
+                        src="https://www.bilibili.com/favicon.ico"
+                        alt="B站Logo"
+                        class="logo"
+                />
+                <h3 class="mb-0">B站番剧分析系统</h3>
+            </div>
+            <nav class="navbar navbar-expand-lg">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#home">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#status">番剧状态检测</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#overview">番剧概览</a>
+                    </li>
+                </ul>
+            </nav>
+            <div class="d-flex align-items-center">
+                <div id="userInfo" class="user-info" style="cursor: pointer;">
+                    <div class="avatar" id="userAvatar">U</div>
+                    <span class="username" id="username">用户</span>
+                </div>
+                <button id="logoutBtn" class="btn btn-danger">
+                    <i class="fas fa-sign-out-alt me-1"></i>退出
+                </button>
+            </div>
+        </div>
+    </div>
+</header>
+
+<main class="container mt-5 mb-5">
+    <section id="home">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2 class="section-title">数据总览</h2>
+            <button class="back-button d-none" id="backToHome">
+                <i class="fas fa-arrow-left me-2"></i>返回首页
+            </button>
+        </div>
+        <div class="row home-row">
+            <div class="col-md-9 fixed-height-container">
+                <div class="row mb-4">
+                    <div class="col-md-3 mb-4">
+                        <div class="card p-3 h-100">
+                            <div
+                                    class="d-flex justify-content-between align-items-center mb-3"
+                            >
+                                <h5 class="card-title mb-0">番剧总数</h5>
+                                <div class="icon-box bg-pink rounded-circle p-2">
+                                    <i class="fas fa-film text-white"></i>
+                                </div>
+                            </div>
+                            <p class="display-5 fw-bold mb-2" id="total-anime">
+                                <span class="loading-spinner"></span>加载中...
+                            </p>
+                            <p class="text-muted small">
+                    <span class="me-1" id="anime-growth-container"
+                    ><span id="anime-growth">0.0%</span></span
+                    >较上月增长
+                            </p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-4">
+                        <div class="card p-3 h-100">
+                            <div
+                                    class="d-flex justify-content-between align-items-center mb-3"
+                            >
+                                <h5 class="card-title mb-0">总播放量</h5>
+                                <div class="icon-box bg-blue rounded-circle p-2">
+                                    <i class="fas fa-play-circle text-white"></i>
+                                </div>
+                            </div>
+                            <p class="display-5 fw-bold mb-2" id="total-views">
+                                <span class="loading-spinner"></span>加载中...
+                            </p>
+                            <p class="text-muted small">
+                    <span class="me-1" id="views-growth-container"
+                    ><span id="views-growth">0.0%</span></span
+                    >较上月增长
+                            </p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-4">
+                        <div class="card p-3 h-100">
+                            <div
+                                    class="d-flex justify-content-between align-items-center mb-3"
+                            >
+                                <h5 class="card-title mb-0">追番人数</h5>
+                                <div class="icon-box bg-purple rounded-circle p-2">
+                                    <i class="fas fa-heart text-white"></i>
+                                </div>
+                            </div>
+                            <p class="display-5 fw-bold mb-2" id="total-followers">
+                                <span class="loading-spinner"></span>加载中...
+                            </p>
+                            <p class="text-muted small">
+                    <span class="me-1" id="followers-growth-container"
+                    ><span id="followers-growth">0.0%</span></span
+                    >较上月增长
+                            </p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-4">
+                        <div class="card p-3 h-100">
+                            <div
+                                    class="d-flex justify-content-between align-items-center mb-3"
+                            >
+                                <h5 class="card-title mb-0">收藏占比</h5>
+                                <div class="icon-box bg-yellow rounded-circle p-2">
+                                    <i class="fas fa-star text-white"></i>
+                                </div>
+                            </div>
+                            <p class="display-5 fw-bold mb-2" id="average-rating">
+                                <span class="loading-spinner"></span>加载中...
+                            </p>
+                            <p class="text-muted small">
+                    <span class="me-1" id="rating-change-container"
+                    ><span id="rating-change">0.0</span></span
+                    >较上月变化
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card p-3 h-100">
+                            <div
+                                    class="d-flex justify-content-between align-items-center mb-3"
+                            >
+                                <h5 class="card-title mb-0">番剧类型分布</h5>
+                                <div>
+                                    <button
+                                            class="btn btn-sm btn-outline-secondary me-1"
+                                            id="refresh-chart1"
+                                    >
+                                        <i class="fas fa-refresh"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <div
+                                        id="chart-type-distribution"
+                                        style="height: 100%; width: 100%"
+                                ></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card p-3 h-100">
+                            <div
+                                    class="d-flex justify-content-between align-items-center mb-3"
+                            >
+                                <h5 class="card-title mb-0">季度番剧数量</h5>
+                                <div>
+                                    <button
+                                            class="btn btn-sm btn-outline-secondary me-1"
+                                            id="refresh-chart2"
+                                    >
+                                        <i class="fas fa-refresh"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <div
+                                        id="chart-season-trend"
+                                        style="height: 100%; width: 100%"
+                                ></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="rank-list">
+                    <div
+                            class="rank-header d-flex justify-content-between align-items-center"
+                    >
+                        <span>番剧推荐</span>
+                        <div>
+                            <button
+                                    class="btn btn-sm btn-pink"
+                                    id="preferencesBtn"
+                                    title="偏好设置提示"
+                            >
+                                <i class="fas fa-heart me-1"></i>
+                                根据偏好推荐
+                            </button>
+                        </div>
+                    </div>
+                    <div class="sort-buttons-container">
+                        <div
+                                class="btn-group btn-group-sm"
+                                id="sortButtons"
+                                role="group"
+                        >
+                            <button
+                                    class="btn btn-primary active"
+                                    data-sort="score"
+                                    type="button"
+                            >
+                                <i class="fas fa-star me-1"></i>评分
+                            </button>
+                            <button
+                                    class="btn btn-outline-primary"
+                                    data-sort="views"
+                                    type="button"
+                            >
+                                <i class="fas fa-play-circle me-1"></i>播放量
+                            </button>
+                            <button
+                                    class="btn btn-outline-primary"
+                                    data-sort="followers"
+                                    type="button"
+                            >
+                                <i class="fas fa-heart me-1"></i>追番
+                            </button>
+                        </div>
+                    </div>
+                    <div class="rank-scroll-container">
+                        <div id="rank-list-container">
+                            <div class="text-center py-5">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="status" class="d-none">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2 class="section-title">番剧状态检测</h2>
+            <button id="backToHome2" class="back-button">
+                <i class="fas fa-arrow-left me-2"></i>返回首页
+            </button>
+        </div>
+        <div class="row mb-4">
+            <div class="col-md-6 mx-auto">
+                <div class="input-group">
+                    <label for="keyword-input"></label>
+                    <input type="text" id="keyword-input" class="form-control form-control-lg"
+                           placeholder="输入番剧名搜索..."/>
+                    <button id="search-btn" class="btn btn-primary btn-lg">搜索</button>
+                </div>
+                <div id="status-message" class="form-text mt-2"></div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card text-center p-4 h-100">
+                    <h5 class="card-title text-muted">追番人数</h5>
+                    <p id="favorites-count" class="display-4 mb-0 text-primary">--</p>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card text-center p-4 h-100">
+                    <h5 class="card-title text-muted">播放数量</h5>
+                    <p id="views-count" class="display-4 mb-0 text-success">--</p>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h5 class="card-title mb-3">播放量趋势</h5>
+                    <div class="chart-container">
+                        <div id="chart-play-trend" style="height:100%; width:100%"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h5 class="card-title mb-3">观看时间分布</h5>
+                    <div class="chart-container">
+                        <div id="chart-watch-time" style="height: 100%; width:100%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="d-none" id="overview">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2 class="section-title">番剧概览</h2>
+            <button class="back-button" id="backToHome3">
+                <i class="fas fa-arrow-left me-2"></i>返回首页
+            </button>
+        </div>
+        <div class="mb-4">
+            <ul class="nav nav-pills" id="overviewTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button
+                            class="nav-link active"
+                            data-bs-target="#yearly"
+                            data-bs-toggle="pill"
+                            id="yearly-tab"
+                            type="button"
+                    >
+                        历年数量变化
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button
+                            class="nav-link"
+                            data-bs-target="#genre"
+                            data-bs-toggle="pill"
+                            id="genre-tab"
+                            type="button"
+                    >
+                        偏好差异
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button
+                            class="nav-link"
+                            data-bs-target="#rating"
+                            data-bs-toggle="pill"
+                            id="rating-tab"
+                            type="button"
+                    >
+                        收藏占比
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button
+                            class="nav-link"
+                            data-bs-target="#category"
+                            data-bs-toggle="pill"
+                            id="category-tab"
+                            type="button"
+                    >
+                        类别热度趋势
+                    </button>
+                </li>
+            </ul>
+        </div>
+        <div class="tab-content" id="overviewTabContent">
+            <div class="tab-pane fade" id="yearly" role="tabpanel">
+                <div class="card p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="card-title mb-0">历年番剧数量变化</h5>
+                        <div>
+                            <label for="yearlyInterval"></label><select
+                                class="form-select form-select-sm me-2 d-inline-block w-auto"
+                                id="yearlyInterval"
+                        >
+                            <option value="quarter">按季度</option>
+                            <option value="month">按月</option>
+                        </select>
+                            <button
+                                    class="btn btn-sm btn-outline-secondary"
+                                    id="refresh-yearly"
+                            >
+                                <i class="fas fa-refresh"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <div
+                                id="chart-yearly-trend"
+                                style="height: 100%; width: 100%"
+                        ></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="genre" role="tabpanel">
+                <div class="card p-3" style="height: 500px; width: 100%">
+                    <div class="col-md-9">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="card-title mb-0">偏好差异</h5>
+                            <div>
+                                <label for="preferenceSelect"></label>
+                                <select class="form-select form-select-sm me-2 d-inline-block w-auto"
+                                        id="preferenceSelect">
+                                    <option value="region">地区</option>
+                                    <option value="age">年龄</option>
+                                    <option value="gender">性别</option>
+                                </select>
+                                <button class="btn btn-sm btn-outline-secondary" id="refresh-preference">
+                                    <i class="fas fa-refresh"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="chart-container" style="height: 400px;">
+                            <div id="chart-preference-diff" style="height: 100%; width: 100%"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-center">番剧筛选</h6>
+                        <div id="preference-anime-buttons" class="d-grid gap-2">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="rating" role="tabpanel">
+                <div class="card p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="card-title mb-0">收藏占比</h5>
+                        <div>
+                            <label for="collectionInterval"></label><select
+                                class="form-select form-select-sm me-2 d-inline-block w-auto"
+                                id="collectionInterval"
+                        >
+                            <option value="spring">春番</option>
+                            <option value="summer">夏番</option>
+                            <option value="autumn">秋番</option>
+                            <option value="winter">冬番</option>
+                        </select>
+                            <button
+                                    class="btn btn-sm btn-outline-secondary"
+                                    id="refresh-collection"
+                            >
+                                <i class="fas fa-refresh"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <div
+                                id="chart-collection-ratio"
+                                style="height: 100%; width: 100%"
+                        ></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="category" role="tabpanel">
+                <div class="card p-3" style="height: 500px; width: 100%">
+                    <div class="row">
+                        <div class="col-md-9">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="card-title mb-0">各类别热度趋势</h5>
+                                <div>
+                                    <label for="categoryTrendInterval"></label><select
+                                        class="form-select form-select-sm me-2 d-inline-block w-auto"
+                                        id="categoryTrendInterval">
+                                    <option value="jan">1月份</option>
+                                    <option value="apr">4月份</option>
+                                    <option value="jul">7月份</option>
+                                    <option value="oct">10月份</option>
+                                </select>
+                                    <button class="btn btn-sm btn-outline-secondary" id="refresh-category-trend">
+                                        <i class="fas fa-refresh"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="chart-container" style="height: 400px;">
+                                <div id="chart-category-trend" style="height: 100%; width: 100%"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <h6 class="text-center">类别筛选</h6>
+                            <div id="category-trend-buttons" class="d-grid gap-2">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script src="index.js"></script>
+</body>
+</html>
