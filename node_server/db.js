@@ -74,15 +74,15 @@ async function registerUser(username, email, password) {
  * @returns {Promise<void>}
  */
 async function updateUserPreferences(username, preferences) {
-  const query = 'UPDATE users SET preferences = ? WHERE username = ?';
+    const query = 'UPDATE users SET preferences = ? WHERE username = ?';
 
-  try {
-      // 将 preferences 对象字符串化以便存入数据库
-      await pool.query(query, [JSON.stringify(preferences), username]);
-  } catch (error) {
-      console.error('更新用户偏好时出错:', error);
-      throw error;
-  }
+    try {
+        // 将 preferences 对象字符串化以便存入数据库
+        await pool.query(query, [JSON.stringify(preferences), username]);
+    } catch (error) {
+        console.error('更新用户偏好时出错:', error);
+        throw error;
+    }
 }
 
 /**

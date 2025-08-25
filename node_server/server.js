@@ -3,10 +3,10 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
 const {
-  authenticateUser,
-  registerUser,
-  updateUserPreferences,
-  getUserInfo,
+    authenticateUser,
+    registerUser,
+    updateUserPreferences,
+    getUserInfo,
 } = require('./db'); // 确保导入 getUserInfo
 
 const app = express();
@@ -22,7 +22,7 @@ app.use('/cover_cache', express.static(path.join(__dirname, '../cover_cache')));
 
 // 根路径重定向到 login.html
 app.get('/', (req, res) => {
-  res.redirect('/login.html');
+    res.redirect('/login.html');
 });
 
 // 获取用户信息的API
@@ -34,7 +34,7 @@ app.get('/api/user-info', async (req, res) => {
         // 使用 getUserInfo 函数获取用户信息
         const user = await getUserInfo(username);
         if (!user) {
-            return res.status(404).json({ success: false, message: '用户不存在' });
+            return res.status(404).json({success: false, message: '用户不存在'});
         }
 
         console.log('用户信息:', user);
@@ -61,7 +61,7 @@ app.get('/api/user-info', async (req, res) => {
         });
     } catch (error) {
         console.error('获取用户信息错误:', error);
-        res.status(500).json({ success: false, message: '服务器错误' });
+        res.status(500).json({success: false, message: '服务器错误'});
     }
 });
 
@@ -78,9 +78,9 @@ app.post('/api/login', async (req, res) => {
 
             // 检查偏好设置是否为空
             const hasPreferences = user.preferences &&
-                                  user.preferences.trim() !== '' &&
-                                  user.preferences !== 'null' &&
-                                  user.preferences !== '[]';
+                user.preferences.trim() !== '' &&
+                user.preferences !== 'null' &&
+                user.preferences !== '[]';
 
             res.json({
                 success: true,
@@ -90,50 +90,50 @@ app.post('/api/login', async (req, res) => {
             });
         } else {
             console.log('登录失败: 用户名或密码错误');
-            res.status(401).json({ success: false, message: '用户名或密码错误' });
+            res.status(401).json({success: false, message: '用户名或密码错误'});
         }
     } catch (error) {
         console.error('登录错误:', error);
-        res.status(500).json({ success: false, message: '服务器错误' });
+        res.status(500).json({success: false, message: '服务器错误'});
     }
 });
 
 // 更新用户偏好设置的API - 保持不变
 app.post('/api/updatePreferences', async (req, res) => {
-  const { username, preferences } = req.body;
-  console.log('更新偏好设置:', username, preferences);
+    const {username, preferences} = req.body;
+    console.log('更新偏好设置:', username, preferences);
 
-  try {
-    await updateUserPreferences(username, preferences);
-    console.log('偏好设置更新成功');
-    res.json({ success: true, message: '偏好设置已保存' });
-  } catch (error) {
-    console.error('更新偏好设置错误:', error);
-    res.status(500).json({ success: false, message: '保存偏好设置失败' });
-  }
+    try {
+        await updateUserPreferences(username, preferences);
+        console.log('偏好设置更新成功');
+        res.json({success: true, message: '偏好设置已保存'});
+    } catch (error) {
+        console.error('更新偏好设置错误:', error);
+        res.status(500).json({success: false, message: '保存偏好设置失败'});
+    }
 });
 
 // 添加注册API
 app.post('/api/register', async (req, res) => {
-    const { username, email, password } = req.body;
+    const {username, email, password} = req.body;
     console.log('注册请求:', username, email);
 
     try {
         const userId = await registerUser(username, email, password);
         console.log('注册成功，用户ID:', userId);
-        res.json({ success: true, message: '注册成功' });
+        res.json({success: true, message: '注册成功'});
     } catch (error) {
         console.error('注册错误:', error);
         // 处理唯一约束错误
         if (error.message.includes('已存在')) {
-            res.status(409).json({ success: false, message: error.message });
+            res.status(409).json({success: false, message: error.message});
         } else {
-            res.status(500).json({ success: false, message: '注册失败' });
+            res.status(500).json({success: false, message: '注册失败'});
         }
     }
 });
 
 // 启动服务器
 app.listen(port, () => {
-  console.log(`服务器运行在 http://localhost:${port}`);
+    console.log(`服务器运行在 http://localhost:${port}`);
 });
