@@ -1,8 +1,9 @@
 # scraper.py
-import requests
 import json
-import time
 import os
+import time
+
+import requests
 
 
 class BilibiliBangumiScraper:
@@ -201,13 +202,13 @@ class BilibiliBangumiScraper:
             return self.get_bangumi_details(bangumi_id)
         return None
 
-    def health_check(self, keyword: str = "名侦探柯南"):
+    def health_check(self, keyword: str = "碧蓝之海 第二季"):
         """
         提供一个简单的健康检查功能，用于快速验证此类中的核心API是否仍然可用。
         它会依次测试获取ID、获取详情、获取在线人数等关键步骤。
 
         Args:
-            keyword (str): 用于测试的番剧名，默认为 "名侦探柯南"。
+            keyword (str): 用于测试的番剧名，默认为 "碧蓝之海 第二季"。
         """
         print("=" * 50)
         print(f"🚀 开始执行 Bilibili Scraper 健康检查 (目标: {keyword})")
