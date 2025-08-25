@@ -1,4 +1,7 @@
-// 创建背景动画
+/**
+ * @function createBubbles
+ * @description 创建并显示背景气泡动画。
+ */
 function createBubbles() {
   const container = document.getElementById("bubbleContainer");
   const bubbleCount = 15;
@@ -62,7 +65,11 @@ document.getElementById("showRegister").addEventListener("click", function (e) {
   registerModal.show();
 });
 
-// 生成随机验证码
+/**
+ * @function generateCaptcha
+ * @description 生成一个四位数的随机验证码。
+ * @returns {string} 生成的验证码。
+ */
 function generateCaptcha() {
   const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   let captcha = "";
@@ -72,7 +79,11 @@ function generateCaptcha() {
   return captcha;
 }
 
-// 刷新验证码
+/**
+ * @function refreshCaptcha
+ * @description 刷新验证码图像。
+ * @returns {string} 新的验证码。
+ */
 function refreshCaptcha() {
   const captcha = generateCaptcha();
   document.getElementById("captchaImage").textContent = captcha;

@@ -28,6 +28,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 200);
     });
 
+    /**
+     * @function initializeNavigation
+     * @description 初始化页面导航功能，包括为导航链接和返回按钮添加事件监听器。
+     */
     function initializeNavigation() {
         const navLinks = document.querySelectorAll(".nav-link");
         const sections = document.querySelectorAll("main > section");
@@ -104,7 +108,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const summaryData = {
                 total_anime: { value: currentData.source_bangumi_count || 0, growth: calculateGrowth(currentData.source_bangumi_count, previousData ? previousData.source_bangumi_count : 0) },
                 total_views: { value: currentData.total_views || 0, growth: calculateGrowth(currentData.total_views, previousData ? previousData.total_views : 0) },
-                total_followers: { value: currentData.total_favorites || 0, growth: calculateGrowth(currentData.total_favorites, previousData ? previousData.total_favorites : 0) },
+                total_favorites: {
+                    value: currentData.total_favorites || 0,
+                    growth: calculateGrowth(currentData.total_favorites, previousData ? previousData.total_favorites : 0)
+                },
                 collection_ratio: { value: currentRatio, change: currentRatio - previousRatio }
             };
             updateHomepageCards(summaryData);
@@ -159,6 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * @function updateHomepageCards
      * @description 【已更新】根据传入的数据更新首页的四个总览卡片。
+     * @param {object} data - 包含主页卡片所需数据的对象。
      */
     function updateHomepageCards(data) {
         const formatNumber = (num, unit = '') => {
@@ -186,8 +194,8 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCard('total-views', formatNumber(data.total_views.value));
         updateGrowth('views-growth-container', data.total_views.growth);
 
-        updateCard('total-followers', formatNumber(data.total_followers.value));
-        updateGrowth('followers-growth-container', data.total_followers.growth);
+        updateCard('total-followers', formatNumber(data.total_favorites.value));
+        updateGrowth('followers-growth-container', data.total_favorites.growth);
 
         updateCard('average-rating', formatNumber(data.collection_ratio.value, '%'));
         updateGrowth('rating-change-container', data.collection_ratio.change, true);
@@ -364,6 +372,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    /**
+     * @function initializeOverviewModule
+     * @description 初始化概述模块，包括为各种交互元素添加事件监听器并更新图表。
+     */
     function initializeOverviewModule() {
         document.getElementById('yearlyInterval').addEventListener('change', function() {
             const isMonth = this.value === 'month';

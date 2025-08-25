@@ -21,6 +21,9 @@ COVER_CACHE_DIR = os.path.join(os.path.dirname(CURRENT_DIR), "cover_cache")
 
 class BilibiliAnalyticsApp:
     def __init__(self):
+        """
+        初始化 BilibiliAnalyticsApp 类。
+        """
         self.app = Flask(__name__)
         CORS(self.app)
 
@@ -45,6 +48,9 @@ class BilibiliAnalyticsApp:
         self.scheduler.start()
 
     def _register_routes(self):
+        """
+        在 Flask 应用中注册路由。
+        """
         self.app.route('/search', methods=['POST'])(self.search)
         self.app.route('/api/image_proxy')(self.image_proxy)
         self.app.route('/api/monthly_data/<int:month>', methods=['GET'])(self.get_monthly_data)
@@ -52,6 +58,12 @@ class BilibiliAnalyticsApp:
         self.app.route('/health_check', methods=['GET'])(self.health_check)
 
     def _read_cache(self) -> dict:
+        """
+        从缓存文件中读取数据。
+
+        Returns:
+            dict: 包含已追踪关键词和番剧数据的字典。
+        """
         with self.cache_lock:
             if not os.path.exists(self.cache_file_path):
                 return {"tracked_keywords": [], "bangumi_data": {}}
@@ -63,6 +75,12 @@ class BilibiliAnalyticsApp:
                 return {"tracked_keywords": [], "bangumi_data": {}}
 
     def _write_cache(self, data: dict):
+        """
+        将数据写入缓存文件。
+
+        Args:
+            data (dict): 要写入缓存的字典。
+        """
         with self.cache_lock:
             with open(self.cache_file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
@@ -158,6 +176,9 @@ class BilibiliAnalyticsApp:
         return summary
 
     def search(self):
+        """
+        根据关键词搜索番剧，如果缓存中存在则直接返回，否则抓取并存入缓存。
+        """
         keyword = request.json.get('keyword')
         if not keyword:
             return jsonify({'status': 'error', 'message': '请输入番剧名'}), 400
@@ -185,6 +206,9 @@ class BilibiliAnalyticsApp:
 
     @staticmethod
     def image_proxy():
+        """
+        代理图片请求，实现图片缓存功能。
+        """
         image_url = request.args.get('url')
         title = request.args.get('title')
         season_id = request.args.get('season_id')
@@ -218,6 +242,15 @@ class BilibiliAnalyticsApp:
 
     @staticmethod
     def get_monthly_data(month):
+        """
+        获取指定月份的聚合数据。
+
+        Args:
+            month (int): 月份。
+
+        Returns:
+            Response: 包含月度数据的 JSON 响应。
+        """
         if not 1 <= month <= 12:
             return jsonify({"error": "无效的月份"}), 400
         filename = f"rank_fetcher_{month}th.json"
@@ -228,6 +261,12 @@ class BilibiliAnalyticsApp:
 
     @staticmethod
     def get_rank_cache():
+        """
+        获取排名缓存数据。
+
+        Returns:
+            Response: 包含排名缓存数据的 JSON 响应。
+        """
         filename = "rank_cache.json"
         file_path = os.path.join(CURRENT_DIR, filename)
         if not os.path.exists(file_path):
@@ -235,6 +274,12 @@ class BilibiliAnalyticsApp:
         return send_from_directory(CURRENT_DIR, filename)
 
     def health_check(self):
+        """
+        执行健康检查，验证应用及其依赖项的状态。
+
+        Returns:
+            Response: 包含健康检查状态的 JSON 响应。
+        """
         print("🚀 [HEALTH CHECK] 开始执行健康检查...")
         status = {
             "app_status": "ok",
@@ -289,6 +334,14 @@ class BilibiliAnalyticsApp:
         return jsonify(status), http_status_code
 
     def run(self, debug=False, port=5000, use_reloader=False):
+        """
+        运行 Flask 应用。
+
+        Args:
+            debug (bool): 是否启用调试模式。
+            port (int): 运行端口。
+            use_reloader (bool): 是否使用重载器。
+        """
         self.app.run(debug=debug, port=port, use_reloader=use_reloader)
 
 

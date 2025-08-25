@@ -127,47 +127,51 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 初始化轮播
     initCarousel();
-    
+
+    /**
+     * @function initCarousel
+     * @description 初始化轮播组件，包括计算轮播参数、创建分页点、更新导航按钮状态以及为轮播轨道添加事件监听器。
+     */
     function initCarousel() {
         // 计算轮播参数
         const cardCount = genresList.length;
         const carouselWidth = carouselTrack.scrollWidth;
         const visibleWidth = document.querySelector('.genre-carousel').offsetWidth;
         maxPosition = Math.max(0, carouselWidth - visibleWidth);
-        
+
         // 创建轮播点
         createDots();
-        
+
         // 更新按钮状态
         updateNavButtons();
-        
+
         // 添加轮播事件
         prevBtn.addEventListener('click', () => moveCarousel(-1));
         nextBtn.addEventListener('click', () => moveCarousel(1));
-        
+
         // 添加触摸滑动支持
         let startX = 0;
         let isDragging = false;
-        
+
         carouselTrack.addEventListener('touchstart', (e) => {
             startX = e.touches[0].clientX;
             isDragging = true;
         });
-        
+
         carouselTrack.addEventListener('touchmove', (e) => {
             if (!isDragging) return;
             const diffX = e.touches[0].clientX - startX;
             // 暂时移动轨道
             carouselTrack.style.transform = `translateX(${currentPosition + diffX}px)`;
         });
-        
+
         carouselTrack.addEventListener('touchend', (e) => {
             if (!isDragging) return;
             isDragging = false;
-            
+
             const endX = e.changedTouches[0].clientX;
             const diffX = endX - startX;
-            
+
             // 根据滑动距离决定是否翻页
             if (Math.abs(diffX) > 50) {
                 if (diffX > 0) {
@@ -181,12 +185,15 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
-    // 创建轮播点
+
+    /**
+     * @function createDots
+     * @description 创建轮播的分页点，并为每个点添加点击事件监听器以导航到相应页面。
+     */
     function createDots() {
         carouselDots.innerHTML = '';
         const dotCount = Math.ceil(genresList.length / cardsPerView);
-        
+
         for (let i = 0; i < dotCount; i++) {
             const dot = document.createElement('div');
             dot.className = 'carousel-dot';
@@ -197,27 +204,35 @@ document.addEventListener('DOMContentLoaded', function() {
             carouselDots.appendChild(dot);
         }
     }
-    
-    // 移动轮播
+
+    /**
+     * @function moveCarousel
+     * @description 根据指定的方向（向前或向后）移动轮播，更新其位置、导航按钮和分页点。
+     * @param {number} direction - 移动方向（-1 表示上一个，1 表示下一个）。
+     */
     function moveCarousel(direction) {
         // 计算新位置
         let newPosition = currentPosition + (direction * cardsPerView * cardWidth);
-        
+
         // 限制位置范围
         newPosition = Math.max(0, Math.min(newPosition, maxPosition));
-        
+
         // 应用新位置
         carouselTrack.style.transform = `translateX(${-newPosition}px)`;
         currentPosition = newPosition;
-        
+
         // 更新按钮状态
         updateNavButtons();
-        
+
         // 更新轮播点
         updateDots();
     }
-    
-    // 移动到指定位置
+
+    /**
+     * @function moveToPosition
+     * @description 将轮播移动到特定位置，并更新导航按钮和分页点。
+     * @param {number} position - 目标位置。
+     */
     function moveToPosition(position) {
         position = Math.max(0, Math.min(position, maxPosition));
         carouselTrack.style.transform = `translateX(${-position}px)`;
@@ -225,30 +240,43 @@ document.addEventListener('DOMContentLoaded', function() {
         updateNavButtons();
         updateDots();
     }
-    
-    // 更新导航按钮状态
+
+    /**
+     * @function updateNavButtons
+     * @description 更新上一个和下一个导航按钮的禁用状态，以反映当前轮播位置。
+     */
     function updateNavButtons() {
         prevBtn.disabled = currentPosition <= 0;
         nextBtn.disabled = currentPosition >= maxPosition;
     }
-    
-    // 更新轮播点状态
+
+    /**
+     * @function updateDots
+     * @description 更新分页点的激活状态，以反映当前活动的轮播页面。
+     */
     function updateDots() {
         const dots = document.querySelectorAll('.carousel-dot');
         const activeIndex = Math.floor(currentPosition / (cardsPerView * cardWidth));
-        
+
         dots.forEach((dot, index) => {
             dot.classList.toggle('active', index === activeIndex);
         });
     }
-    
-    // 显示错误信息
+
+    /**
+     * @function showError
+     * @description 在指定区域显示错误消息。
+     * @param {string} message - 要显示的错误消息。
+     */
     function showError(message) {
         errorMessage.textContent = message;
         errorMessage.style.display = 'block';
     }
-    
-    // 更新选择信息
+
+    /**
+     * @function updateSelectionInfo
+     * @description 更新界面，以反映当前选择的类型数量和“全选”按钮的状态。
+     */
     function updateSelectionInfo() {
         const count = selectedGenres.length;
         selectedCount.textContent = `已选择 ${count} 个类型`;

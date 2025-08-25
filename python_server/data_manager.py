@@ -1,10 +1,11 @@
 # data_manager.py
-import requests
-import json
-import time
-import re
 import argparse
+import json
+import re
+import time
 from datetime import datetime
+
+import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 
@@ -213,8 +214,8 @@ def main():
     parser.add_argument(
         "--pages",
         type=int,
-        default=4,
-        help="指定要抓取的页数，默认为4。"
+        default=5,
+        help="指定要抓取的页数，默认为5。"
     )
     args = parser.parse_args()
 

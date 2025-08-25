@@ -32,7 +32,11 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 });
 
-// 初始化偏好设置模态框
+/**
+ * @function initPreferencesModal
+ * @description 初始化偏好设置模式，包括获取和显示用户的偏好以及处理偏好更新。
+ * @param {string} username - 当前用户的用户名。
+ */
 function initPreferencesModal(username) {
   const genreGrid = document.querySelector(".genre-grid");
   genreGrid.innerHTML = "";
@@ -285,7 +289,12 @@ function initPreferencesModal(username) {
     });
 }
 
-// 从数据库获取用户偏好设置
+/**
+ * @function fetchUserPreferences
+ * @description 从数据库获取用户的偏好设置。
+ * @param {string} username - 用户的用户名。
+ * @returns {Promise<Array>} - 一个解析为用户偏好数组的 Promise。
+ */
 function fetchUserPreferences(username) {
   return fetch(`/api/user-info?username=${encodeURIComponent(username)}`)
     .then((response) => response.json())
@@ -297,7 +306,11 @@ function fetchUserPreferences(username) {
     });
 }
 
-// 从数据库获取用户信息
+/**
+ * @function fetchUserInfo
+ * @description 从数据库获取用户信息并更新网页。
+ * @param {string} username - 用户的用户名。
+ */
 function fetchUserInfo(username) {
   fetch(`/api/user-info?username=${encodeURIComponent(username)}`)
     .then((response) => response.json())

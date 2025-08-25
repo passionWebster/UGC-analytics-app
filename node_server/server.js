@@ -7,7 +7,6 @@ const {
   registerUser,
   updateUserPreferences,
   getUserInfo,
-  pool // 导入 pool
 } = require('./db'); // 确保导入 getUserInfo
 
 const app = express();
