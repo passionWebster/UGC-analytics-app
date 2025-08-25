@@ -106,17 +106,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const previousRatio = previousData && previousData.total_views > 0 ? (previousData.total_favorites / previousData.total_views) * 100 : 0;
             const currentRatio = currentData.total_views > 0 ? (currentData.total_favorites / currentData.total_views) * 100 : 0;
             const summaryData = {
-                total_anime: { value: currentData.source_bangumi_count || 0, growth: calculateGrowth(currentData.source_bangumi_count, previousData ? previousData.source_bangumi_count : 0) },
-                total_views: { value: currentData.total_views || 0, growth: calculateGrowth(currentData.total_views, previousData ? previousData.total_views : 0) },
+                total_anime: {
+                    value: currentData.source_bangumi_count || 0,
+                    growth: calculateGrowth(currentData.source_bangumi_count, previousData ? previousData.source_bangumi_count : 0)
+                },
+                total_views: {
+                    value: currentData.total_views || 0,
+                    growth: calculateGrowth(currentData.total_views, previousData ? previousData.total_views : 0)
+                },
                 total_favorites: {
                     value: currentData.total_favorites || 0,
                     growth: calculateGrowth(currentData.total_favorites, previousData ? previousData.total_favorites : 0)
                 },
-                collection_ratio: { value: currentRatio, change: currentRatio - previousRatio }
+                collection_ratio: {value: currentRatio, change: currentRatio - previousRatio}
             };
             updateHomepageCards(summaryData);
         } else {
-             console.error("无法加载当前月份的核心数据。");
+            console.error("无法加载当前月份的核心数据。");
         }
 
         // --- 【核心修改】排行榜数据加载和排序逻辑 ---
@@ -163,6 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
             rankContainer.innerHTML = '<div class="text-center py-5">加载失败，请刷新重试</div>';
         }
     }
+
     /**
      * @function updateHomepageCards
      * @description 【已更新】根据传入的数据更新首页的四个总览卡片。
@@ -269,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 【改动】此函数现在可以处理整个番剧或单集的数据
         const processOnlineHistory = (episodeData) => {
             const timeSlots = [0, 0, 0, 0, 0, 0];
-            const slotMap = { "00:00": 0, "04:00": 1, "08:00": 2, "12:00": 3, "16:00": 4, "20:00": 5 };
+            const slotMap = {"00:00": 0, "04:00": 1, "08:00": 2, "12:00": 3, "16:00": 4, "20:00": 5};
 
             const episodesToProcess = Array.isArray(episodeData) ? episodeData : [episodeData];
 
@@ -300,8 +307,8 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const response = await fetch('http://localhost:5000/search', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ keyword }),
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({keyword}),
                 });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.message);
@@ -317,17 +324,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     const episodeViews = currentAnimeData.episodes.map(ep => ep.views || 0);
 
                     charts['play-trend'].setOption({
-                        xAxis: { data: episodeLabels, axisLabel: { interval: 0, rotate: 30 } },
-                        series: [{ name: '单集播放量', data: episodeViews }]
+                        xAxis: {data: episodeLabels, axisLabel: {interval: 0, rotate: 30}},
+                        series: [{name: '单集播放量', data: episodeViews}]
                     });
                 } else {
-                    charts['play-trend'].setOption({ xAxis: { data: [] }, series: [{ data: [] }] });
+                    charts['play-trend'].setOption({xAxis: {data: []}, series: [{data: []}]});
                 }
 
                 // 默认显示所有剧集的总和
                 const totalOnlineHistory = processOnlineHistory(currentAnimeData.episodes);
                 charts['watch-time'].setOption({
-                    series: [{ data: totalOnlineHistory }]
+                    series: [{data: totalOnlineHistory}]
                 });
 
                 statusMessage.textContent = `成功获取数据。${result.status === 'cached' ? '(来自缓存)' : ''}`;
@@ -377,11 +384,11 @@ document.addEventListener('DOMContentLoaded', () => {
      * @description 初始化概述模块，包括为各种交互元素添加事件监听器并更新图表。
      */
     function initializeOverviewModule() {
-        document.getElementById('yearlyInterval').addEventListener('change', function() {
+        document.getElementById('yearlyInterval').addEventListener('change', function () {
             const isMonth = this.value === 'month';
             charts['yearly-trend'].setOption({
-                xAxis: { data: isMonth ? Array.from({length: 12}, (_, i) => `${i+1}月`) : ['春番', '夏番', '秋番', '冬番'] },
-                series: [{ data: isMonth ? Array.from({length: 12}, () => Math.floor(Math.random() * 100 + 50)) : [200, 300, 250, 400] }]
+                xAxis: {data: isMonth ? Array.from({length: 12}, (_, i) => `${i + 1}月`) : ['春番', '夏番', '秋番', '冬番']},
+                series: [{data: isMonth ? Array.from({length: 12}, () => Math.floor(Math.random() * 100 + 50)) : [200, 300, 250, 400]}]
             });
         });
 
@@ -393,18 +400,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const updatePreferenceChart = () => {
             const view = preferenceSelect.value;
             let data;
-            if (view === 'region') data = [{name: '日本', value: 100}, {name: '中国', value: 50}, {name: '欧美', value: 30}];
-            else if (view === 'age') data = [{name: '10-18岁', value: 80}, {name: '19-30岁', value: 120}, {name: '31-45岁', value: 40},{name:'45-55岁',value:20},{name:'55岁以后',value:10}];
+            if (view === 'region') data = [{name: '日本', value: 100}, {name: '中国', value: 50}, {
+                name: '欧美',
+                value: 30
+            }];
+            else if (view === 'age') data = [{name: '10-18岁', value: 80}, {
+                name: '19-30岁',
+                value: 120
+            }, {name: '31-45岁', value: 40}, {name: '45-55岁', value: 20}, {name: '55岁以后', value: 10}];
             else data = [{name: '男', value: 150}, {name: '女', value: 90}];
 
-            preferenceChart.setOption({ series: [{ data }] });
+            preferenceChart.setOption({series: [{data}]});
         };
 
         animeButtonsContainer.innerHTML = `<button class="btn btn-primary btn-sm active">所有番剧</button>` +
             userAnimes.map(name => `<button class="btn btn-outline-secondary btn-sm">${name}</button>`).join('');
 
         animeButtonsContainer.addEventListener('click', (e) => {
-            if(e.target.tagName === 'BUTTON'){
+            if (e.target.tagName === 'BUTTON') {
                 animeButtonsContainer.querySelectorAll('.btn').forEach(btn => {
                     btn.classList.remove('btn-primary', 'active');
                     btn.classList.add('btn-outline-secondary');
@@ -419,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('collectionInterval').addEventListener('change', () => {
             charts['collection-ratio'].setOption({
-                series: [{ data: Array.from({length: 5}, () => Math.floor(Math.random() * 200 + 20)) }]
+                series: [{data: Array.from({length: 5}, () => Math.floor(Math.random() * 200 + 20))}]
             });
         });
 
@@ -457,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ).join('');
 
         categoryButtonsContainer.addEventListener('click', (e) => {
-             if(e.target.tagName === 'BUTTON'){
+            if (e.target.tagName === 'BUTTON') {
                 e.target.classList.toggle('active');
                 e.target.classList.toggle('btn-primary');
                 e.target.classList.toggle('btn-outline-secondary');
@@ -472,7 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const chartEl = targetPane.querySelector('[id^="chart-"]');
                     if (chartEl) {
                         const chartIdKey = chartEl.id.replace('chart-', '');
-                         if (charts[chartIdKey]) {
+                        if (charts[chartIdKey]) {
                             charts[chartIdKey].resize();
                         }
                     }
@@ -503,44 +516,61 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         initChart('chart-type-distribution', {
-            tooltip: { trigger: "item" },
-            series: [{ type: "pie", radius: ["40%", "70%"], data: [{ value: 335, name: "热血" }, { value: 310, name: "搞笑" }, { value: 234, name: "奇幻" }], itemStyle:{borderRadius:10,borderColor:'#fff',borderWidth:2}, label:{show:false}}]
+            tooltip: {trigger: "item"},
+            series: [{
+                type: "pie",
+                radius: ["40%", "70%"],
+                data: [{value: 335, name: "热血"}, {value: 310, name: "搞笑"}, {value: 234, name: "奇幻"}],
+                itemStyle: {borderRadius: 10, borderColor: '#fff', borderWidth: 2},
+                label: {show: false}
+            }]
         });
         initChart('chart-season-trend', {
-            tooltip: { trigger: "axis" }, xAxis: { type: "category", data: ["Q1", "Q2", "Q3", "Q4"] }, yAxis: { type: "value" },
-            series: [{ type: "line", smooth: true, data: [320, 432, 401, 534] }]
+            tooltip: {trigger: "axis"},
+            xAxis: {type: "category", data: ["Q1", "Q2", "Q3", "Q4"]},
+            yAxis: {type: "value"},
+            series: [{type: "line", smooth: true, data: [320, 432, 401, 534]}]
         });
 
         initChart('chart-play-trend', {
-            tooltip: { trigger: "axis" }, grid: { left: "3%", right: "4%", bottom: "20%", containLabel: true },
-            xAxis: { type: "category", data: [] },
-            yAxis: { type: "value", name: "单集播放量" },
-            series: [{ name: "单集播放量", type: "line", areaStyle: {}, smooth: true, data: [] }]
+            tooltip: {trigger: "axis"}, grid: {left: "3%", right: "4%", bottom: "20%", containLabel: true},
+            xAxis: {type: "category", data: []},
+            yAxis: {type: "value", name: "单集播放量"},
+            series: [{name: "单集播放量", type: "line", areaStyle: {}, smooth: true, data: []}]
         });
 
         initChart('chart-watch-time', {
-            tooltip: { trigger: "axis" }, grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
-            xAxis: { type: 'category', data: ['00-04点', '04-08点', '08-12点', '12-16点', '16-20点', '20-24点'] },
-            yAxis: { type: 'value', name: "总在线人数" },
-            series: [{ name: '观看分布', type: 'bar', barWidth: '60%', data: [0, 0, 0, 0, 0, 0] }]
+            tooltip: {trigger: "axis"}, grid: {left: "3%", right: "4%", bottom: "3%", containLabel: true},
+            xAxis: {type: 'category', data: ['00-04点', '04-08点', '08-12点', '12-16点', '16-20点', '20-24点']},
+            yAxis: {type: 'value', name: "总在线人数"},
+            series: [{name: '观看分布', type: 'bar', barWidth: '60%', data: [0, 0, 0, 0, 0, 0]}]
         });
         initChart('chart-yearly-trend', {
-            tooltip: { trigger: 'axis' }, xAxis: { type: 'category', data: ['春番', '夏番', '秋番', '冬番'] }, yAxis: { type: 'value' },
-            series: [{ type: 'line', smooth: true, data: [200, 300, 250, 400] }]
+            tooltip: {trigger: 'axis'},
+            xAxis: {type: 'category', data: ['春番', '夏番', '秋番', '冬番']},
+            yAxis: {type: 'value'},
+            series: [{type: 'line', smooth: true, data: [200, 300, 250, 400]}]
         });
         initChart('chart-preference-diff', {
-            tooltip: { trigger: 'item', formatter: "{b}: {c}" },
-            series: [{ type: 'treemap', roam: false, nodeClick: false, breadcrumb: {show:false}, data: [], label:{show:true, position:'inside'} }]
+            tooltip: {trigger: 'item', formatter: "{b}: {c}"},
+            series: [{
+                type: 'treemap',
+                roam: false,
+                nodeClick: false,
+                breadcrumb: {show: false},
+                data: [],
+                label: {show: true, position: 'inside'}
+            }]
         });
         initChart('chart-collection-ratio', {
-            tooltip: { trigger: 'axis' },
-            xAxis: { type: 'category', data: ['9分+', '8-9分', '7-8分', '6-7分', '6分-'] }, yAxis: { type: 'value' },
-            series: [{ type: 'bar', barWidth: '60%', data: [120, 200, 150, 80, 50] }]
+            tooltip: {trigger: 'axis'},
+            xAxis: {type: 'category', data: ['9分+', '8-9分', '7-8分', '6-7分', '6分-']}, yAxis: {type: 'value'},
+            series: [{type: 'bar', barWidth: '60%', data: [120, 200, 150, 80, 50]}]
         });
         initChart('chart-category-trend', {
-            tooltip: { trigger: 'axis' },
-            xAxis: { type: 'category', data: ["1月", "2月", "3月", "4月", "5月", "6月", "7月"] }, yAxis: { type: 'value' },
-            legend: { data: [], bottom: 0, type: 'scroll' }, series: []
+            tooltip: {trigger: 'axis'},
+            xAxis: {type: 'category', data: ["1月", "2月", "3月", "4月", "5月", "6月", "7月"]}, yAxis: {type: 'value'},
+            legend: {data: [], bottom: 0, type: 'scroll'}, series: []
         });
     }
 });
