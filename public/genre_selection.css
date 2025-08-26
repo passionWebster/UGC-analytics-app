@@ -2,6 +2,8 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    scrollbar-width: thin;
+    scrollbar-color: #fb7299 rgba(255, 255, 255, 0.1);
 }
 
 body {
@@ -31,13 +33,13 @@ body {
 
 @keyframes gradientBG {
     0% {
-        background-position: 0% 50%;
+        background-position: 0 50%;
     }
     50% {
         background-position: 100% 50%;
     }
     100% {
-        background-position: 0% 50%;
+        background-position: 0 50%;
     }
 }
 
@@ -90,7 +92,6 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 30px;
     background: rgba(255, 255, 255, 0.1);
     padding: 15px 25px;
     border-radius: 50px;
@@ -119,13 +120,6 @@ body {
     font-size: 1.3rem;
     color: #fff;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.genre-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 20px;
-    margin: 30px 0;
 }
 
 .genre-card {
@@ -159,7 +153,7 @@ body {
     top: 0;
     left: 0;
     right: 0;
-    height: 4px;
+    height: 0;
     background: linear-gradient(to right, #fb7299, #ff9d6c);
 }
 
@@ -367,11 +361,6 @@ body {
         padding: 30px 20px;
     }
 
-    .genre-grid {
-        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-        gap: 15px;
-    }
-
     .btn-container {
         flex-direction: column;
         align-items: center;
@@ -399,47 +388,74 @@ body {
     justify-content: space-between;
     margin: 30px 0;
     position: relative;
+    padding: 0 10px; /* 增加内边距，让按钮有更多空间，如果需要的话 */
 }
 
 .carousel-btn {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
-    border: 2px solid rgba(251, 114, 153, 0.3);
+    width: 700px;
+    height: 60px;
+    border-radius: 30px;
+    background: rgba(255, 255, 255, 0.15);
+    border: 2px solid rgba(251, 114, 153, 0.4);
     color: #fb7299;
-    font-size: 1.2rem;
+    font-size: 1.5rem;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.3s ease;
     z-index: 2;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
 .carousel-btn:hover {
-    background: rgba(251, 114, 153, 0.2);
-    transform: scale(1.1);
-    box-shadow: 0 8px 20px rgba(251, 114, 153, 0.3);
+    background: rgba(251, 114, 153, 0.25);
+    transform: translateY(-2px) scale(1.08);
+    box-shadow: 0 10px 25px rgba(251, 114, 153, 0.4);
 }
 
 .carousel-btn:disabled {
     opacity: 0.3;
     cursor: not-allowed;
     transform: none;
+    box-shadow: none;
 }
 
 .genre-carousel {
-    width: 85%;
-    overflow: hidden;
+    flex-grow: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
     position: relative;
     border-radius: 20px;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 20px;
+    margin: 0 15px;
 }
+
+.genre-carousel::-webkit-scrollbar {
+    height: 12px;
+}
+
+.genre-carousel::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    margin: 0 10px;
+}
+
+.genre-carousel::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #fb7299, #ff9d6c);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+.genre-carousel::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #e0648a, #e58d60);
+}
+
 
 .carousel-track {
     display: flex;
-    transition: transform 0.5s ease;
     padding: 10px 0;
 }
 
@@ -467,29 +483,10 @@ body {
     background: rgba(255, 255, 255, 0.1);
 }
 
-/* 轮播点样式 */
-.carousel-dots {
-    display: flex;
-    justify-content: center;
-    margin: 20px 0 30px;
-    gap: 10px;
-}
+/* 【移除】轮播点样式 */
+/* .carousel-dots, .carousel-dot 的所有样式都已删除 */
 
-.carousel-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.3);
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.carousel-dot.active {
-    background: #fb7299;
-    transform: scale(1.2);
-}
-
-/* 移除原有的网格布局 */
+/* 移除原有的网格布局（此规则依然有效） */
 .genre-grid {
     display: none;
 }
@@ -501,13 +498,14 @@ body {
     }
 
     .carousel-btn {
-        width: 40px;
-        height: 40px;
-        font-size: 1rem;
+        width: 50px;
+        height: 50px;
+        border-radius: 25px;
+        font-size: 1.2rem;
     }
 
     .genre-carousel {
-        width: 80%;
+        margin: 0 10px;
     }
 
     .genre-card {
@@ -528,7 +526,7 @@ body {
 
 @media (max-width: 480px) {
     .genre-carousel {
-        width: 75%;
+        margin: 0 5px;
     }
 
     .genre-card {
@@ -538,7 +536,9 @@ body {
     }
 
     .carousel-btn {
-        width: 35px;
-        height: 35px;
+        width: 45px;
+        height: 45px;
+        border-radius: 23px;
+        font-size: 1.1rem;
     }
 }

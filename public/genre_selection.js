@@ -23,10 +23,11 @@ document.addEventListener('DOMContentLoaded', function () {
     let genresList = [];
     let genreIcons = {}; // 存储图标映射
 
+    // 【修改】获取 genreCarousel 元素
+    const genreCarousel = document.getElementById('genreCarousel');
     const carouselTrack = document.getElementById('carouselTrack');
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
-    const carouselDots = document.getElementById('carouselDots');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const errorMessage = document.getElementById('errorMessage');
     const selectedCount = document.getElementById('selectedCount');
@@ -35,10 +36,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const clearBtn = document.getElementById('clearBtn');
 
     // 配置
-    const cardsPerView = 5; // 每页显示的卡片数量
-    let currentPosition = 0;
-    let cardWidth = 180; // 卡片宽度（包含margin）
-    let maxPosition = 0;
+    const cardsPerView = 4; // 每页显示的卡片数量（用于按钮点击计算）
+    const cardWidth = 180; // 单个卡片的估计宽度（包含 margin）
 
     // 直接使用文件4中的番剧类型列表
     genresList = [
@@ -130,137 +129,53 @@ document.addEventListener('DOMContentLoaded', function () {
 
     /**
      * @function initCarousel
-     * @description 初始化轮播组件，包括计算轮播参数、创建分页点、更新导航按钮状态以及为轮播轨道添加事件监听器。
+     * @description 初始化轮播组件
      */
     function initCarousel() {
-        // 计算轮播参数
-        const cardCount = genresList.length;
-        const carouselWidth = carouselTrack.scrollWidth;
-        const visibleWidth = document.querySelector('.genre-carousel').offsetWidth;
-        maxPosition = Math.max(0, carouselWidth - visibleWidth);
-
-        // 创建轮播点
-        createDots();
-
         // 更新按钮状态
         updateNavButtons();
 
-        // 添加轮播事件
+        // 添加按钮点击事件
         prevBtn.addEventListener('click', () => moveCarousel(-1));
         nextBtn.addEventListener('click', () => moveCarousel(1));
 
-        // 添加触摸滑动支持
-        let startX = 0;
-        let isDragging = false;
+        // 【新增】监听滚动事件，实时更新按钮状态
+        genreCarousel.addEventListener('scroll', updateNavButtons);
 
-        carouselTrack.addEventListener('touchstart', (e) => {
-            startX = e.touches[0].clientX;
-            isDragging = true;
-        });
-
-        carouselTrack.addEventListener('touchmove', (e) => {
-            if (!isDragging) return;
-            const diffX = e.touches[0].clientX - startX;
-            // 暂时移动轨道
-            carouselTrack.style.transform = `translateX(${currentPosition + diffX}px)`;
-        });
-
-        carouselTrack.addEventListener('touchend', (e) => {
-            if (!isDragging) return;
-            isDragging = false;
-
-            const endX = e.changedTouches[0].clientX;
-            const diffX = endX - startX;
-
-            // 根据滑动距离决定是否翻页
-            if (Math.abs(diffX) > 50) {
-                if (diffX > 0) {
-                    moveCarousel(-1); // 向右滑动，显示上一页
-                } else {
-                    moveCarousel(1); // 向左滑动，显示下一页
-                }
-            } else {
-                // 恢复原位
-                carouselTrack.style.transform = `translateX(${-currentPosition}px)`;
+        // 【新增】添加鼠标滚轮事件，实现左右滚动
+        genreCarousel.addEventListener('wheel', (e) => {
+            // e.deltaY > 0 表示向下滚动，e.deltaY < 0 表示向上滚动
+            if (e.deltaY !== 0) {
+                // 阻止页面的垂直滚动
+                e.preventDefault();
+                // 将垂直滚动量应用到水平滚动上
+                genreCarousel.scrollLeft += e.deltaY;
             }
         });
     }
 
     /**
-     * @function createDots
-     * @description 创建轮播的分页点，并为每个点添加点击事件监听器以导航到相应页面。
-     */
-    function createDots() {
-        carouselDots.innerHTML = '';
-        const dotCount = Math.ceil(genresList.length / cardsPerView);
-
-        for (let i = 0; i < dotCount; i++) {
-            const dot = document.createElement('div');
-            dot.className = 'carousel-dot';
-            if (i === 0) dot.classList.add('active');
-            dot.addEventListener('click', () => {
-                moveToPosition(i * cardsPerView * cardWidth);
-            });
-            carouselDots.appendChild(dot);
-        }
-    }
-
-    /**
      * @function moveCarousel
-     * @description 根据指定的方向（向前或向后）移动轮播，更新其位置、导航按钮和分页点。
+     * @description 根据方向移动轮播
      * @param {number} direction - 移动方向（-1 表示上一个，1 表示下一个）。
      */
     function moveCarousel(direction) {
-        // 计算新位置
-        let newPosition = currentPosition + (direction * cardsPerView * cardWidth);
-
-        // 限制位置范围
-        newPosition = Math.max(0, Math.min(newPosition, maxPosition));
-
-        // 应用新位置
-        carouselTrack.style.transform = `translateX(${-newPosition}px)`;
-        currentPosition = newPosition;
-
-        // 更新按钮状态
-        updateNavButtons();
-
-        // 更新轮播点
-        updateDots();
-    }
-
-    /**
-     * @function moveToPosition
-     * @description 将轮播移动到特定位置，并更新导航按钮和分页点。
-     * @param {number} position - 目标位置。
-     */
-    function moveToPosition(position) {
-        position = Math.max(0, Math.min(position, maxPosition));
-        carouselTrack.style.transform = `translateX(${-position}px)`;
-        currentPosition = position;
-        updateNavButtons();
-        updateDots();
+        const scrollAmount = direction * cardsPerView * cardWidth;
+        genreCarousel.scrollTo({
+            left: genreCarousel.scrollLeft + scrollAmount,
+            behavior: 'smooth' // 平滑滚动
+        });
     }
 
     /**
      * @function updateNavButtons
-     * @description 更新上一个和下一个导航按钮的禁用状态，以反映当前轮播位置。
+     * @description 更新导航按钮的禁用状态
      */
     function updateNavButtons() {
-        prevBtn.disabled = currentPosition <= 0;
-        nextBtn.disabled = currentPosition >= maxPosition;
-    }
-
-    /**
-     * @function updateDots
-     * @description 更新分页点的激活状态，以反映当前活动的轮播页面。
-     */
-    function updateDots() {
-        const dots = document.querySelectorAll('.carousel-dot');
-        const activeIndex = Math.floor(currentPosition / (cardsPerView * cardWidth));
-
-        dots.forEach((dot, index) => {
-            dot.classList.toggle('active', index === activeIndex);
-        });
+        // 增加 1px 的容差以处理小数像素
+        const maxScrollLeft = genreCarousel.scrollWidth - genreCarousel.clientWidth;
+        prevBtn.disabled = genreCarousel.scrollLeft <= 0;
+        nextBtn.disabled = genreCarousel.scrollLeft >= maxScrollLeft - 1;
     }
 
     /**
@@ -321,6 +236,7 @@ document.addEventListener('DOMContentLoaded', function () {
         confirmBtn.disabled = true;
     });
 
+    // 确认按钮事件
     confirmBtn.addEventListener('click', async function () {
         if (selectedGenres.length > 0) {
             // 保存选择的类型到本地存储
