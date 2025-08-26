@@ -237,11 +237,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 事件监听器绑定 ---
 
-    // 打开聊天窗口
+    // 【修改】为聊天图标添加切换功能
     assistantBtn.addEventListener('click', () => {
-        chatContainer.classList.add('active');
-        // 每次打开时都重新检查一下服务状态
-        checkServiceStatus();
+        // 检查聊天窗口当前是否已经是激活状态
+        const isActive = chatContainer.classList.contains('active');
+
+        if (isActive) {
+            // 如果是激活状态，则移除 active 类来收起窗口
+            chatContainer.classList.remove('active');
+        } else {
+            // 如果不是激活状态，则添加 active 类来展开窗口
+            chatContainer.classList.add('active');
+            // 每次打开时都重新检查一下服务状态
+            checkServiceStatus().then(r => {
+            });
+        }
     });
 
     // 关闭聊天窗口
