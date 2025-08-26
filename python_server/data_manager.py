@@ -1,6 +1,7 @@
 # data_manager.py
 import argparse
 import json
+import os
 import re
 import time
 from datetime import datetime
@@ -8,6 +9,7 @@ from datetime import datetime
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class BangumiDataManager:
     """
@@ -19,7 +21,7 @@ class BangumiDataManager:
     # B站番剧索引API的URL
     BASE_API_URL = "https://api.bilibili.com/pgc/season/index/result"
     # 最终生成的排名缓存文件名
-    RANK_CACHE_FILE = "rank_cache.json"
+    RANK_CACHE_FILE = os.path.join(CURRENT_DIR, 'rank_cache.json')
 
     # 伪装成浏览器的请求头
     HEADERS = {
@@ -174,6 +176,7 @@ class BangumiDataManager:
 
         current_month = datetime.now().month
         output_filename = f"rank_fetcher_{current_month}th.json"
+        output_filepath = os.path.join(CURRENT_DIR, output_filename)
         aggregated_data = {
             "month": current_month,
             "calculation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -183,9 +186,9 @@ class BangumiDataManager:
         }
 
         try:
-            with open(output_filename, 'w', encoding='utf-8') as f:
+            with open(output_filepath, 'w', encoding='utf-8') as f:
                 json.dump(aggregated_data, f, ensure_ascii=False, indent=4)
-            print(f"\n✅ 成功！聚合数据已写入文件: '{output_filename}'")
+            print(f"\n✅ 成功！聚合数据已写入文件: '{output_filepath}'")
         except IOError as e:
             print(f"\n❌ 写入月度聚合文件失败: {e}")
 

@@ -5,6 +5,8 @@ import time
 
 import requests
 
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+CACHE_FILE = os.path.join(CURRENT_DIR, 'cache.json')
 
 class BilibiliBangumiScraper:
     """
@@ -18,7 +20,7 @@ class BilibiliBangumiScraper:
         'Accept': 'application/json, text/plain, */*'
     }
     # 定义依赖的排名缓存文件路径
-    RANK_CACHE_FILE = "rank_cache.json"
+    RANK_CACHE_FILE = os.path.join(CURRENT_DIR, 'rank_cache.json')
 
     def __init__(self):
         """
@@ -152,8 +154,8 @@ class BilibiliBangumiScraper:
                 return {
                     'title': result.get('title'),  # 优化：将标题也一并返回
                     'cover': result.get('cover'),  # 优化：将封面图URL也返回
-                    'stats': {'favorites': self._convert_chinese_number_str(stats.get('favorites')),
-                              'views': self._convert_chinese_number_str(stats.get('views'))},
+                    'stats': {'favorites': stats.get('favorites'),
+                              'views': stats.get('views')},
                     'episodes': episodes_details
                 }
             return None

@@ -184,9 +184,65 @@ class BilibiliAnalyticsApp:
             return jsonify({'status': 'error', 'message': '请输入番剧名'}), 400
 
         cache = self._read_cache()
-        if keyword in cache.get("bangumi_data", {}):
-            print(f"'{keyword}' 命中缓存，直接返回数据。")
-            return jsonify({'status': 'cached', 'data': cache["bangumi_data"][keyword]['data']})
+        bangumi_data = cache.get("bangumi_data", {})
+
+        if keyword in bangumi_data:
+            bangumi_info = bangumi_data[keyword]
+            first_fetched_timestamp = bangumi_info.get("first_fetched_timestamp", 0)
+            current_timestamp = time.time()
+            cache_age_seconds = current_timestamp - first_fetched_timestamp
+            if cache_age_seconds < 43200:
+                print(f"'{keyword}' 命中有效缓存，直接返回数据。")
+                return jsonify({'status': 'cached', 'data': bangumi_info['data']})
+            else:
+                print(f"'{keyword}' 的缓存已过期，执行安全增量更新...")
+
+                old_data = bangumi_info.get('data', {})
+                season_id = self.scraper.get_bangumi_id(keyword)
+
+                if not season_id:
+                    return jsonify({'status': 'cached_stale', 'message': '缓存已过期但更新失败', 'data': old_data}), 200
+
+                fresh_dynamic_data = self.scraper.get_bangumi_details(season_id)
+
+                if fresh_dynamic_data:
+                    updated_data = old_data.copy()
+
+                    new_stats = fresh_dynamic_data.get('stats', {})
+                    if new_stats.get('views') is not None and new_stats.get('favorites') is not None:
+                        updated_data['stats'] = new_stats
+                        print(f"  -> 'stats' 数据已更新。")
+                    else:
+                        print(f"  -> 'stats' 数据获取异常，保留旧数据。")
+
+                    old_episodes_map = {ep.get('cid'): ep for ep in old_data.get('episodes', []) if ep.get('cid')}
+
+                    merged_episodes = []
+                    new_episodes_list = fresh_dynamic_data.get('episodes', [])
+
+                    for new_ep in new_episodes_list:
+                        cid = new_ep.get('cid')
+                        old_ep = old_episodes_map.get(cid)
+
+                        if old_ep:
+                            new_ep['online_history'] = old_ep.get('online_history', {})
+
+                        merged_episodes.append(new_ep)
+
+                    updated_data['episodes'] = merged_episodes
+                    print(f"  -> 'episodes' 列表已合并，保留了 online_history。")
+
+                    cache["bangumi_data"][keyword] = {
+                        'first_fetched_timestamp': time.time(),
+                        'data': updated_data
+                    }
+                    self._write_cache(cache)
+
+                    print(f"'{keyword}' 已成功增量更新并返回最新数据。")
+                    return jsonify({'status': 'success_updated', 'data': updated_data})
+                else:
+                    print(f"'{keyword}' 增量更新失败，暂时返回旧数据。")
+                    return jsonify({'status': 'cached_stale', 'message': '缓存已过期但更新失败', 'data': old_data}), 200
 
         print(f"'{keyword}' 是新的番剧，执行首次信息抓取。")
         full_details = self.scraper.get_full_details_by_keyword(keyword)
