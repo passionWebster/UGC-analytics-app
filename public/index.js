@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * @description 初始化页面导航功能，包括为导航链接和返回按钮添加事件监听器。
      */
     function initializeNavigation() {
-        const navLinks = document.querySelectorAll(".nav-link");
+        const navLinks = document.querySelectorAll(".header .nav-link");
         const sections = document.querySelectorAll("main > section");
         const backButtons = document.querySelectorAll(".back-button");
 
@@ -357,9 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
         charts['play-trend'].on('click', (params) => {
             // 确保当前有番剧数据，并且点击的是一个数据点
             if (currentAnimeData && currentAnimeData.episodes && params.dataIndex >= 0) {
-                const episodeIndex = params.dataIndex;
-                const clickedEpisode = currentAnimeData.episodes[episodeIndex];
-
+                const clickedEpisode = currentAnimeData.episodes[params.dataIndex];
                 if (clickedEpisode) {
                     // 使用 processOnlineHistory 处理单集数据
                     const singleEpisodeHistory = processOnlineHistory(clickedEpisode);
@@ -398,6 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const userAnimes = ['咒术回战', '鬼灭之刃', '无职转生'];
 
         const updatePreferenceChart = () => {
+            if (!charts['preference-diff']) return; // 安全检查
             const view = preferenceSelect.value;
             let data;
             if (view === 'region') data = [{name: '日本', value: 100}, {name: '中国', value: 50}, {
@@ -446,6 +445,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const updateCategoryTrendChart = () => {
+            if (!charts['category-trend']) return; // 安全检查
             const activeButtons = categoryButtonsContainer.querySelectorAll('.btn.active');
             const selectedCategories = Array.from(activeButtons).map(btn => btn.dataset.category);
 
@@ -480,97 +480,212 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.querySelectorAll('#overviewTabs button[data-bs-toggle="pill"]').forEach(tabEl => {
             tabEl.addEventListener('shown.bs.tab', event => {
-                const targetPane = document.querySelector(event.target.dataset.bsTarget);
-                if (targetPane) {
+                // 【修改】添加一个短暂的延时来确保 DOM 渲染完成
+                setTimeout(() => {
+                    const targetPane = document.querySelector(event.target.dataset.bsTarget);
+                    if (!targetPane) return;
+
                     const chartEl = targetPane.querySelector('[id^="chart-"]');
                     if (chartEl) {
                         const chartIdKey = chartEl.id.replace('chart-', '');
                         if (charts[chartIdKey]) {
+                            // 更新和重置尺寸现在都在延时后执行
+                            if (chartIdKey === 'category-trend') {
+                                updateCategoryTrendChart();
+                            }
+                            if (chartIdKey === 'preference-diff') {
+                                updatePreferenceChart();
+                            }
                             charts[chartIdKey].resize();
                         }
                     }
-                }
+                }, 50); // 50毫秒的延时
             });
         });
 
-        updatePreferenceChart();
-        updateCategoryTrendChart();
+        const activeTabPane = document.querySelector('#overviewTabsContent .tab-pane.active');
+        if (activeTabPane && activeTabPane.querySelector('#chart-preference-diff')) {
+            updatePreferenceChart();
+        }
     }
 
     /**
      * @function initializeCharts
      * @description 初始化页面上所有的 ECharts 实例。
+     * 该函数现在使用更清晰的结构和共享配置来创建图表。
      */
     function initializeCharts() {
-        const initChart = (id, option) => {
-            const element = document.getElementById(id);
-            if (element) {
-                try {
-                    const chart = echarts.init(element);
-                    chart.setOption(option);
-                    charts[id.replace('chart-', '')] = chart;
-                } catch (e) {
-                    console.error(`Failed to initialize chart: ${id}`, e);
+        // --- 通用配置项 ---
+        // 适用于大多数图表的通用网格边距设置
+        const commonGrid = {
+            left: '3%',
+            right: '4%',
+            bottom: '3%',
+            containLabel: true
+        };
+
+        // 适用于大多数图表的通用提示框设置
+        const commonTooltip = {
+            trigger: 'axis',
+            axisPointer: {
+                type: 'cross',
+                label: {
+                    backgroundColor: '#6a7985'
                 }
             }
         };
 
-        initChart('chart-type-distribution', {
-            tooltip: {trigger: "item"},
+        // --- 初始化函数 ---
+        const initChart = (id, option) => {
+            const element = document.getElementById(id);
+            if (element) {
+                try {
+                    // 如果元素上已有 ECharts 实例，先销毁它
+                    const existingChart = echarts.getInstanceByDom(element);
+                    if (existingChart) {
+                        existingChart.dispose();
+                    }
+                    const chart = echarts.init(element);
+                    chart.setOption(option);
+                    charts[id.replace('chart-', '')] = chart;
+                } catch (e) {
+                    console.error(`初始化图表失败: ${id}`, e);
+                }
+            }
+        };
+
+        // --- 各图表具体配置 ---
+
+        // 首页 - 类型分布（饼图）
+        const typeDistributionOption = {
+            tooltip: {trigger: "item", formatter: '{b}: {c} ({d}%)'},
+            legend: {top: '5%', left: 'center'},
             series: [{
+                name: '类型分布',
                 type: "pie",
                 radius: ["40%", "70%"],
-                data: [{value: 335, name: "热血"}, {value: 310, name: "搞笑"}, {value: 234, name: "奇幻"}],
+                avoidLabelOverlap: false,
                 itemStyle: {borderRadius: 10, borderColor: '#fff', borderWidth: 2},
-                label: {show: false}
+                label: {show: false, position: 'center'},
+                emphasis: {
+                    label: {show: true, fontSize: '20', fontWeight: 'bold'}
+                },
+                labelLine: {show: false},
+                // 初始数据
+                data: [{value: 335, name: "热血"}, {value: 310, name: "搞笑"}, {value: 234, name: "奇幻"}]
             }]
-        });
-        initChart('chart-season-trend', {
-            tooltip: {trigger: "axis"},
-            xAxis: {type: "category", data: ["Q1", "Q2", "Q3", "Q4"]},
+        };
+
+        // 首页 - 季度趋势（折线图）
+        const seasonTrendOption = {
+            tooltip: commonTooltip,
+            grid: commonGrid,
+            xAxis: {type: "category", data: ["第一季度", "第二季度", "第三季度", "第四季度"]},
             yAxis: {type: "value"},
-            series: [{type: "line", smooth: true, data: [320, 432, 401, 534]}]
-        });
+            series: [{
+                name: '番剧数量',
+                type: "line",
+                smooth: true,
+                data: [320, 432, 401, 534]
+            }]
+        };
 
-        initChart('chart-play-trend', {
-            tooltip: {trigger: "axis"}, grid: {left: "3%", right: "4%", bottom: "20%", containLabel: true},
-            xAxis: {type: "category", data: []},
+        // 番剧状态检测 - 播放量趋势（面积图）
+        const playTrendOption = {
+            tooltip: commonTooltip,
+            grid: {...commonGrid, bottom: "10%"}, // 增加底部边距以容纳旋转的标签
+            xAxis: {
+                type: "category",
+                boundaryGap: false,
+                axisLabel: {show: false}, // 隐藏标签
+                data: [] // 等待动态数据
+            },
             yAxis: {type: "value", name: "单集播放量"},
-            series: [{name: "单集播放量", type: "line", areaStyle: {}, smooth: true, data: []}]
-        });
+            series: [{
+                name: "单集播放量",
+                type: "line",
+                areaStyle: {},
+                smooth: true,
+                data: [] // 等待动态数据
+            }]
+        };
 
-        initChart('chart-watch-time', {
-            tooltip: {trigger: "axis"}, grid: {left: "3%", right: "4%", bottom: "3%", containLabel: true},
-            xAxis: {type: 'category', data: ['00-04点', '04-08点', '08-12点', '12-16点', '16-20点', '20-24点']},
+        // 番剧状态检测 - 观看时间分布（柱状图）
+        const watchTimeOption = {
+            tooltip: commonTooltip,
+            grid: commonGrid,
+            xAxis: {type: 'category', data: ['0-4点', '4-8点', '8-12点', '12-16点', '16-20点', '20-24点']},
             yAxis: {type: 'value', name: "总在线人数"},
-            series: [{name: '观看分布', type: 'bar', barWidth: '60%', data: [0, 0, 0, 0, 0, 0]}]
-        });
-        initChart('chart-yearly-trend', {
-            tooltip: {trigger: 'axis'},
+            series: [{
+                name: '观看分布',
+                type: 'bar',
+                barWidth: '60%',
+                data: [0, 0, 0, 0, 0, 0] // 初始数据
+            }]
+        };
+
+        // 番剧概览 - 年度上新趋势（折线图）
+        const yearlyTrendOption = {
+            tooltip: commonTooltip,
+            grid: commonGrid,
             xAxis: {type: 'category', data: ['春番', '夏番', '秋番', '冬番']},
             yAxis: {type: 'value'},
-            series: [{type: 'line', smooth: true, data: [200, 300, 250, 400]}]
-        });
-        initChart('chart-preference-diff', {
+            series: [{
+                name: '上新数量',
+                type: 'line',
+                smooth: true,
+                data: [200, 300, 250, 400] // 示例数据
+            }]
+        };
+
+        // 番剧概览 - 用户偏好差异（矩形树图）
+        const preferenceDiffOption = {
             tooltip: {trigger: 'item', formatter: "{b}: {c}"},
             series: [{
                 type: 'treemap',
                 roam: false,
                 nodeClick: false,
                 breadcrumb: {show: false},
-                data: [],
-                label: {show: true, position: 'inside'}
+                label: {show: true, position: 'inside', formatter: '{b}\n{c}'},
+                itemStyle: {
+                    gapWidth: 2
+                },
+                data: [] // 等待动态数据
             }]
-        });
-        initChart('chart-collection-ratio', {
-            tooltip: {trigger: 'axis'},
-            xAxis: {type: 'category', data: ['9分+', '8-9分', '7-8分', '6-7分', '6分-']}, yAxis: {type: 'value'},
-            series: [{type: 'bar', barWidth: '60%', data: [120, 200, 150, 80, 50]}]
-        });
-        initChart('chart-category-trend', {
-            tooltip: {trigger: 'axis'},
-            xAxis: {type: 'category', data: ["1月", "2月", "3月", "4月", "5月", "6月", "7月"]}, yAxis: {type: 'value'},
-            legend: {data: [], bottom: 0, type: 'scroll'}, series: []
-        });
+        };
+
+        // 番剧概览 - 追番评分占比（柱状图）
+        const collectionRatioOption = {
+            tooltip: commonTooltip,
+            grid: commonGrid,
+            xAxis: {type: 'category', data: ['9分以上', '8-9分', '7-8分', '6-7分', '6分以下']},
+            yAxis: {type: 'value'},
+            series: [{
+                name: '番剧数量',
+                type: 'bar',
+                barWidth: '60%',
+                data: [120, 200, 150, 80, 50] // 示例数据
+            }]
+        };
+
+        // 番剧概览 - 类别热度趋势（折线图）
+        const categoryTrendOption = {
+            tooltip: commonTooltip,
+            grid: {...commonGrid, bottom: '15%'}, // 为图例留出空间
+            xAxis: {type: 'category', data: ["1月", "2月", "3月", "4月", "5月", "6月", "7月"]},
+            yAxis: {type: 'value'},
+            legend: {data: [], bottom: 0, type: 'scroll'},
+            series: [] // 等待动态数据
+        };
+
+        // --- 批量执行初始化 ---
+        initChart('chart-type-distribution', typeDistributionOption);
+        initChart('chart-season-trend', seasonTrendOption);
+        initChart('chart-play-trend', playTrendOption);
+        initChart('chart-watch-time', watchTimeOption);
+        initChart('chart-yearly-trend', yearlyTrendOption);
+        initChart('chart-preference-diff', preferenceDiffOption);
+        initChart('chart-collection-ratio', collectionRatioOption);
+        initChart('chart-category-trend', categoryTrendOption);
     }
 });
