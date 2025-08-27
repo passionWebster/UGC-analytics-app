@@ -895,11 +895,21 @@ body {
     color: white;
 }
 
-.chart-container {
-    height: 350px; /* 设置图表容器的合适高度 */
-    width: 100%;
-    margin-bottom: 20px;
+.chart-card-header {
+    min-height: 38px;
 }
+.chart-container {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    min-height: 0;
+}
+
+#chart-type-distribution {
+    flex-grow: 1;
+    min-height: 0;
+}
+
 
 .alert {
     border-radius: 8px;

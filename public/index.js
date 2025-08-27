@@ -14,6 +14,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentAnimeData = null;
     let allRankedAnimes = []; // 【新增】用于存储从 rank_cache.json 获取的全量番剧数据
 
+    // 用于饼图下钻的状态变量
+    let isTypeChartDrilledDown = false;
+    let typeChartTopLevelData = {};
+    let typeChartOtherData = {};
+
     // 用于偏好推荐的状态变量
     let isPreferenceMode = false; // 偏好模式是否激活
     let userPreferences = []; // 存储从后端获取的用户偏好
@@ -23,10 +28,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
         initializeNavigation();
-        await initializeHomepage();
         initializeCharts();
         initializeBangumiSearch();
         initializeOverviewModule();
+        await initializeHomepage();
     } catch (error) {
         console.error("初始化时发生错误:", error);
     }
@@ -200,7 +205,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     /**
      * @function fetchAndInitializeRankList
-     * @description 【新增】获取完整的番剧排名数据，并设置排序按钮的事件监听。
+     * @description 获取番剧排名数据并初始化相关功能。
      */
     async function fetchAndInitializeRankList() {
         const rankContainer = document.getElementById('rank-list-container');
@@ -249,9 +254,124 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = await response.json();
             allRankedAnimes = data.list || [];
             updateRankDisplay();
+            updateTypeDistributionChart(allRankedAnimes);
         } catch (error) {
             console.error('获取排行榜数据失败:', error);
             rankContainer.innerHTML = '<div class="text-center py-5">加载失败，请刷新重试</div>';
+        }
+    }
+
+    /**
+     * @function updateTypeDistributionChart
+     * @description 准备饼图数据，包括顶级视图和下钻视图。
+     * @param {Array} animes - 包含所有番剧信息的数组。
+     */
+    function updateTypeDistributionChart(animes) {
+        if (!charts['type-distribution'] || !Array.isArray(animes)) return;
+
+        const styleCounts = animes.reduce((acc, anime) => {
+            if (anime.styles && Array.isArray(anime.styles)) {
+                anime.styles.forEach(style => {
+                    acc[style] = (acc[style] || 0) + 1;
+                });
+            }
+            return acc;
+        }, {});
+
+        const sortedStyles = Object.entries(styleCounts).sort(([, a], [, b]) => b - a);
+
+        if (sortedStyles.length === 0) {
+            typeChartTopLevelData = {seriesData: []};
+            typeChartOtherData = {seriesData: []};
+            renderTypeDistributionChart();
+            return;
+        }
+
+        let topLevelSeriesData;
+        let otherLevelSeriesData = [];
+        const MAX_SLICES = 19;
+
+        if (sortedStyles.length <= MAX_SLICES) {
+            topLevelSeriesData = sortedStyles.map(([name, value]) => ({name, value}));
+            typeChartOtherData = {seriesData: []};
+        } else {
+            let numToShow = 4;
+            while (numToShow < MAX_SLICES) {
+                const topStyles = sortedStyles.slice(0, numToShow);
+                const otherCount = sortedStyles.slice(numToShow).reduce((acc, [, count]) => acc + count, 0);
+                const smallestTopCount = topStyles[topStyles.length - 1][1];
+                if (otherCount <= smallestTopCount) break;
+                numToShow++;
+            }
+
+            const topData = sortedStyles.slice(0, numToShow);
+            const otherItems = sortedStyles.slice(numToShow);
+            const otherFinalCount = otherItems.reduce((acc, [, count]) => acc + count, 0);
+
+            topLevelSeriesData = topData.map(([name, value]) => ({name, value}));
+            if (otherFinalCount > 0) {
+                topLevelSeriesData.push({name: '其他', value: otherFinalCount});
+                otherLevelSeriesData = otherItems.map(([name, value]) => ({name, value}));
+            }
+        }
+
+        typeChartTopLevelData = {seriesData: topLevelSeriesData};
+        typeChartOtherData = {seriesData: otherLevelSeriesData};
+
+        isTypeChartDrilledDown = false;
+        renderTypeDistributionChart();
+    }
+
+    /**
+     * @function renderTypeDistributionChart
+     * @description 【已更新】根据当前状态渲染饼图，并始终保持左右图例布局。
+     */
+    function renderTypeDistributionChart() {
+        const chart = charts['type-distribution'];
+        const controls = document.getElementById('type-distribution-controls'); // 修改ID
+        const indicator = document.getElementById('chart-level-indicator');
+        if (!chart || !controls || !indicator) return; // 修改变量名
+
+        const dataToShow = isTypeChartDrilledDown ? typeChartOtherData.seriesData : typeChartTopLevelData.seriesData;
+
+        if (!dataToShow || dataToShow.length === 0) {
+            chart.setOption({series: [{data: []}], legend: [{}, {}]});
+            controls.classList.add('d-none'); // 修改变量名
+            return;
+        }
+
+        const legendNames = dataToShow.map(item => item.name);
+        const midIndex = Math.ceil(legendNames.length / 2);
+        const legendDataLeft = legendNames.slice(0, midIndex);
+        const legendDataRight = legendNames.slice(midIndex);
+
+        chart.setOption({
+            legend: [
+                {
+                    orient: 'vertical',
+                    left: '5%',
+                    top: 'center',
+                    data: legendDataLeft,
+                },
+                {
+                    orient: 'vertical',
+                    right: '5%',
+                    top: 'center',
+                    data: legendDataRight,
+                }
+            ],
+            series: [{
+                data: dataToShow
+            }]
+        }, {replaceMerge: ['legend']});
+
+        if (isTypeChartDrilledDown) {
+            indicator.textContent = '已细分合并的部分'; // 文本可以简化
+            controls.classList.remove('d-none'); // 修改变量名
+            controls.classList.add('d-flex'); // 确保flex布局生效
+        } else {
+            controls.classList.add('d-none'); // 修改变量名
+            controls.classList.remove('d-flex');
         }
     }
 
@@ -679,6 +799,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const chart = echarts.init(element);
                     chart.setOption(option);
                     charts[id.replace('chart-', '')] = chart;
+                    return chart;
                 } catch (e) {
                     console.error(`初始化图表失败: ${id}`, e);
                 }
@@ -689,12 +810,41 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 首页 - 类型分布（饼图）
         const typeDistributionOption = {
-            tooltip: {trigger: "item", formatter: '{b}: {c} ({d}%)'},
-            legend: {top: '5%', left: 'center'},
+            tooltip: {
+                trigger: "item",
+                formatter: (params) => {
+                    // params.marker 是提示框前面的小圆点
+                    const defaultFormat = `${params.marker}${params.name}: ${params.value} (${params.percent}%)`;
+
+                    // 如果鼠标悬停的切片名称是“其他”
+                    if (params.name === '其他') {
+                        // 在默认提示信息的下方添加一行小字提示
+                        return `${defaultFormat}<br><small style="color: #999; margin-left: 18px;">点击可查看细分</small>`;
+                    }
+
+                    // 对于其他切片，保持默认样式
+                    return defaultFormat;
+                }
+            },
+            legend: [
+                {
+                    orient: 'vertical',
+                    left: '5%',
+                    top: 'center',
+                    data: [],
+                },
+                {
+                    orient: 'vertical',
+                    right: '5%',
+                    top: 'center',
+                    data: [],
+                }
+            ],
             series: [{
                 name: '类型分布',
                 type: "pie",
-                radius: ["40%", "70%"],
+                radius: ["35%", "60%"],
+                center: ['50%', '50%'],
                 avoidLabelOverlap: false,
                 itemStyle: {borderRadius: 10, borderColor: '#fff', borderWidth: 2},
                 label: {show: false, position: 'center'},
@@ -702,10 +852,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                     label: {show: true, fontSize: '20', fontWeight: 'bold'}
                 },
                 labelLine: {show: false},
-                // 初始数据
-                data: [{value: 335, name: "热血"}, {value: 310, name: "搞笑"}, {value: 234, name: "奇幻"}]
+                data: []
             }]
         };
+
+        const typeChart = initChart('chart-type-distribution', typeDistributionOption);
+        if (typeChart) {
+            // 【新增】为饼图绑定点击事件
+            typeChart.on('click', (params) => {
+                // 如果当前是顶级视图，且点击的是“其他”，并且“其他”确实有数据
+                if (!isTypeChartDrilledDown && params.name === '其他' && typeChartOtherData.seriesData.length > 0) {
+                    typeChart.dispatchAction({type: 'hideTip'});
+                    isTypeChartDrilledDown = true;
+                    renderTypeDistributionChart();
+                }
+            });
+
+            // 【新增】为返回按钮绑定事件
+            document.getElementById('back-to-main-chart').addEventListener('click', () => {
+                if (isTypeChartDrilledDown) {
+                    isTypeChartDrilledDown = false;
+                    renderTypeDistributionChart();
+                }
+            });
+        }
 
         // 首页 - 季度趋势（折线图）
         const seasonTrendOption = {
@@ -810,7 +980,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         // --- 批量执行初始化 ---
-        initChart('chart-type-distribution', typeDistributionOption);
         initChart('chart-season-trend', seasonTrendOption);
         initChart('chart-play-trend', playTrendOption);
         initChart('chart-watch-time', watchTimeOption);

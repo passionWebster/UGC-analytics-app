@@ -181,13 +181,17 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="card p-3 h-100">
-                            <div
-                                    class="d-flex justify-content-between align-items-center mb-3"
-                            >
+                            <div class="d-flex justify-content-between align-items-center mb-3 chart-card-header">
                                 <h5 class="card-title mb-0">番剧类型分布</h5>
-                                <div>
+                                <div class="d-flex align-items-center">
+                                    <div class="d-none align-items-center me-2" id="type-distribution-controls">
+                                        <button class="btn btn-secondary btn-sm" id="back-to-main-chart">
+                                            <i class="fas fa-arrow-left me-1"></i> 返回
+                                        </button>
+                                        <small class="ms-2 text-muted" id="chart-level-indicator"></small>
+                                    </div>
                                     <button
-                                            class="btn btn-sm btn-outline-secondary me-1"
+                                            class="btn btn-sm btn-outline-secondary"
                                             id="refresh-chart1"
                                     >
                                         <i class="fas fa-refresh"></i>
@@ -204,9 +208,7 @@
                     </div>
                     <div class="col-md-6">
                         <div class="card p-3 h-100">
-                            <div
-                                    class="d-flex justify-content-between align-items-center mb-3"
-                            >
+                            <div class="d-flex justify-content-between align-items-center mb-3 chart-card-header">
                                 <h5 class="card-title mb-0">季度番剧数量</h5>
                                 <div>
                                     <button
