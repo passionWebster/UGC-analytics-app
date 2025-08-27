@@ -560,6 +560,10 @@ body {
     color: #ffc107;
 }
 
+.rank-header > div {
+    position: relative;
+}
+
 /* 排行榜头部调整 */
 .rank-header {
     padding: 12px 15px;

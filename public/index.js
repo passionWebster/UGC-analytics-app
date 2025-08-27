@@ -1,6 +1,5 @@
 // index.js
-
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // ------------------- 1. 初始化和认证 -------------------
     const username = localStorage.getItem('username') || sessionStorage.getItem('username');
     if (!username) {
@@ -15,12 +14,23 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentAnimeData = null;
     let allRankedAnimes = []; // 【新增】用于存储从 rank_cache.json 获取的全量番剧数据
 
+    // 用于偏好推荐的状态变量
+    let isPreferenceMode = false; // 偏好模式是否激活
+    let userPreferences = []; // 存储从后端获取的用户偏好
+    let currentSortBy = 'score'; // 当前的排序标准
+
     // ------------------- 3. 功能模块初始化 -------------------
-    initializeNavigation();
-    initializeHomepage();
-    initializeCharts();
-    initializeBangumiSearch();
-    initializeOverviewModule();
+
+    try {
+        initializeNavigation();
+        await initializeHomepage();
+        initializeCharts();
+        initializeBangumiSearch();
+        initializeOverviewModule();
+    } catch (error) {
+        console.error("初始化时发生错误:", error);
+    }
+
 
     window.addEventListener('resize', () => {
         setTimeout(() => {
@@ -130,40 +140,115 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * @function initializePreferencesTooltip
+     * @description 【新增】初始化偏好提示功能，包括为按钮添加悬停提示，并绑定点击事件。
+     */
+    function initializePreferencesTooltip() {
+        const preferencesBtn = document.getElementById("preferencesBtn");
+        if (!preferencesBtn) return;
+
+        // 1. 动态创建一次提示框元素
+        const tooltip = document.createElement("div");
+        tooltip.id = "preferencesTooltip";
+        tooltip.className = "preferences-tooltip";
+        tooltip.style.display = "none";
+
+        const tooltipContent = document.createElement("div");
+        tooltipContent.className = "tooltip-content";
+        tooltip.appendChild(tooltipContent);
+
+        preferencesBtn.parentNode.appendChild(tooltip);
+
+        // 2. 绑定事件监听器
+        preferencesBtn.addEventListener("mouseenter", async () => {
+            const currentUser = localStorage.getItem('username') || sessionStorage.getItem('username');
+            let preferences = [];
+
+            if (currentUser) {
+                try {
+                    const res = await fetch(`http://localhost:3000/api/user-info?username=${currentUser}&t=${new Date().getTime()}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        preferences = data.user && data.user.preferences ? data.user.preferences : [];
+                        if (!Array.isArray(preferences)) preferences = [];
+                    }
+                } catch (e) {
+                    console.error("获取偏好失败:", e);
+                }
+            }
+
+            // 更新全局变量，供点击事件使用
+            userPreferences = preferences;
+
+            // 根据获取到的偏好更新提示内容
+            if (preferences.length > 0) {
+                tooltipContent.innerHTML = `
+                    <i class="fas fa-info-circle me-2"></i>
+                    根据您的偏好设置：${preferences.join(", ")}。如果需要更改偏好，请移动到个人中心。`;
+            } else {
+                tooltipContent.innerHTML = `
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    您尚未设置偏好，显示全部推荐`;
+            }
+            tooltip.style.display = "block";
+        });
+
+        preferencesBtn.addEventListener("mouseleave", () => {
+            tooltip.style.display = "none";
+        });
+    }
+
+    /**
      * @function fetchAndInitializeRankList
      * @description 【新增】获取完整的番剧排名数据，并设置排序按钮的事件监听。
      */
     async function fetchAndInitializeRankList() {
         const rankContainer = document.getElementById('rank-list-container');
+        const sortButtons = document.getElementById('sortButtons');
+        const preferencesBtn = document.getElementById('preferencesBtn');
+
+        // --- 1. 初始化悬停提示功能 ---
+        initializePreferencesTooltip();
+
+        // --- 2. 统一的渲染入口函数 ---
+        const updateRankDisplay = () => {
+            let animesToDisplay = [...allRankedAnimes];
+            if (isPreferenceMode && userPreferences.length > 0) {
+                animesToDisplay = allRankedAnimes.filter(anime =>
+                    anime.styles && anime.styles.some(style => userPreferences.includes(style))
+                );
+            }
+            renderRankList(animesToDisplay, currentSortBy);
+        };
+
+        // --- 3. 绑定事件监听器 ---
+        sortButtons.addEventListener('click', (e) => {
+            const button = e.target.closest('button');
+            if (button) {
+                sortButtons.querySelectorAll('.btn').forEach(btn => {
+                    btn.classList.remove('btn-primary', 'active');
+                    btn.classList.add('btn-outline-primary');
+                });
+                button.classList.add('btn-primary', 'active');
+                button.classList.remove('btn-outline-primary');
+                currentSortBy = button.dataset.sort;
+                updateRankDisplay();
+            }
+        });
+
+        preferencesBtn.addEventListener('click', () => {
+            isPreferenceMode = !isPreferenceMode;
+            preferencesBtn.classList.toggle('active', isPreferenceMode);
+            updateRankDisplay();
+        });
+
+        // --- 4. 初始数据加载 ---
         try {
-            // 1. 通过新API获取全量排名数据
             const response = await fetch('http://localhost:5000/api/rank_cache');
             if (!response.ok) throw new Error('无法加载排名数据');
-
             const data = await response.json();
-            allRankedAnimes = data.list || []; // 将获取的列表存入全局变量
-
-            // 2. 为排序按钮添加事件监听
-            const sortButtons = document.getElementById('sortButtons');
-            sortButtons.addEventListener('click', (e) => {
-                if (e.target.tagName === 'BUTTON') {
-                    // 更新按钮的激活状态
-                    sortButtons.querySelectorAll('.btn').forEach(btn => {
-                        btn.classList.remove('btn-primary', 'active');
-                        btn.classList.add('btn-outline-primary');
-                    });
-                    e.target.classList.add('btn-primary', 'active');
-                    e.target.classList.remove('btn-outline-primary');
-
-                    // 根据按钮的 data-sort 属性进行排序并重新渲染列表
-                    const sortBy = e.target.dataset.sort;
-                    renderRankList(sortBy);
-                }
-            });
-
-            // 3. 默认按评分排序并渲染初始列表
-            renderRankList('score');
-
+            allRankedAnimes = data.list || [];
+            updateRankDisplay();
         } catch (error) {
             console.error('获取排行榜数据失败:', error);
             rankContainer.innerHTML = '<div class="text-center py-5">加载失败，请刷新重试</div>';
@@ -210,45 +295,86 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * @function renderRankList
-     * @description 【已修正】根据排序标准对全局数据进行排序，并渲染排行榜列表。
-     * @param {string} sortBy - 排序依据 ('score', 'views', 'followers')
+     * @description 纯粹的渲染函数，负责将数据生成HTML，并高亮匹配偏好的标签。
+     * @param {Array} animes - 要渲染的番剧对象数组。
+     * @param {string} sortBy - 排序依据。
      */
-    function renderRankList(sortBy = 'score') {
+    function renderRankList(animes, sortBy) {
         const container = document.getElementById('rank-list-container');
-        const sortedAnimes = [...allRankedAnimes];
 
-        sortedAnimes.sort((a, b) => {
+        if (!Array.isArray(animes) || animes.length === 0) {
+            container.innerHTML = `<div class="text-center py-5">${isPreferenceMode ? '没有找到符合您偏好的番剧' : '暂无数据'}</div>`;
+            return;
+        }
+
+        const sortedAnimes = [...animes].sort((a, b) => {
             const key = sortBy === 'followers' ? 'favorites' : sortBy;
-            const valA = key === 'score' ? parseFloat(a[key]) : a[key];
-            const valB = key === 'score' ? parseFloat(b[key]) : b[key];
+            const valA = key === 'score' ? parseFloat(a[key] || 0) : (a[key] || 0);
+            const valB = key === 'score' ? parseFloat(b[key] || 0) : (b[key] || 0);
             return valB - valA;
         });
 
         const topAnimes = sortedAnimes.slice(0, 10);
 
-        // --- 【核心修改处】 ---
+        const formatLargeNumber = (num) => {
+            if (num >= 1e8) return (num / 1e8).toFixed(1) + '亿';
+            if (num >= 1e4) return (num / 1e4).toFixed(1) + '万';
+            return num.toLocaleString();
+        };
+
         container.innerHTML = topAnimes.map((anime, index) => {
             const rankClass = index < 3 ? 'top3' : '';
+            const proxyUrl = `http://localhost:5000/api/image_proxy?url=${encodeURIComponent(anime.cover)}&title=${encodeURIComponent(anime.title)}&season_id=${anime.season_id}`;
 
-            // 1. 对参数进行URL编码，以安全地在URL中传输
-            const imageUrl = encodeURIComponent(anime.cover);
-            const title = encodeURIComponent(anime.title);
-            const seasonId = anime.season_id;
+            let displayValue = '';
+            let valueIconClass = '';
+            switch (sortBy) {
+                case 'views':
+                    valueIconClass = 'fas fa-play-circle';
+                    displayValue = formatLargeNumber(anime.views || 0);
+                    break;
+                case 'followers':
+                    valueIconClass = 'fas fa-heart';
+                    displayValue = formatLargeNumber(anime.favorites || 0);
+                    break;
+                default:
+                    valueIconClass = 'fas fa-star';
+                    displayValue = `${parseFloat(anime.score || 0).toFixed(1)}分`;
+                    break;
+            }
 
-            // 2. 构建指向后端代理API的URL
-            const proxyUrl = `http://localhost:5000/api/image_proxy?url=${imageUrl}&title=${title}&season_id=${seasonId}`;
+            let tagsHtml = '';
+            const animeStyles = anime.styles || [];
+
+            if (isPreferenceMode && userPreferences.length > 0) {
+                // 1. 分离出匹配的标签和不匹配的标签
+                const matchingTags = animeStyles.filter(style => userPreferences.includes(style));
+                const otherTags = animeStyles.filter(style => !userPreferences.includes(style));
+
+                // 2. 重新组合，匹配的优先
+                const orderedTags = [...matchingTags, ...otherTags];
+
+                // 3. 生成HTML，并为匹配的标签添加高亮样式
+                tagsHtml = orderedTags.slice(0, 3).map(tag => {
+                    const badgeClass = matchingTags.includes(tag) ? 'badge bg-primary me-1' : 'badge bg-secondary me-1';
+                    return `<span class="${badgeClass}">${tag}</span>`;
+                }).join('');
+
+            } else {
+                // 如果不是偏好模式，则按原逻辑显示
+                tagsHtml = animeStyles.slice(0, 3).map(tag => `<span class="badge bg-secondary me-1">${tag}</span>`).join('');
+            }
 
             return `
                 <div class="rank-item">
                     <div class="rank-num ${rankClass}">${index + 1}</div>
-                    <img 
-                        src="${proxyUrl}" 
-                        alt="${anime.title}" 
-                        class="rank-img" 
-                    />
+                    <img src="${proxyUrl}" alt="${anime.title}" class="rank-img">
                     <div class="rank-info">
                         <div class="rank-title">${anime.title}</div>
-                        <div class="rank-score">${anime.score}分</div>
+                        <div class="rank-value">
+                            <i class="${valueIconClass} me-1"></i>${displayValue}
+                        </div>
+                        <div class="rank-tags">${tagsHtml}</div>
                     </div>
                 </div>
             `;
@@ -311,34 +437,39 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({keyword}),
                 });
                 const result = await response.json();
-                if (!response.ok) throw new Error(result.message);
-
-                // 【改动】将完整的返回数据存储到全局变量
-                currentAnimeData = result.data;
-
-                favoritesCount.textContent = formatNumber(currentAnimeData.stats.favorites);
-                viewsCount.textContent = formatNumber(currentAnimeData.stats.views);
-
-                if (Array.isArray(currentAnimeData.episodes) && currentAnimeData.episodes.length > 0) {
-                    const episodeLabels = currentAnimeData.episodes.map(ep => ep.title.replace(/第(\d+)话\s*/, '第$1话\n'));
-                    const episodeViews = currentAnimeData.episodes.map(ep => ep.views || 0);
-
-                    charts['play-trend'].setOption({
-                        xAxis: {data: episodeLabels, axisLabel: {interval: 0, rotate: 30}},
-                        series: [{name: '单集播放量', data: episodeViews}]
-                    });
+                if (!response.ok) {
+                    // 直接处理失败情况，而不是抛出异常
+                    statusMessage.textContent = `错误: ${result.message}`;
+                    statusMessage.className = 'form-text mt-2 text-danger';
+                    currentAnimeData = null; // 清空数据
                 } else {
-                    charts['play-trend'].setOption({xAxis: {data: []}, series: [{data: []}]});
+                    // --- 成功的逻辑保持不变 ---
+                    currentAnimeData = result.data;
+
+                    favoritesCount.textContent = formatNumber(currentAnimeData.stats.favorites);
+                    viewsCount.textContent = formatNumber(currentAnimeData.stats.views);
+
+                    if (Array.isArray(currentAnimeData.episodes) && currentAnimeData.episodes.length > 0) {
+                        const episodeLabels = currentAnimeData.episodes.map(ep => ep.title.replace(/第(\d+)话\s*/, '第$1话\n'));
+                        const episodeViews = currentAnimeData.episodes.map(ep => ep.views || 0);
+
+                        charts['play-trend'].setOption({
+                            xAxis: {data: episodeLabels, axisLabel: {interval: 0, rotate: 30}},
+                            series: [{name: '单集播放量', data: episodeViews}]
+                        });
+                    } else {
+                        charts['play-trend'].setOption({xAxis: {data: []}, series: [{data: []}]});
+                    }
+
+                    // 默认显示所有剧集的总和
+                    const totalOnlineHistory = processOnlineHistory(currentAnimeData.episodes);
+                    charts['watch-time'].setOption({
+                        series: [{data: totalOnlineHistory}]
+                    });
+
+                    statusMessage.textContent = `成功获取数据。${result.status === 'cached' ? '(来自缓存)' : ''}`;
+                    statusMessage.className = 'form-text mt-2 text-success';
                 }
-
-                // 默认显示所有剧集的总和
-                const totalOnlineHistory = processOnlineHistory(currentAnimeData.episodes);
-                charts['watch-time'].setOption({
-                    series: [{data: totalOnlineHistory}]
-                });
-
-                statusMessage.textContent = `成功获取数据。${result.status === 'cached' ? '(来自缓存)' : ''}`;
-                statusMessage.className = 'form-text mt-2 text-success';
             } catch (error) {
                 statusMessage.textContent = `错误: ${error.message}`;
                 statusMessage.className = 'form-text mt-2 text-danger';
