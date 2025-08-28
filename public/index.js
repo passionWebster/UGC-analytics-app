@@ -24,14 +24,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     let userPreferences = []; // 存储从后端获取的用户偏好
     let currentSortBy = 'score'; // 当前的排序标准
 
+    // ------------------- 2.1 全局通用 ECharts 配置 -------------------
+    const commonGrid = {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        containLabel: true
+    };
+
+    const commonTooltip = {
+        trigger: 'axis',
+        axisPointer: {
+            type: 'cross',
+            label: {
+                backgroundColor: '#6a7985'
+            }
+        }
+    };
     // ------------------- 3. 功能模块初始化 -------------------
 
     try {
         initializeNavigation();
         initializeCharts();
         initializeBangumiSearch();
-        initializeOverviewModule();
         await initializeHomepage();
+        initializeOverviewModule();
     } catch (error) {
         console.error("初始化时发生错误:", error);
     }
@@ -42,6 +59,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             Object.values(charts).forEach(chart => chart.resize());
         }, 200);
     });
+
+    /**
+     * @function ensureElementVisible
+     * @description 新增：确保元素可见的辅助函数
+     */
+    function ensureElementVisible(selector) {
+        return new Promise((resolve) => {
+            const element = document.querySelector(selector);
+            if (!element) {
+                resolve(false);
+                return;
+            }
+
+            // 如果元素已经可见，直接解决
+            if (element.offsetParent !== null) {
+                resolve(true);
+                return;
+            }
+
+            // 否则等待一小段时间再检查
+            const checkVisibility = () => {
+                if (element.offsetParent !== null) {
+                    resolve(true);
+                } else {
+                    setTimeout(checkVisibility, 50);
+                }
+            };
+            checkVisibility();
+        });
+    }
 
     /**
      * @function initializeNavigation
@@ -629,135 +676,394 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     /**
+     * @function initCommonControlButtons
+     * @description 初始化通用控制按钮。从用户偏好中获取按钮数据。
+     */
+    async function initCommonControlButtons(containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        try {
+            const currentUser = localStorage.getItem('username') || sessionStorage.getItem('username');
+            let preferences = [];
+
+            if (currentUser) {
+                const res = await fetch(`http://localhost:3000/api/user-info?username=${currentUser}&t=${new Date().getTime()}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    preferences = data.user && data.user.preferences ? data.user.preferences : [];
+                    if (!Array.isArray(preferences)) preferences = [];
+                }
+            }
+
+            // 如果用户没有设置偏好，可以提供一个默认列表或不显示任何按钮
+            if (preferences.length === 0) {
+                console.warn(`容器 ${containerId} 没有可用的偏好按钮数据。`);
+                // 您可以在此处添加默认按钮或提示信息
+                container.innerHTML = '<small class="text-muted">请先在个人中心设置偏好</small>';
+                return;
+            }
+
+            // 创建按钮HTML，始终包含“所有番剧”选项
+            let buttonsHtml = `
+                <button class="btn btn-primary btn-sm active" data-value="all">所有番剧</button>
+            `;
+
+            buttonsHtml += preferences
+                .map(
+                    (preference) =>
+                        `<button class="btn btn-outline-secondary btn-sm" data-value="${preference}">${preference}</button>`
+                )
+                .join("");
+
+            container.innerHTML = buttonsHtml;
+
+            // 添加点击事件
+            container.addEventListener("click", function (e) {
+                if (e.target.tagName === "BUTTON") {
+                    container.querySelectorAll(".btn").forEach((btn) => {
+                        btn.classList.remove("btn-primary", "active");
+                        btn.classList.add("btn-outline-secondary");
+                    });
+
+                    e.target.classList.add("btn-primary", "active");
+                    e.target.classList.remove("btn-outline-secondary");
+
+                    updateChartBasedOnSelection(containerId, e.target.dataset.value);
+                }
+            });
+
+        } catch (error) {
+            console.error(`初始化 ${containerId} 按钮失败:`, error);
+            container.innerHTML = '<div class="text-danger">加载按钮失败</div>';
+        }
+    }
+
+    /**
+     * @function initCategoryTrendButtons
+     * @description 初始化类别热度趋势按钮。从用户偏好中获取按钮数据。
+     */
+    async function initCategoryTrendButtons() {
+        const container = document.getElementById("category-trend-buttons");
+        if (!container) return;
+
+        try {
+            const currentUser = localStorage.getItem('username') || sessionStorage.getItem('username');
+            let preferences = [];
+
+            if (currentUser) {
+                const res = await fetch(`http://localhost:3000/api/user-info?username=${currentUser}&t=${new Date().getTime()}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    preferences = data.user && data.user.preferences ? data.user.preferences : [];
+                    if (!Array.isArray(preferences)) preferences = [];
+                }
+            }
+
+            if (preferences.length === 0) {
+                console.warn(`容器 category-trend-buttons 没有可用的偏好按钮数据。`);
+                container.innerHTML = '<small class="text-muted">无可用类别</small>';
+                // 确保图表为空状态
+                await updateCategoryTrendChart();
+                return;
+            }
+
+            // 创建按钮HTML，默认全部激活
+            container.innerHTML = preferences
+                .map(
+                    (preference) =>
+                        `<button class="btn btn-primary btn-sm active" data-category="${preference}">${preference}</button>`
+                )
+                .join("");
+
+            // 添加点击事件
+            container.addEventListener("click", function (e) {
+                if (e.target.tagName === "BUTTON") {
+                    // 切换按钮状态
+                    e.target.classList.toggle("active");
+                    e.target.classList.toggle("btn-primary");
+                    e.target.classList.toggle("btn-outline-secondary");
+
+                    // 触发图表更新
+                    updateCategoryTrendChart();
+                }
+            });
+
+            // 初始加载一次图表
+            await updateCategoryTrendChart();
+
+        } catch (error) {
+            console.error("初始化类别趋势按钮失败:", error);
+            container.innerHTML = '<div class="text-danger">加载按钮失败</div>';
+        }
+    }
+
+    /**
+     * @function updateChartBasedOnSelection
+     * @description 根据选择更新图表
+     */
+    function updateChartBasedOnSelection(containerId, selectedValue) {
+        // 这里需要根据具体的标签页实现不同的更新逻辑
+        if (containerId === "preference-anime-buttons") {
+            updatePreferenceChart(selectedValue);
+        } else if (containerId === "yearly-control-buttons") {
+            updateYearlyChart(selectedValue);
+        } else if (containerId === "rating-control-buttons") {
+            updateRatingChart(selectedValue);
+        }
+    }
+
+    /**
+     * @function updatePreferenceChart
+     * @description 更新偏好差异图表。
+     */
+    async function updatePreferenceChart() {
+        const chart = charts['preference-diff'];
+        if (!chart) return;
+
+        const selectedButton = document.querySelector('#preference-anime-buttons .btn.active');
+        const selectedAnime = selectedButton ? selectedButton.dataset.value : 'all';
+        const selectedDimension = document.getElementById('preferenceSelect').value;
+
+        try {
+            chart.showLoading();
+            // 假设后端API为 /api/preference_data
+            const response = await fetch(`http://localhost:5000/api/preference_data?anime=${selectedAnime}&dimension=${selectedDimension}`);
+            const data = await response.json();
+
+            chart.setOption({
+                series: [{
+                    data: data.chartData || []
+                }]
+            });
+        } catch (error) {
+            console.error('更新偏好差异图表失败:', error);
+            // 可以在图表上显示错误信息
+        } finally {
+            chart.hideLoading();
+        }
+    }
+
+    /**
+     * @function updateYearlyChart
+     * @description 更新历年数量变化图表。
+     */
+    async function updateYearlyChart() {
+        const chart = charts['yearly-trend'];
+        if (!chart) return;
+
+        if (!allRankedAnimes || allRankedAnimes.length === 0) {
+            console.warn("历年番剧数据尚未加载。");
+            chart.setOption({xAxis: {data: []}, series: []});
+            return;
+        }
+
+        const selectedButton = document.querySelector('#yearly-control-buttons .btn.active');
+        const selectedCategory = selectedButton ? selectedButton.dataset.value : 'all';
+
+        try {
+            chart.showLoading();
+
+            const filteredAnimes = selectedCategory === 'all'
+                ? allRankedAnimes
+                : allRankedAnimes.filter(anime => anime.styles && anime.styles.includes(selectedCategory));
+
+            const yearlyData = {};
+
+            filteredAnimes.forEach(anime => {
+                if (anime.release_dates && anime.release_dates.length > 0) {
+                    const dateParts = anime.release_dates[0].split('-');
+                    if (dateParts.length < 2) return;
+
+                    const year = dateParts[0];
+                    const month = parseInt(dateParts[1], 10);
+
+                    if (!yearlyData[year]) {
+                        yearlyData[year] = [0, 0, 0, 0];
+                    }
+
+                    switch (month) {
+                        case 1:
+                            yearlyData[year][0]++;
+                            break;
+                        case 4:
+                            yearlyData[year][1]++;
+                            break;
+                        case 7:
+                            yearlyData[year][2]++;
+                            break;
+                        case 10:
+                            yearlyData[year][3]++;
+                            break;
+                    }
+                }
+            });
+
+            const legendData = Object.keys(yearlyData).sort((a, b) => b - a);
+            const seriesData = legendData.map(year => ({
+                name: year,
+                type: 'line',
+                smooth: true,
+                data: yearlyData[year]
+            }));
+
+            const xData = ['春番(1月)', '夏番(4月)', '秋番(7月)', '冬番(10月)'];
+
+            chart.setOption({
+                tooltip: commonTooltip,
+                xAxis: {
+                    data: xData
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '番剧数量'
+                },
+                legend: {
+                    data: legendData
+                },
+                series: seriesData
+            }, {notMerge: true});
+
+        } catch (error) {
+            console.error('更新历年数量图表失败:', error);
+        } finally {
+            chart.hideLoading();
+        }
+    }
+
+    /**
+     * @function updateRatingChart
+     * @description 更新收藏占比图表。
+     */
+    async function updateRatingChart() {
+        const chart = charts['collection-ratio'];
+        if (!chart) return;
+
+        const selectedButton = document.querySelector('#rating-control-buttons .btn.active');
+        const selectedCategory = selectedButton ? selectedButton.dataset.value : 'all';
+        const selectedSeason = document.getElementById('collectionInterval').value;
+
+        try {
+            chart.showLoading();
+            // 假设后端API为 /api/collection_ratio
+            const response = await fetch(`http://localhost:5000/api/collection_ratio?category=${selectedCategory}&season=${selectedSeason}`);
+            const data = await response.json();
+
+            chart.setOption({
+                xAxis: {
+                    data: data.xData || []
+                },
+                series: [{
+                    data: data.yData || []
+                }]
+            });
+        } catch (error) {
+            console.error('更新收藏占比图表失败:', error);
+        } finally {
+            chart.hideLoading();
+        }
+    }
+
+    /**
+     * @function updateCategoryTrendChart
+     * @description 更新类别热度趋势图表。
+     */
+    async function updateCategoryTrendChart() {
+        const chart = charts['category-trend'];
+        if (!chart) return;
+
+        const activeButtons = document.querySelectorAll('#category-trend-buttons .btn.active');
+        const selectedCategories = Array.from(activeButtons).map(btn => btn.dataset.category);
+
+        if (selectedCategories.length === 0) {
+            chart.setOption({legend: {data: []}, series: []});
+            return;
+        }
+
+        const selectedMonth = document.getElementById('categoryTrendInterval').value;
+
+        try {
+            chart.showLoading();
+            // 假设后端API为 /api/category_trend
+            const response = await fetch(`http://localhost:5000/api/category_trend?categories=${selectedCategories.join(',')}&month=${selectedMonth}`);
+            const data = await response.json(); // 预期格式: { legendData: [], seriesData: [{}], xAxisData: [] }
+
+            chart.setOption({
+                legend: {
+                    data: data.legendData,
+                    type: data.legendData.length > 5 ? 'scroll' : 'plain'
+                },
+                xAxis: {
+                    data: data.xAxisData
+                },
+                series: data.seriesData.map(s => ({
+                    ...s,
+                    type: 'line',
+                    smooth: true
+                }))
+            }, {notMerge: true});
+
+        } catch (error) {
+            console.error('更新类别热度趋势图表失败:', error);
+        } finally {
+            chart.hideLoading();
+        }
+    }
+
+    /**
      * @function initializeOverviewModule
      * @description 初始化概述模块，包括为各种交互元素添加事件监听器并更新图表。
      */
     function initializeOverviewModule() {
-        document.getElementById('yearlyInterval').addEventListener('change', function () {
-            const isMonth = this.value === 'month';
-            charts['yearly-trend'].setOption({
-                xAxis: {data: isMonth ? Array.from({length: 12}, (_, i) => `${i + 1}月`) : ['春番', '夏番', '秋番', '冬番']},
-                series: [{data: isMonth ? Array.from({length: 12}, () => Math.floor(Math.random() * 100 + 50)) : [200, 300, 250, 400]}]
-            });
-        });
+        // --- 1. 为所有控制元素（下拉框）绑定事件监听器 ---
 
-        const preferenceChart = charts['preference-diff'];
-        const preferenceSelect = document.getElementById('preferenceSelect');
-        const animeButtonsContainer = document.getElementById('preference-anime-buttons');
-        const userAnimes = ['咒术回战', '鬼灭之刃', '无职转生'];
+        // 偏好差异
+        document.getElementById('preferenceSelect').addEventListener('change', updatePreferenceChart);
 
-        const updatePreferenceChart = () => {
-            if (!charts['preference-diff']) return; // 安全检查
-            const view = preferenceSelect.value;
-            let data;
-            if (view === 'region') data = [{name: '日本', value: 100}, {name: '中国', value: 50}, {
-                name: '欧美',
-                value: 30
-            }];
-            else if (view === 'age') data = [{name: '10-18岁', value: 80}, {
-                name: '19-30岁',
-                value: 120
-            }, {name: '31-45岁', value: 40}, {name: '45-55岁', value: 20}, {name: '55岁以后', value: 10}];
-            else data = [{name: '男', value: 150}, {name: '女', value: 90}];
+        // 收藏占比
+        document.getElementById('collectionInterval').addEventListener('change', updateRatingChart);
 
-            preferenceChart.setOption({series: [{data}]});
-        };
+        // 类别热度趋势
+        document.getElementById('categoryTrendInterval').addEventListener('change', updateCategoryTrendChart);
 
-        animeButtonsContainer.innerHTML = `<button class="btn btn-primary btn-sm active">所有番剧</button>` +
-            userAnimes.map(name => `<button class="btn btn-outline-secondary btn-sm">${name}</button>`).join('');
+        // --- 2. 异步初始化所有按钮组 ---
 
-        animeButtonsContainer.addEventListener('click', (e) => {
-            if (e.target.tagName === 'BUTTON') {
-                animeButtonsContainer.querySelectorAll('.btn').forEach(btn => {
-                    btn.classList.remove('btn-primary', 'active');
-                    btn.classList.add('btn-outline-secondary');
-                });
-                e.target.classList.add('btn-primary', 'active');
-                e.target.classList.remove('btn-outline-secondary');
-                updatePreferenceChart();
-            }
-        });
+        // 注意：按钮组的点击事件已在 initCommonControlButtons 和 initCategoryTrendButtons 中统一处理
+        initCommonControlButtons("preference-anime-buttons");
+        initCommonControlButtons("yearly-control-buttons");
+        initCommonControlButtons("rating-control-buttons");
+        initCategoryTrendButtons("category_trend_buttons");
+        // ...
 
-        preferenceSelect.addEventListener('change', updatePreferenceChart);
-
-        document.getElementById('collectionInterval').addEventListener('change', () => {
-            charts['collection-ratio'].setOption({
-                series: [{data: Array.from({length: 5}, () => Math.floor(Math.random() * 200 + 20))}]
-            });
-        });
-
-        const categoryTrendChart = charts['category-trend'];
-        const categoryButtonsContainer = document.getElementById('category-trend-buttons');
-        const categories = ['热血', '奇幻', '搞笑'];
-        const categoryData = {
-            '热血': [120, 132, 101, 134, 90, 230, 210],
-            '奇幻': [220, 182, 191, 234, 290, 330, 310],
-            '搞笑': [150, 232, 201, 154, 190, 330, 410]
-        };
-
-        const updateCategoryTrendChart = () => {
-            if (!charts['category-trend']) return; // 安全检查
-            const activeButtons = categoryButtonsContainer.querySelectorAll('.btn.active');
-            const selectedCategories = Array.from(activeButtons).map(btn => btn.dataset.category);
-
-            categoryTrendChart.setOption({
-                legend: {
-                    data: selectedCategories,
-                    type: selectedCategories.length > 5 ? 'scroll' : 'plain'
-                },
-                series: selectedCategories.map(cat => ({
-                    name: cat,
-                    type: 'line',
-                    smooth: true,
-                    data: categoryData[cat]
-                }))
-            }, {
-                notMerge: true
-            });
-        };
-
-        categoryButtonsContainer.innerHTML = categories.map(cat =>
-            `<button class="btn btn-primary btn-sm active" data-category="${cat}">${cat}</button>`
-        ).join('');
-
-        categoryButtonsContainer.addEventListener('click', (e) => {
-            if (e.target.tagName === 'BUTTON') {
-                e.target.classList.toggle('active');
-                e.target.classList.toggle('btn-primary');
-                e.target.classList.toggle('btn-outline-secondary');
-                updateCategoryTrendChart();
-            }
-        });
-
-        document.querySelectorAll('#overviewTabs button[data-bs-toggle="pill"]').forEach(tabEl => {
-            tabEl.addEventListener('shown.bs.tab', event => {
-                // 【修改】添加一个短暂的延时来确保 DOM 渲染完成
-                setTimeout(() => {
-                    const targetPane = document.querySelector(event.target.dataset.bsTarget);
-                    if (!targetPane) return;
-
-                    const chartEl = targetPane.querySelector('[id^="chart-"]');
-                    if (chartEl) {
-                        const chartIdKey = chartEl.id.replace('chart-', '');
-                        if (charts[chartIdKey]) {
-                            // 更新和重置尺寸现在都在延时后执行
-                            if (chartIdKey === 'category-trend') {
-                                updateCategoryTrendChart();
-                            }
-                            if (chartIdKey === 'preference-diff') {
-                                updatePreferenceChart();
-                            }
-                            charts[chartIdKey].resize();
-                        }
-                    }
-                }, 50); // 50毫秒的延时
-            });
-        });
-
-        const activeTabPane = document.querySelector('#overviewTabsContent .tab-pane.active');
-        if (activeTabPane && activeTabPane.querySelector('#chart-preference-diff')) {
+        // --- 3. 初始化默认图表状态 ---
+        // 确保在按钮和图表都初始化完毕后，加载一次默认数据
+        setTimeout(() => {
+            updateYearlyChart();
             updatePreferenceChart();
-        }
+            updateRatingChart();
+            // updateCategoryTrendChart 在其初始化函数 initCategoryTrendButtons 中已调用
+        }, 500);
+
+
+        // --- 4. 处理标签页切换时的图表大小调整 ---
+        document.querySelectorAll('#overviewTabs button[data-bs-toggle="pill"]').forEach(tabEl => {
+            tabEl.addEventListener("shown.bs.tab", async (event) => {
+                const targetId = event.target.dataset.bsTarget.substring(1);
+
+                // 确保图表容器可见后再调整图表大小
+                await ensureElementVisible(`#${targetId}`);
+
+                // 为所有图表添加延迟调整，确保DOM完全渲染
+                setTimeout(() => {
+                    Object.values(charts).forEach(chart => chart.resize());
+                }, 100);
+            });
+        });
+
+        // 初始激活的标签页也需要调整
+        setTimeout(() => {
+            Object.values(charts).forEach(chart => chart.resize());
+        }, 500);
     }
 
     /**
@@ -766,25 +1072,6 @@ document.addEventListener('DOMContentLoaded', async () => {
      * 该函数现在使用更清晰的结构和共享配置来创建图表。
      */
     function initializeCharts() {
-        // --- 通用配置项 ---
-        // 适用于大多数图表的通用网格边距设置
-        const commonGrid = {
-            left: '3%',
-            right: '4%',
-            bottom: '3%',
-            containLabel: true
-        };
-
-        // 适用于大多数图表的通用提示框设置
-        const commonTooltip = {
-            trigger: 'axis',
-            axisPointer: {
-                type: 'cross',
-                label: {
-                    backgroundColor: '#6a7985'
-                }
-            }
-        };
 
         // --- 初始化函数 ---
         const initChart = (id, option) => {
@@ -928,16 +1215,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         // 番剧概览 - 年度上新趋势（折线图）
         const yearlyTrendOption = {
             tooltip: commonTooltip,
-            grid: commonGrid,
-            xAxis: {type: 'category', data: ['春番', '夏番', '秋番', '冬番']},
-            yAxis: {type: 'value'},
-            series: [{
-                name: '上新数量',
-                type: 'line',
-                smooth: true,
-                data: [200, 300, 250, 400] // 示例数据
-            }]
+            grid: {...commonGrid, bottom: '15%'}, // 为图例增加底部空间
+            xAxis: {type: 'category', data: []},
+            yAxis: {type: 'value', name: '上新数量'},
+            legend: { // 新增图例配置
+                data: [],
+                bottom: 0,
+                type: 'scroll' // 如果年份过多，图例可以滚动
+            },
+            series: [] // 初始为空，将动态填充多条折线
         };
+
 
         // 番剧概览 - 用户偏好差异（矩形树图）
         const preferenceDiffOption = {

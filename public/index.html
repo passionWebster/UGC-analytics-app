@@ -393,122 +393,180 @@
         </div>
         <div class="tab-content" id="overviewTabContent">
             <div class="tab-pane fade active show" id="yearly" role="tabpanel">
-                <div class="card p-3">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h5 class="card-title mb-0">历年番剧数量变化</h5>
-                        <div>
-                            <label for="yearlyInterval"></label><select
-                                class="form-select form-select-sm me-2 d-inline-block w-auto"
-                                id="yearlyInterval"
-                        >
-                            <option value="quarter">按季度</option>
-                            <option value="month">按月</option>
-                        </select>
-                            <button
-                                    class="btn btn-sm btn-outline-secondary"
-                                    id="refresh-yearly"
+                <div class="card p-3" style="height: 500px; width: 100%">
+                    <div class="d-flex h-100">
+                        <div class="custom-chart-panel h-100">
+                            <div
+                                    class="d-flex justify-content-between align-items-center mb-3"
                             >
-                                <i class="fas fa-refresh"></i>
-                            </button>
+                                <h5 class="card-title mb-0">历年番剧数量变化</h5>
+                            </div>
+                            <div class="chart-container h-100">
+                                <div
+                                        id="chart-yearly-trend"
+                                        style="height: 90%; width: 100%"
+                                ></div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="chart-container">
-                        <div
-                                id="chart-yearly-trend"
-                                style="height: 100%; width: 100%"
-                        ></div>
+                        <div class="custom-control-panel h-100">
+                            <div class="d-flex flex-column h-100">
+                                <h6 class="control-panel-title">视图选项</h6>
+                                <div class="flex-grow-1 control-buttons-group" id="yearly-control-buttons">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div class="tab-pane fade" id="genre" role="tabpanel">
                 <div class="card p-3" style="height: 500px; width: 100%">
-                    <div class="col-md-9">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h5 class="card-title mb-0">偏好差异</h5>
-                            <div>
-                                <label for="preferenceSelect"></label>
-                                <select class="form-select form-select-sm me-2 d-inline-block w-auto"
-                                        id="preferenceSelect">
-                                    <option value="region">地区</option>
-                                    <option value="age">年龄</option>
-                                    <option value="gender">性别</option>
-                                </select>
-                                <button class="btn btn-sm btn-outline-secondary" id="refresh-preference">
-                                    <i class="fas fa-refresh"></i>
-                                </button>
+                    <div class="d-flex h-100">
+                        <!-- 左侧图表区域 - 使用自定义类 -->
+                        <div class="custom-chart-panel h-100">
+                            <div
+                                    class="d-flex justify-content-between align-items-center mb-3"
+                            >
+                                <h5 class="card-title mb-0">偏好差异</h5>
+                                <!-- 右侧的控件已移到右侧面板，此处只保留标题 -->
+                            </div>
+                            <div class="chart-container h-100">
+                                <div
+                                        id="chart-preference-diff"
+                                        style="height: 100%; width: 100%"
+                                ></div>
                             </div>
                         </div>
-                        <div class="chart-container" style="height: 400px;">
-                            <div id="chart-preference-diff" style="height: 100%; width: 100%"></div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <h6 class="text-center">番剧筛选</h6>
-                        <div class="d-grid gap-2" id="preference-anime-buttons">
+
+                        <!-- 右侧控制区域 - 使用自定义类 -->
+                        <div class="custom-control-panel h-100">
+                            <div class="d-flex flex-column h-100">
+                                <!-- 下拉选择按钮和刷新按钮 -->
+                                <div class="d-flex align-items-center mb-3">
+                                    <select
+                                            class="form-select form-select-sm me-2"
+                                            id="preferenceSelect"
+                                    >
+                                        <option value="region">地区</option>
+                                        <option value="age">年龄</option>
+                                        <option value="gender">性别</option>
+                                    </select>
+                                    <button
+                                            class="btn btn-sm btn-outline-secondary"
+                                            id="refresh-preference"
+                                    >
+                                        <i class="fas fa-refresh"></i>
+                                    </button>
+                                </div>
+
+                                <!-- 偏好维度选择按钮 -->
+                                <h6 class="control-panel-title">偏好维度</h6>
+                                <div class="flex-grow-1 control-buttons-group" id="preference-anime-buttons">
+                                    <!-- 按钮将通过JS动态生成 -->
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
+            <!-- 收藏占比部分 - 已修改 -->
             <div class="tab-pane fade" id="rating" role="tabpanel">
-                <div class="card p-3">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h5 class="card-title mb-0">收藏占比</h5>
-                        <div>
-                            <label for="collectionInterval"></label><select
-                                class="form-select form-select-sm me-2 d-inline-block w-auto"
-                                id="collectionInterval"
-                        >
-                            <option value="spring">春番</option>
-                            <option value="summer">夏番</option>
-                            <option value="autumn">秋番</option>
-                            <option value="winter">冬番</option>
-                        </select>
-                            <button
-                                    class="btn btn-sm btn-outline-secondary"
-                                    id="refresh-collection"
+                <div class="card p-3" style="height: 500px; width: 100%">
+                    <div class="d-flex h-100">
+                        <!-- 左侧图表区域 - 使用自定义类 -->
+                        <div class="custom-chart-panel h-100">
+                            <div
+                                    class="d-flex justify-content-between align-items-center mb-3"
                             >
-                                <i class="fas fa-refresh"></i>
-                            </button>
+                                <h5 class="card-title mb-0">收藏占比</h5>
+                            </div>
+                            <div class="chart-container h-100">
+                                <div
+                                        id="chart-collection-ratio"
+                                        style="height: 90%; width: 100%"
+                                ></div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="chart-container">
-                        <div
-                                id="chart-collection-ratio"
-                                style="height: 100%; width: 100%"
-                        ></div>
+
+                        <!-- 右侧控制区域 - 使用自定义类 -->
+                        <div class="custom-control-panel h-100">
+                            <div class="d-flex flex-column h-100">
+                                <!-- 下拉选择按钮和刷新按钮 -->
+                                <div class="d-flex align-items-center mb-3">
+                                    <select
+                                            class="form-select form-select-sm me-2"
+                                            id="collectionInterval"
+                                    >
+                                        <option value="spring">春番</option>
+                                        <option value="summer">夏番</option>
+                                        <option value="autumn">秋番</option>
+                                        <option value="winter">冬番</option>
+                                    </select>
+                                    <button
+                                            class="btn btn-sm btn-outline-secondary"
+                                            id="refresh-collection"
+                                    >
+                                        <i class="fas fa-refresh"></i>
+                                    </button>
+                                </div>
+
+                                <!-- 这里可以添加额外的控制元素 -->
+                                <h6 class="control-panel-title">季度选择</h6>
+                                <div class="flex-grow-1 control-buttons-group" id="rating-control-buttons">
+                                    <!-- 按钮将通过JS动态生成 -->
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-
+            <!-- 各类别热度趋势部分 - 修改为与历年数量变化相同的结构 -->
             <div class="tab-pane fade" id="category" role="tabpanel">
                 <div class="card p-3" style="height: 500px; width: 100%">
-                    <div class="row">
-                        <div class="col-md-9">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="d-flex h-100">
+                        <!-- 左侧图表区域 - 使用自定义类 -->
+                        <div class="custom-chart-panel h-100">
+                            <div
+                                    class="d-flex justify-content-between align-items-center mb-3"
+                            >
                                 <h5 class="card-title mb-0">各类别热度趋势</h5>
-                                <div>
+                            </div>
+                            <div class="chart-container h-100">
+                                <div
+                                        id="chart-category-trend"
+                                        style="height: 90%; width: 100%"
+                                ></div>
+                            </div>
+                        </div>
+
+                        <!-- 右侧控制区域 - 使用自定义类 -->
+                        <div class="custom-control-panel h-100">
+                            <div class="d-flex flex-column h-100">
+                                <!-- 下拉选择按钮和刷新按钮 -->
+                                <div class="d-flex align-items-center mb-3">
                                     <label for="categoryTrendInterval"></label><select
-                                        class="form-select form-select-sm me-2 d-inline-block w-auto"
-                                        id="categoryTrendInterval">
+                                        class="form-select form-select-sm me-2"
+                                        id="categoryTrendInterval"
+                                >
                                     <option value="jan">1月份</option>
                                     <option value="apr">4月份</option>
                                     <option value="jul">7月份</option>
                                     <option value="oct">10月份</option>
                                 </select>
-                                    <button class="btn btn-sm btn-outline-secondary" id="refresh-category-trend">
+                                    <button
+                                            class="btn btn-sm btn-outline-secondary"
+                                            id="refresh-category-trend"
+                                    >
                                         <i class="fas fa-refresh"></i>
                                     </button>
                                 </div>
-                            </div>
-                            <div class="chart-container" style="height: 400px;">
-                                <div id="chart-category-trend" style="height: 100%; width: 100%"></div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <h6 class="text-center">类别筛选</h6>
-                            <div class="d-grid gap-2" id="category-trend-buttons">
+
+                                <!-- 类别筛选按钮 -->
+                                <h6 class="control-panel-title">类别筛选</h6>
+                                <div class="flex-grow-1 control-buttons-group" id="category-trend-buttons">
+                                    <!-- 按钮将通过JS动态生成 -->
+                                </div>
                             </div>
                         </div>
                     </div>
