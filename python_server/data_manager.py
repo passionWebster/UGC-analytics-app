@@ -39,6 +39,11 @@ class BangumiDataManager:
         10047: '乙女', 10048: '职场'
     }
 
+    AREA_MAP = {
+        2: '日本',
+        3: '美国'
+    }
+
     # 伪装成浏览器的请求头
     HEADERS = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -82,7 +87,8 @@ class BangumiDataManager:
         if '万' in order_str: return int(num * 10_000)
         return int(num)
 
-    def _fetch_pages(self, order_type: int, style_id: int, year: str = '-1', season_month: int = -1) -> tuple[list, int]:
+    def _fetch_pages(self, order_type: int, style_id: int, year: str = '-1', season_month: int = -1, area: int = -1) -> \
+            tuple[list, int]:
         """
         一个内部方法，用于分页抓取指定排序类型、风格、年份和月份的数据。
         """
@@ -99,7 +105,7 @@ class BangumiDataManager:
             # API请求参数
             params = {
                 'st': 1, 'order': order_type, 'season_version': -1, 'spoken_language_type': -1,
-                'area': -1, 'is_finish': -1, 'copyright': -1, 'season_status': -1,
+                'area': area, 'is_finish': -1, 'copyright': -1, 'season_status': -1,
                 'season_month': season_month, 'year': year, 'style_id': style_id, 'sort': 0,
                 'season_type': 1, 'type': 1,
                 'page': i, 'pagesize': self.pagesize
@@ -160,6 +166,7 @@ class BangumiDataManager:
                 if season_id not in all_bangumis:
                     item['styles'] = []
                     item['release_dates'] = []
+                    item['areas'] = []
                     item['views'] = self._convert_order_to_int(item.get('order', '0'))
                     all_bangumis[season_id] = item
 
@@ -179,7 +186,30 @@ class BangumiDataManager:
             print("❌ 未能获取到任何番剧数据，任务终止。")
             return None
 
-        print(f"\n--- 已获取 {len(all_bangumis)} 部番剧作为基础数据，开始填充风格信息 ---")
+        print(f"\n--- 已获取 {len(all_bangumis)} 部番剧作为基础数据，开始填充地区信息 ---")
+
+        japan_anime_ids = set()
+        usa_anime_ids = set()
+
+        japan_list, _ = self._fetch_pages(order_type=2, style_id=-1, area=2)
+        for item in japan_list:
+            if item.get('season_id'):
+                japan_anime_ids.add(item.get('season_id'))
+
+        usa_list, _ = self._fetch_pages(order_type=2, style_id=-1, area=3)
+        for item in usa_list:
+            if item.get('season_id'):
+                usa_anime_ids.add(item.get('season_id'))
+
+        for season_id, item in all_bangumis.items():
+            if season_id in japan_anime_ids:
+                item['areas'].append('日本')
+            if season_id in usa_anime_ids:
+                item['areas'].append('美国')
+            if not item['areas']:
+                item['areas'].append('其他')
+
+        print(f"\n--- 已填充地区信息，开始填充风格信息 ---")
 
         # --- 3. 遍历所有具体风格，为已有番剧填充风格 ---
         if not self.style_map:
