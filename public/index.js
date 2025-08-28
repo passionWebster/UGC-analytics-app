@@ -24,6 +24,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     let userPreferences = []; // 存储从后端获取的用户偏好
     let currentSortBy = 'score'; // 当前的排序标准
 
+    /**
+     * @function fetchUserPreferences
+     * @description 【新增】获取当前登录用户的偏好设置，并更新全局变量。
+     */
+    async function fetchUserPreferences() {
+        const currentUser = localStorage.getItem('username') || sessionStorage.getItem('username');
+        if (!currentUser) {
+            console.log("用户未登录，无法获取偏好。");
+            return; // 如果未登录，则不执行任何操作
+        }
+        try {
+            const res = await fetch(`http://localhost:3000/api/user-info?username=${currentUser}&t=${new Date().getTime()}`);
+            if (res.ok) {
+                const data = await res.json();
+                // 确保数据结构正确，并更新全局变量
+                if (data.user && Array.isArray(data.user.preferences)) {
+                    userPreferences = data.user.preferences;
+                    console.log("用户偏好已成功获取:", userPreferences);
+                } else {
+                    userPreferences = []; // 如果没有偏好设置，确保为空数组
+                }
+            } else {
+                console.error("获取用户偏好失败，服务器响应:", res.status);
+                userPreferences = [];
+            }
+        } catch (error) {
+            console.error("获取用户偏好时发生网络错误:", error);
+            userPreferences = []; // 出错时，确保为空数组
+        }
+    }
+
     // ------------------- 2.1 全局通用 ECharts 配置 -------------------
     const commonGrid = {
         left: '3%',
@@ -44,6 +75,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ------------------- 3. 功能模块初始化 -------------------
 
     try {
+        await fetchUserPreferences();
         initializeNavigation();
         initializeCharts();
         initializeBangumiSearch();
@@ -212,31 +244,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         preferencesBtn.parentNode.appendChild(tooltip);
 
         // 2. 绑定事件监听器
-        preferencesBtn.addEventListener("mouseenter", async () => {
-            const currentUser = localStorage.getItem('username') || sessionStorage.getItem('username');
-            let preferences = [];
-
-            if (currentUser) {
-                try {
-                    const res = await fetch(`http://localhost:3000/api/user-info?username=${currentUser}&t=${new Date().getTime()}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        preferences = data.user && data.user.preferences ? data.user.preferences : [];
-                        if (!Array.isArray(preferences)) preferences = [];
-                    }
-                } catch (e) {
-                    console.error("获取偏好失败:", e);
-                }
-            }
-
-            // 更新全局变量，供点击事件使用
-            userPreferences = preferences;
-
-            // 根据获取到的偏好更新提示内容
-            if (preferences.length > 0) {
+        preferencesBtn.addEventListener("mouseenter", () => {
+            if (userPreferences.length > 0) {
                 tooltipContent.innerHTML = `
                     <i class="fas fa-info-circle me-2"></i>
-                    根据您的偏好设置：${preferences.join(", ")}。如果需要更改偏好，请移动到个人中心。`;
+                    根据您的偏好设置：${userPreferences.join(", ")}。如果需要更改偏好，请移动到个人中心。`;
             } else {
                 tooltipContent.innerHTML = `
                     <i class="fas fa-exclamation-triangle me-2"></i>
@@ -677,44 +689,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     /**
      * @function initCommonControlButtons
-     * @description 初始化通用控制按钮。从用户偏好中获取按钮数据。
+     * @description 初始化通用控制按钮。根据容器ID决定是从用户偏好还是从固定列表获取按钮数据。
      */
-    async function initCommonControlButtons(containerId) {
+    function initCommonControlButtons(containerId) {
         const container = document.getElementById(containerId);
         if (!container) return;
 
         try {
-            const currentUser = localStorage.getItem('username') || sessionStorage.getItem('username');
-            let preferences = [];
+            let buttonsHtml = '';
 
-            if (currentUser) {
-                const res = await fetch(`http://localhost:3000/api/user-info?username=${currentUser}&t=${new Date().getTime()}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    preferences = data.user && data.user.preferences ? data.user.preferences : [];
-                    if (!Array.isArray(preferences)) preferences = [];
-                }
-            }
-
-            // 如果用户没有设置偏好，可以提供一个默认列表或不显示任何按钮
-            if (preferences.length === 0) {
-                console.warn(`容器 ${containerId} 没有可用的偏好按钮数据。`);
-                // 您可以在此处添加默认按钮或提示信息
+            // 【核心修改】判断是否是地区维度的按钮容器
+            if (containerId === "preference-anime-buttons") {
+                const regions = ["日本", "美国", "其他"];
+                buttonsHtml = regions.map((region, index) => {
+                    const isActive = index === 0; // 默认激活第一个按钮
+                    const value = region === "全部" ? "all" : region; // "全部"对应的值是"all"
+                    const buttonClass = isActive ? "btn btn-primary btn-sm active" : "btn btn-outline-secondary btn-sm";
+                    return `<button class="${buttonClass}" data-value="${value}">${region}</button>`;
+                }).join("");
+            } else {
+                if (userPreferences.length === 0) {
                 container.innerHTML = '<small class="text-muted">请先在个人中心设置偏好</small>';
                 return;
             }
-
-            // 创建按钮HTML，始终包含“所有番剧”选项
-            let buttonsHtml = `
-                <button class="btn btn-primary btn-sm active" data-value="all">所有番剧</button>
-            `;
-
-            buttonsHtml += preferences
-                .map(
-                    (preference) =>
-                        `<button class="btn btn-outline-secondary btn-sm" data-value="${preference}">${preference}</button>`
-                )
-                .join("");
+                buttonsHtml = `<button class="btn btn-primary btn-sm active" data-value="all">所有番剧</button>`;
+                buttonsHtml += userPreferences.map(
+                    (p) => `<button class="btn btn-outline-secondary btn-sm" data-value="${p}">${p}</button>`
+                ).join("");
+            }
 
             container.innerHTML = buttonsHtml;
 
@@ -747,55 +749,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         const container = document.getElementById("category-trend-buttons");
         if (!container) return;
 
-        try {
-            const currentUser = localStorage.getItem('username') || sessionStorage.getItem('username');
-            let preferences = [];
-
-            if (currentUser) {
-                const res = await fetch(`http://localhost:3000/api/user-info?username=${currentUser}&t=${new Date().getTime()}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    preferences = data.user && data.user.preferences ? data.user.preferences : [];
-                    if (!Array.isArray(preferences)) preferences = [];
-                }
-            }
-
-            if (preferences.length === 0) {
-                console.warn(`容器 category-trend-buttons 没有可用的偏好按钮数据。`);
-                container.innerHTML = '<small class="text-muted">无可用类别</small>';
-                // 确保图表为空状态
-                await updateCategoryTrendChart();
-                return;
-            }
-
-            // 创建按钮HTML，默认全部激活
-            container.innerHTML = preferences
-                .map(
-                    (preference) =>
-                        `<button class="btn btn-primary btn-sm active" data-category="${preference}">${preference}</button>`
-                )
-                .join("");
-
-            // 添加点击事件
-            container.addEventListener("click", function (e) {
-                if (e.target.tagName === "BUTTON") {
-                    // 切换按钮状态
-                    e.target.classList.toggle("active");
-                    e.target.classList.toggle("btn-primary");
-                    e.target.classList.toggle("btn-outline-secondary");
-
-                    // 触发图表更新
-                    updateCategoryTrendChart();
-                }
-            });
-
-            // 初始加载一次图表
+        if (userPreferences.length === 0) {
+            console.warn(`容器 category-trend-buttons 没有可用的偏好按钮数据。`);
+            container.innerHTML = '<small class="text-muted">无可用类别</small>';
+            // 确保图表在没有数据时显示为空状态
             await updateCategoryTrendChart();
-
-        } catch (error) {
-            console.error("初始化类别趋势按钮失败:", error);
-            container.innerHTML = '<div class="text-danger">加载按钮失败</div>';
+            return;
         }
+
+        // 根据用户偏好创建按钮HTML，默认全部激活
+        container.innerHTML = userPreferences
+            .map(
+                (preference) =>
+                    `<button class="btn btn-primary btn-sm active" data-category="${preference}">${preference}</button>`
+            )
+            .join("");
+
+        // 添加点击事件
+        container.addEventListener("click", function (e) {
+            if (e.target.tagName === "BUTTON") {
+                // 切换按钮状态
+                e.target.classList.toggle("active");
+                e.target.classList.toggle("btn-primary");
+                e.target.classList.toggle("btn-outline-secondary");
+
+                // 触发图表更新
+                updateCategoryTrendChart();
+            }
+        });
+
+        // 初始加载一次图表
+        await updateCategoryTrendChart();
     }
 
     /**
@@ -815,30 +799,142 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     /**
      * @function updatePreferenceChart
-     * @description 更新偏好差异图表。
+     * @description 更新偏好差异图表，计算并展示“地区偏好指数”。
      */
     async function updatePreferenceChart() {
         const chart = charts['preference-diff'];
         if (!chart) return;
 
-        const selectedButton = document.querySelector('#preference-anime-buttons .btn.active');
-        const selectedAnime = selectedButton ? selectedButton.dataset.value : 'all';
-        const selectedDimension = document.getElementById('preferenceSelect').value;
-
         try {
             chart.showLoading();
-            // 假设后端API为 /api/preference_data
-            const response = await fetch(`http://localhost:5000/api/preference_data?anime=${selectedAnime}&dimension=${selectedDimension}`);
-            const data = await response.json();
 
-            chart.setOption({
-                series: [{
-                    data: data.chartData || []
-                }]
+
+            if (!allRankedAnimes || allRankedAnimes.length === 0) {
+                console.warn("番剧数据尚未加载，无法更新偏好图表。");
+                chart.hideLoading();
+                return;
+            }
+
+            // --- 步骤 1: 计算每种类型的“全球”平均追番人数作为唯一基准 ---
+            const globalGenreStats = {};
+
+            allRankedAnimes.forEach(anime => {
+                if (anime.styles && Array.isArray(anime.styles)) {
+                    anime.styles.forEach(style => {
+                        if (!globalGenreStats[style]) {
+                            globalGenreStats[style] = {totalFavorites: 0, count: 0};
+                        }
+                        globalGenreStats[style].totalFavorites += anime.favorites || 0;
+                        globalGenreStats[style].count++;
+                    });
+                }
             });
+
+            for (const style in globalGenreStats) {
+                const stats = globalGenreStats[style];
+                stats.avgFavorites = stats.count > 0 ? stats.totalFavorites / stats.count : 0;
+            }
+
+            // --- 步骤 2: 计算“选中地区”的统计数据 ---
+            const selectedButton = document.querySelector('#preference-anime-buttons .btn.active');
+            const selectedRegion = selectedButton ? selectedButton.dataset.value : 'all';
+
+            const regionalAnimes = selectedRegion === 'all'
+                ? allRankedAnimes
+                : allRankedAnimes.filter(anime =>
+                    anime.areas && Array.isArray(anime.areas) && anime.areas.includes(selectedRegion)
+                );
+
+            const regionalGenreStats = {};
+            regionalAnimes.forEach(anime => {
+                if (anime.styles && Array.isArray(anime.styles)) {
+                    anime.styles.forEach(style => {
+                        if (!regionalGenreStats[style]) {
+                            regionalGenreStats[style] = {totalFavorites: 0, count: 0};
+                        }
+                        regionalGenreStats[style].totalFavorites += anime.favorites || 0;
+                        regionalGenreStats[style].count++;
+                    });
+                }
+            });
+
+            for (const style in regionalGenreStats) {
+                const stats = regionalGenreStats[style];
+                stats.avgFavorites = stats.count > 0 ? stats.totalFavorites / stats.count : 0;
+            }
+
+            // --- 步骤 3: 计算“地区偏好指数”并构建图表数据 ---
+            const chartData = [];
+            for (const style in regionalGenreStats) {
+                const regionalStats = regionalGenreStats[style];
+                const globalStats = globalGenreStats[style];
+
+                if (regionalStats && globalStats && globalStats.avgFavorites > 0) {
+                    // 核心公式：地区偏好指数 = 地区平均追番 / 全球平均追番
+                    const preferenceIndex = regionalStats.avgFavorites / globalStats.avgFavorites;
+
+                    if (regionalStats.count < 3) continue;
+
+                    chartData.push({
+                        name: style,
+                        value: parseFloat(preferenceIndex.toFixed(2)),
+                        regionalAvg: regionalStats.avgFavorites.toFixed(0),
+                        globalAvg: globalStats.avgFavorites.toFixed(0), // 基准始终是 global
+                        itemStyle: {
+                            color: userPreferences.includes(style) ? '#fb7299' : '#87CEFA',
+                            borderRadius: 4,
+                            borderWidth: 2,
+                            borderColor: '#fff',
+                            gapWidth: 2
+                        }
+                    });
+                }
+            }
+
+            // --- 步骤 4: 更新图表和 Tooltip ---
+            chart.setOption({
+                tooltip: {
+                    trigger: 'item',
+                    formatter: (params) => {
+                        if (!params.data || params.data.value == null) {
+                            return; // 修复 bug
+                        }
+                        const data = params.data;
+                        let comparisonText = '';
+                        if (data.value > 1.1) {
+                            comparisonText = `<span style="color: #28a745;">(高于全球)</span>`;
+                        } else if (data.value < 0.9) {
+                            comparisonText = `<span style="color: #dc3545;">(低于全球)</span>`;
+                        } else {
+                            comparisonText = `<span>(与全球持平)</span>`;
+                        }
+                        return `
+                            <b>${data.name}</b><br/>
+                            地区偏好指数: <b style="font-size: 1.2em;">${data.value}</b> ${comparisonText}<br/>
+                            <hr style="margin: 4px 0;">
+                            该地区均追番: ${parseInt(data.regionalAvg).toLocaleString()}<br/>
+                            全球平均追番: ${parseInt(data.globalAvg).toLocaleString()}
+                        `;
+                    }
+                },
+                series: [{
+                    type: 'treemap',
+                    roam: false,
+                    nodeClick: false,
+                    breadcrumb: {show: false},
+                    label: {
+                        show: true,
+                        position: 'inside',
+                        formatter: (params) => `${params.name}\n${params.value}`,
+                        color: '#fff',
+                        fontSize: 14
+                    },
+                    data: chartData
+                }]
+            }, {notMerge: true});
+
         } catch (error) {
             console.error('更新偏好差异图表失败:', error);
-            // 可以在图表上显示错误信息
         } finally {
             chart.hideLoading();
         }
@@ -1016,10 +1112,6 @@ document.addEventListener('DOMContentLoaded', async () => {
      */
     function initializeOverviewModule() {
         // --- 1. 为所有控制元素（下拉框）绑定事件监听器 ---
-
-        // 偏好差异
-        document.getElementById('preferenceSelect').addEventListener('change', updatePreferenceChart);
-
         // 收藏占比
         document.getElementById('collectionInterval').addEventListener('change', updateRatingChart);
 
