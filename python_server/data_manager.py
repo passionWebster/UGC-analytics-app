@@ -15,8 +15,8 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 class BangumiDataManager:
     """
     一个统一的数据管理模块，负责：
-    1. 从B站API按不同风格批量抓取番剧排名数据，并为每部番剧添加风格数组。
-    2. 确保所有番剧（包括无风格的）都被写入缓存。
+    1. 从B站API按不同风格、不同时间批量抓取番剧排名数据。
+    2. 为每部番剧添加风格数组和发布时间数组。
     3. 合并播放量和追番量，生成 rank_cache.json。
     4. 对排名数据进行月度聚合，并生成月度报告JSON文件。
     """
@@ -82,21 +82,25 @@ class BangumiDataManager:
         if '万' in order_str: return int(num * 10_000)
         return int(num)
 
-    def _fetch_pages(self, order_type: int, style_id: int) -> tuple[list, int]:
+    def _fetch_pages(self, order_type: int, style_id: int, year: str = '-1', season_month: int = -1) -> tuple[list, int]:
         """
-        一个内部方法，用于分页抓取指定排序类型和风格的数据。
+        一个内部方法，用于分页抓取指定排序类型、风格、年份和月份的数据。
         """
         all_items, total_count = [], 0
         # --- 修改：为 style_id=-1 提供 "全部" 标签 ---
         style_name = self.style_map.get(style_id, "全部" if style_id == -1 else f"未知ID {style_id}")
-        print(f"--- 正在抓取风格为“{style_name}”的数据 ---")
+
+        year_display = year if year != '-1' else "全部"
+        month_display = season_month if season_month != -1 else "全部"
+        time_desc = f"年份: {year_display}, 月份: {month_display}"
+        print(f"--- 正在抓取风格为“{style_name}”的数据, {time_desc} ---")
 
         for i in range(1, self.pages_to_fetch + 1):
             # API请求参数
             params = {
                 'st': 1, 'order': order_type, 'season_version': -1, 'spoken_language_type': -1,
                 'area': -1, 'is_finish': -1, 'copyright': -1, 'season_status': -1,
-                'season_month': -1, 'year': -1, 'style_id': style_id, 'sort': 0,
+                'season_month': season_month, 'year': year, 'style_id': style_id, 'sort': 0,
                 'season_type': 1, 'type': 1,
                 'page': i, 'pagesize': self.pagesize
             }
@@ -111,6 +115,7 @@ class BangumiDataManager:
                     if i == 1 and 'total' in api_data: total_count = api_data['total']
                     print(f"  ✅ 成功获取第 {i} 页，共 {len(page_list)} 条。")
                     all_items.extend(page_list)
+                    time.sleep(1)
                     if len(page_list) < self.pagesize:
                         break
                 else:
@@ -130,19 +135,49 @@ class BangumiDataManager:
 
         all_bangumis = {}
 
-        # --- 1. 获取全量番剧列表作为基础数据 ---
-        base_list, _ = self._fetch_pages(order_type=2, style_id=-1)
-        if not base_list:
-            print("❌ 无法获取基础番剧列表，任务终止。")
-            return None
+        print("\n--- 开始按年份和月份获取番剧列表，以构建基础数据库 ---")
+        years_to_scan = list(range(2025, 2014, -1))
+        months_to_scan = [1, 4, 7, 10]
+        time_params_list = []
 
-        # --- 2. 初始化所有番剧，并设置空的 styles 列表 ---
-        for item in base_list:
-            season_id = item.get('season_id')
-            if not season_id: continue
-            item['styles'] = []  # 初始化为空列表
-            item['views'] = self._convert_order_to_int(item.get('order', '0'))
-            all_bangumis[season_id] = item
+        for year in years_to_scan:
+            for month in months_to_scan:
+                time_params_list.append({'year_val': year, 'month_val': month, 'year_param': f"[{year},{year + 1})"})
+
+        time_params_list.append({'year_val': -1, 'month_val': -1, 'year_param': '-1'})
+
+        for params in time_params_list:
+            year_val = params['year_val']
+            month_val = params['month_val']
+            year_param = params['year_param']
+
+            time_based_list, _ = self._fetch_pages(order_type=2, style_id=-1, year=year_param, season_month=month_val)
+
+            for item in time_based_list:
+                season_id = item.get('season_id')
+                if not season_id: continue
+
+                if season_id not in all_bangumis:
+                    item['styles'] = []
+                    item['release_dates'] = []
+                    item['views'] = self._convert_order_to_int(item.get('order', '0'))
+                    all_bangumis[season_id] = item
+
+                tag = "更早" if year_val == -1 else f"{year_val}-{month_val:02d}"
+                existing_dates = all_bangumis[season_id]['release_dates']
+
+                if tag != "更早":
+                    if "更早" in existing_dates:
+                        existing_dates.remove("更早")
+                    if tag not in existing_dates:
+                        existing_dates.append(tag)
+                else:
+                    if not existing_dates:
+                        existing_dates.append("更早")
+
+        if not all_bangumis:
+            print("❌ 未能获取到任何番剧数据，任务终止。")
+            return None
 
         print(f"\n--- 已获取 {len(all_bangumis)} 部番剧作为基础数据，开始填充风格信息 ---")
 
@@ -169,8 +204,7 @@ class BangumiDataManager:
         for season_id, item in all_bangumis.items():
             item['favorites'] = favorites_map.get(season_id, 0)
 
-        # --- 5. 写入文件 ---
-        merged_list = list(all_bangumis.values())
+        merged_list = sorted(list(all_bangumis.values()), key=lambda x: x.get('views', 0), reverse=True)
         cache_data = {"total": len(merged_list), "list": merged_list,
                       "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
