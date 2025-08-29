@@ -348,7 +348,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         let topLevelSeriesData;
         let otherLevelSeriesData = [];
-        const MAX_SLICES = 19;
+        const MAX_SLICES = 21;
 
         if (sortedStyles.length <= MAX_SLICES) {
             topLevelSeriesData = sortedStyles.map(([name, value]) => ({name, value}));
@@ -700,7 +700,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // 【核心修改】判断是否是地区维度的按钮容器
             if (containerId === "preference-anime-buttons") {
-                const regions = ["日本", "美国", "其他"];
+                const regions = ["国内", "日本", "美国", "其他"];
                 buttonsHtml = regions.map((region, index) => {
                     const isActive = index === 0; // 默认激活第一个按钮
                     const value = region === "全部" ? "all" : region; // "全部"对应的值是"all"
@@ -801,23 +801,19 @@ document.addEventListener('DOMContentLoaded', async () => {
      * @function updatePreferenceChart
      * @description 更新偏好差异图表，计算并展示“地区偏好指数”。
      */
-    async function updatePreferenceChart() {
+    async function updatePreferenceChart() { // 注意：此函数已无 selectedValue 参数，它会从 DOM 中自行获取
         const chart = charts['preference-diff'];
         if (!chart) return;
 
         try {
             chart.showLoading();
 
-
             if (!allRankedAnimes || allRankedAnimes.length === 0) {
-                console.warn("番剧数据尚未加载，无法更新偏好图表。");
                 chart.hideLoading();
                 return;
             }
 
-            // --- 步骤 1: 计算每种类型的“全球”平均追番人数作为唯一基准 ---
             const globalGenreStats = {};
-
             allRankedAnimes.forEach(anime => {
                 if (anime.styles && Array.isArray(anime.styles)) {
                     anime.styles.forEach(style => {
@@ -829,21 +825,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                 }
             });
-
             for (const style in globalGenreStats) {
                 const stats = globalGenreStats[style];
                 stats.avgFavorites = stats.count > 0 ? stats.totalFavorites / stats.count : 0;
             }
 
-            // --- 步骤 2: 计算“选中地区”的统计数据 ---
             const selectedButton = document.querySelector('#preference-anime-buttons .btn.active');
-            const selectedRegion = selectedButton ? selectedButton.dataset.value : 'all';
+            const selectedRegion = selectedButton ? selectedButton.dataset.value : '国内'; // 默认值改为'国内'
 
             const regionalAnimes = selectedRegion === 'all'
                 ? allRankedAnimes
-                : allRankedAnimes.filter(anime =>
-                    anime.areas && Array.isArray(anime.areas) && anime.areas.includes(selectedRegion)
-                );
+                : allRankedAnimes.filter(anime => anime.area && anime.area === selectedRegion);
 
             const regionalGenreStats = {};
             regionalAnimes.forEach(anime => {
@@ -857,29 +849,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                 }
             });
-
             for (const style in regionalGenreStats) {
                 const stats = regionalGenreStats[style];
                 stats.avgFavorites = stats.count > 0 ? stats.totalFavorites / stats.count : 0;
             }
 
-            // --- 步骤 3: 计算“地区偏好指数”并构建图表数据 ---
             const chartData = [];
             for (const style in regionalGenreStats) {
                 const regionalStats = regionalGenreStats[style];
                 const globalStats = globalGenreStats[style];
-
                 if (regionalStats && globalStats && globalStats.avgFavorites > 0) {
-                    // 核心公式：地区偏好指数 = 地区平均追番 / 全球平均追番
                     const preferenceIndex = regionalStats.avgFavorites / globalStats.avgFavorites;
-
                     if (regionalStats.count < 3) continue;
-
                     chartData.push({
                         name: style,
                         value: parseFloat(preferenceIndex.toFixed(2)),
                         regionalAvg: regionalStats.avgFavorites.toFixed(0),
-                        globalAvg: globalStats.avgFavorites.toFixed(0), // 基准始终是 global
+                        globalAvg: globalStats.avgFavorites.toFixed(0),
                         itemStyle: {
                             color: userPreferences.includes(style) ? '#fb7299' : '#87CEFA',
                             borderRadius: 4,
@@ -891,13 +877,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
 
-            // --- 步骤 4: 更新图表和 Tooltip ---
+            // 更新图表时，并不会修改 preferenceDiffOption 全局变量，而是直接 setOption
             chart.setOption({
-                tooltip: {
+                tooltip: { // Tooltip 配置直接在这里定义
                     trigger: 'item',
                     formatter: (params) => {
-                        if (!params.data || params.data.value == null) {
-                            return; // 修复 bug
+                        // ############ 主要修改点 1 (针对你提供的参考): 增强对矩形树图 formatter 的安全检查 ############
+                        if (!params || !params.data || params.data.value == null) {
+                            return ''; // 统一返回空字符串以隐藏提示框
                         }
                         const data = params.data;
                         let comparisonText = '';
@@ -908,13 +895,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         } else {
                             comparisonText = `<span>(与全球持平)</span>`;
                         }
-                        return `
-                            <b>${data.name}</b><br/>
-                            地区偏好指数: <b style="font-size: 1.2em;">${data.value}</b> ${comparisonText}<br/>
-                            <hr style="margin: 4px 0;">
-                            该地区均追番: ${parseInt(data.regionalAvg).toLocaleString()}<br/>
-                            全球平均追番: ${parseInt(data.globalAvg).toLocaleString()}
-                        `;
+                        return `<b>${data.name}</b><br/>地区偏好指数: <b style="font-size: 1.2em;">${data.value}</b> ${comparisonText}<br/><hr style="margin: 4px 0;">该地区均追番: ${parseInt(data.regionalAvg).toLocaleString()}<br/>全球平均追番: ${parseInt(data.globalAvg).toLocaleString()}`;
                     }
                 },
                 series: [{
@@ -967,8 +948,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const yearlyData = {};
 
             filteredAnimes.forEach(anime => {
-                if (anime.release_dates && anime.release_dates.length > 0) {
-                    const dateParts = anime.release_dates[0].split('-');
+                if (anime.release_date && typeof anime.release_date === 'string') {
+                    const dateParts = anime.release_date.split('-');
                     if (dateParts.length < 2) return;
 
                     const year = dateParts[0];
@@ -980,15 +961,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     switch (month) {
                         case 1:
+                        case 2:
+                        case 3:
                             yearlyData[year][0]++;
                             break;
                         case 4:
+                        case 5:
+                        case 6:
                             yearlyData[year][1]++;
                             break;
                         case 7:
+                        case 8:
+                        case 9:
                             yearlyData[year][2]++;
                             break;
                         case 10:
+                        case 11:
+                        case 12:
                             yearlyData[year][3]++;
                             break;
                     }
@@ -1003,7 +992,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 data: yearlyData[year]
             }));
 
-            const xData = ['春番(1月)', '夏番(4月)', '秋番(7月)', '冬番(10月)'];
+            const xData = ['春季(1-3月)', '夏季(4-6月)', '秋季(7-9月)', '冬季(10-12月)'];
 
             chart.setOption({
                 tooltip: commonTooltip,
@@ -1192,6 +1181,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             tooltip: {
                 trigger: "item",
                 formatter: (params) => {
+                    if (!params || params.value == null || params.name == null) {
+                        return ''; // 返回空字符串，隐藏提示框
+                    }
                     // params.marker 是提示框前面的小圆点
                     const defaultFormat = `${params.marker}${params.name}: ${params.value} (${params.percent}%)`;
 
@@ -1321,7 +1313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 番剧概览 - 用户偏好差异（矩形树图）
         const preferenceDiffOption = {
-            tooltip: {trigger: 'item', formatter: "{b}: {c}"},
+            tooltip: {trigger: 'item'},
             series: [{
                 type: 'treemap',
                 roam: false,
