@@ -77,6 +77,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         await fetchUserPreferences();
         initializeNavigation();
+        initializeCustomSelect();
         initializeCharts();
         initializeBangumiSearch();
         await initializeHomepage();
@@ -783,6 +784,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     /**
+     * @function filterAnimeData
+     * @description 根据传入的条件筛选番剧数据
+     * @param {object} filters - 包含筛选条件的配置对象。
+     * @returns {Array} - 经过筛选的番剧数组。
+     */
+    function filterAnimeData(filters = {}) {
+        const {season = 'all', category = 'all', checkExists = []} = filters;
+
+        const seasonMap = {
+            'winter': [1, 2, 3], 'spring': [4, 5, 6],
+            'summer': [7, 8, 9], 'autumn': [10, 11, 12]
+        };
+
+        return allRankedAnimes.filter(anime => {
+            // 检查必须存在的字段是否有效
+            for (const field of checkExists) {
+                const value = anime[field];
+                if (!value || value <= 0) return false;
+                // 对评分为字符串的情况做特殊处理
+                if (field === 'score' && parseFloat(value) <= 0) return false;
+            }
+
+            // 按季节筛选
+            if (season !== 'all') {
+                const releaseDateParts = anime.release_date ? String(anime.release_date).split('-') : [];
+                if (releaseDateParts.length < 2) return false;
+                const releaseMonth = parseInt(releaseDateParts[1], 10);
+                if (isNaN(releaseMonth) || !seasonMap[season].includes(releaseMonth)) return false;
+            }
+
+            // 按类型筛选
+            if (category !== 'all') {
+                if (!Array.isArray(anime.styles) || !anime.styles.includes(selectedCategory)) return false;
+            }
+
+            return true;
+        });
+    }
+
+    /**
      * @function updateChartBasedOnSelection
      * @description 根据选择更新图表
      */
@@ -793,8 +834,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (containerId === "yearly-control-buttons") {
             updateYearlyChart(selectedValue);
         } else if (containerId === "rating-control-buttons") {
-            updateRatingChart(selectedValue);
+            updateQualityScoreChart(selectedValue);
         }
+    }
+
+    /**
+     * @function initializeCustomSelect
+     * @description 自定义下拉框交互逻辑。
+     */
+    function initializeCustomSelect() {
+        const customSelect = document.querySelector('.custom-select');
+        if (!customSelect) return;
+
+        const trigger = customSelect.querySelector('.custom-select-trigger');
+        const options = customSelect.querySelectorAll('.custom-option');
+        const originalSelect = document.getElementById('collectionInterval');
+
+        // 点击触发器，展开/收起选项
+        trigger.addEventListener('click', () => {
+            customSelect.classList.toggle('open');
+        });
+
+        // 点击选项
+        options.forEach(option => {
+            option.addEventListener('click', () => {
+                // 移除旧的选中状态
+                options.forEach(opt => opt.classList.remove('selected'));
+                // 添加新的选中状态
+                option.classList.add('selected');
+                // 更新显示文本
+                trigger.querySelector('span').textContent = option.textContent;
+                // **关键：同步更新隐藏的真实 <select> 的值**
+                originalSelect.value = option.dataset.value;
+                // **关键：手动触发 change 事件，让 ECharts 图表更新**
+                originalSelect.dispatchEvent(new Event('change'));
+                // 关闭下拉
+                customSelect.classList.remove('open');
+            });
+        });
+
+        // 点击外部区域关闭下拉框
+        document.addEventListener('click', (e) => {
+            if (!customSelect.contains(e.target)) {
+                customSelect.classList.remove('open');
+            }
+        });
     }
 
     /**
@@ -941,9 +1025,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             chart.showLoading();
 
-            const filteredAnimes = selectedCategory === 'all'
-                ? allRankedAnimes
-                : allRankedAnimes.filter(anime => anime.styles && anime.styles.includes(selectedCategory));
+            const filteredAnimes = filterAnimeData({category: selectedCategory});
 
             const yearlyData = {};
 
@@ -959,28 +1041,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         yearlyData[year] = [0, 0, 0, 0];
                     }
 
-                    switch (month) {
-                        case 1:
-                        case 2:
-                        case 3:
-                            yearlyData[year][0]++;
-                            break;
-                        case 4:
-                        case 5:
-                        case 6:
-                            yearlyData[year][1]++;
-                            break;
-                        case 7:
-                        case 8:
-                        case 9:
-                            yearlyData[year][2]++;
-                            break;
-                        case 10:
-                        case 11:
-                        case 12:
-                            yearlyData[year][3]++;
-                            break;
-                    }
+                    // 月份到季度的映射
+                    if (month >= 1 && month <= 3) yearlyData[year][0]++;
+                    else if (month >= 4 && month <= 6) yearlyData[year][1]++;
+                    else if (month >= 7 && month <= 9) yearlyData[year][2]++;
+                    else if (month >= 10 && month <= 12) yearlyData[year][3]++;
                 }
             });
 
@@ -1017,36 +1082,111 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     /**
-     * @function updateRatingChart
-     * @description 更新收藏占比图表。
+     * @function updateQualityScoreChart
+     * @description 计算并更新“口碑热度指数”图表。
      */
-    async function updateRatingChart() {
-        const chart = charts['collection-ratio'];
-        if (!chart) return;
+    async function updateQualityScoreChart() {
+        const chart = charts['collection-ratio']; // 沿用旧的chart实例
+        if (!chart || !allRankedAnimes || allRankedAnimes.length === 0) {
+            return;
+        }
 
+        chart.showLoading();
+
+        // --- 1. 数据处理 ---
         const selectedButton = document.querySelector('#rating-control-buttons .btn.active');
         const selectedCategory = selectedButton ? selectedButton.dataset.value : 'all';
         const selectedSeason = document.getElementById('collectionInterval').value;
 
-        try {
-            chart.showLoading();
-            // 假设后端API为 /api/collection_ratio
-            const response = await fetch(`http://localhost:5000/api/collection_ratio?category=${selectedCategory}&season=${selectedSeason}`);
-            const data = await response.json();
+        // 使用重构的公共函数进行筛选
+        let processedData = filterAnimeData({
+            season: selectedSeason,
+            category: selectedCategory,
+            checkExists: ['score', 'views', 'favorites'] // 检查这些字段必须存在且>0
+        });
 
-            chart.setOption({
-                xAxis: {
-                    data: data.xData || []
+        // 计算“口碑热度指数”
+        processedData.forEach(anime => {
+            anime.qualityScore = parseFloat(anime.score) * Math.log10(anime.favorites) * Math.log10(anime.views);
+        });
+
+        // 排序并截取Top 15
+        const topAnimes = processedData
+            .filter(anime => !isNaN(anime.qualityScore))
+            .sort((a, b) => b.qualityScore - a.qualityScore)
+            .slice(0, 15);
+
+        const yAxisData = topAnimes.map(anime => anime.title).reverse();
+        const seriesData = topAnimes.map(anime => ({
+            value: parseFloat(anime.qualityScore.toFixed(0)), // 指数取整
+            score: anime.score,
+            views: anime.views,
+            favorites: anime.favorites
+        })).reverse();
+
+        // --- 2. 在函数内部构建完整的图表配置对象 ---
+        const fullOption = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {type: 'shadow'},
+                backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                textStyle: {color: '#f0f0f0'},
+                formatter: function (params) {
+                    if (!params || params.length === 0) return '';
+                    const data = params[0].data;
+                    const formatNumber = (num) => {
+                        if (!num) return '0';
+                        if (num >= 1e8) return (num / 1e8).toFixed(2) + ' 亿';
+                        if (num >= 1e4) return (num / 1e4).toFixed(1) + ' 万';
+                        return num.toLocaleString();
+                    };
+                    return `<b>${params[0].name}</b><br/>
+                            <span style="font-size:1.2em; color:#fde047; font-weight:bold;">口碑热度指数: ${formatNumber(data.value)}</span><br/>
+                            <hr style="margin: 4px 0; border-color: rgba(255, 255, 255, 0.2);">
+                            B站评分: ${data.score}<br/>
+                            追番数: ${formatNumber(data.favorites)}<br/>
+                            播放量: ${formatNumber(data.views)}`;
+                }
+            },
+            grid: {...commonGrid, left: '5%', right: '10%'},
+            xAxis: {
+                type: 'value',
+                name: '口碑热度指数'
+            },
+            yAxis: {
+                type: 'category',
+                data: yAxisData,
+                axisLabel: {show: false},
+                axisTick: {show: false},
+                axisLine: {show: false}
+            },
+            series: [{
+                name: '口碑热度指数',
+                type: 'bar',
+                barWidth: '60%',
+                data: seriesData,
+                itemStyle: {
+                    borderRadius: [0, 5, 5, 0],
+                    color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                        {offset: 0, color: '#f97316'}, // 橙色
+                        {offset: 1, color: '#facc15'}  // 黄色
+                    ])
                 },
-                series: [{
-                    data: data.yData || []
-                }]
-            });
-        } catch (error) {
-            console.error('更新收藏占比图表失败:', error);
-        } finally {
-            chart.hideLoading();
-        }
+                emphasis: {
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                            {offset: 0, color: '#fb923c'},
+                            {offset: 1, color: '#fde047'}
+                        ])
+                    }
+                }
+            }]
+        };
+
+        // --- 3. 使用完整的配置更新图表 ---
+        chart.setOption(fullOption, {notMerge: true});
+        chart.hideLoading();
     }
 
     /**
@@ -1102,7 +1242,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function initializeOverviewModule() {
         // --- 1. 为所有控制元素（下拉框）绑定事件监听器 ---
         // 收藏占比
-        document.getElementById('collectionInterval').addEventListener('change', updateRatingChart);
+        document.getElementById('collectionInterval').addEventListener('change', updateQualityScoreChart);
 
         // 类别热度趋势
         document.getElementById('categoryTrendInterval').addEventListener('change', updateCategoryTrendChart);
@@ -1121,7 +1261,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => {
             updateYearlyChart();
             updatePreferenceChart();
-            updateRatingChart();
+            updateQualityScoreChart();
             // updateCategoryTrendChart 在其初始化函数 initCategoryTrendButtons 中已调用
         }, 500);
 
@@ -1327,17 +1467,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             }]
         };
 
-        // 番剧概览 - 追番评分占比（柱状图）
+        // 番剧概览 - 口碑热度指数（水平条形图）
         const collectionRatioOption = {
-            tooltip: commonTooltip,
-            grid: commonGrid,
-            xAxis: {type: 'category', data: ['9分以上', '8-9分', '7-8分', '6-7分', '6分以下']},
-            yAxis: {type: 'value'},
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {type: 'shadow'}
+            },
+            grid: {...commonGrid, left: '25%', right: '10%'},
+            xAxis: {
+                type: 'value',
+                name: '口碑热度指数'
+            },
+            yAxis: {
+                type: 'category',
+                data: [],
+                axisLabel: {show: false}
+            },
             series: [{
-                name: '番剧数量',
+                name: '口碑热度指数',
                 type: 'bar',
-                barWidth: '60%',
-                data: [120, 200, 150, 80, 50] // 示例数据
+                data: []
             }]
         };
 

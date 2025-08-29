@@ -375,7 +375,7 @@
                             id="rating-tab"
                             type="button"
                     >
-                        收藏占比
+                        口碑热度指数
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
@@ -463,7 +463,7 @@
                             <div
                                     class="d-flex justify-content-between align-items-center mb-3"
                             >
-                                <h5 class="card-title mb-0">收藏占比</h5>
+                                <h5 class="card-title mb-0">综合口碑热度指数排行</h5>
                             </div>
                             <div class="chart-container h-100">
                                 <div
@@ -477,26 +477,33 @@
                         <div class="custom-control-panel h-100">
                             <div class="d-flex flex-column h-100">
                                 <!-- 下拉选择按钮和刷新按钮 -->
-                                <div class="d-flex align-items-center mb-3">
-                                    <select
-                                            class="form-select form-select-sm me-2"
-                                            id="collectionInterval"
-                                    >
-                                        <option value="spring">春番</option>
-                                        <option value="summer">夏番</option>
-                                        <option value="autumn">秋番</option>
-                                        <option value="winter">冬番</option>
+                                <div class="custom-select-wrapper mb-3">
+                                    <label for="collectionInterval"></label><select id="collectionInterval"
+                                                                                    style="display: none;">
+                                    <option value="all">全年</option>
+                                    <option value="spring">春季新番 (4-6月)</option>
+                                    <option value="summer">夏季新番 (7-9月)</option>
+                                    <option value="autumn">秋季新番 (10-12月)</option>
+                                    <option value="winter">冬季新番 (1-3月)</option>
                                     </select>
-                                    <button
-                                            class="btn btn-sm btn-outline-secondary"
-                                            id="refresh-collection"
-                                    >
-                                        <i class="fas fa-refresh"></i>
-                                    </button>
+
+                                    <div class="custom-select">
+                                        <div class="custom-select-trigger">
+                                            <span>全年</span>
+                                            <div class="arrow"></div>
+                                        </div>
+                                        <div class="custom-options">
+                                            <div class="custom-option" data-value="all">全年</div>
+                                            <div class="custom-option" data-value="spring">春季新番 (4-6月)</div>
+                                            <div class="custom-option" data-value="summer">夏季新番 (7-9月)</div>
+                                            <div class="custom-option" data-value="autumn">秋季新番 (10-12月)</div>
+                                            <div class="custom-option" data-value="winter">冬季新番 (1-3月)</div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <!-- 这里可以添加额外的控制元素 -->
-                                <h6 class="control-panel-title">季度选择</h6>
+                                <h6 class="control-panel-title">视图选项</h6>
                                 <div class="flex-grow-1 control-buttons-group" id="rating-control-buttons">
                                     <!-- 按钮将通过JS动态生成 -->
                                 </div>

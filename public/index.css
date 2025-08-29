@@ -1582,3 +1582,113 @@ main > section {
     margin-right: 6px;
     font-weight: bold;
 }
+
+/* --- 番剧概览 - 自定义下拉框样式 --- */
+
+/* 1. 容器：定位的基准 */
+.custom-select-wrapper {
+    position: relative;
+    user-select: none; /* 禁止文本选中 */
+    width: 100%;
+}
+
+/* 2. 模拟的输入框 (触发器) */
+.custom-select-trigger {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #333;
+    background-color: #fff;
+    border: 2px solid #e0e6ed;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.custom-select-wrapper:hover .custom-select-trigger {
+    border-color: #f78fb3; /* 悬停时边框变色 */
+}
+
+/* 3. 自定义箭头 */
+.custom-select .arrow {
+    position: relative;
+    height: 10px;
+    width: 10px;
+}
+
+.custom-select .arrow::before, .custom-select .arrow::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    width: 0.15rem;
+    height: 100%;
+    background-color: #555;
+    transition: all 0.3s ease;
+}
+
+.custom-select .arrow::before {
+    left: -3px;
+    transform: rotate(-45deg);
+}
+
+.custom-select .arrow::after {
+    left: 3px;
+    transform: rotate(45deg);
+}
+
+/* 4. 选项列表容器 */
+.custom-options {
+    position: absolute;
+    display: block;
+    top: 110%; /* 出现在触发器下方 */
+    left: 0;
+    right: 0;
+    min-width: 100%;
+    background-color: #fff;
+    border-radius: 10px;
+    border: 1px solid #e0e6ed;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+    /* 默认隐藏，通过JS控制显示 */
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+}
+
+/* 5. 单个选项的样式 */
+.custom-option {
+    position: relative;
+    display: block;
+    padding: 10px 14px;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.custom-option:hover {
+    background-color: #ffe8f0; /* 悬停时变为淡淡的粉色 */
+    color: #d63384;
+}
+
+/* 6. 通过JS添加的类，用于控制下拉框的显示/隐藏 */
+.custom-select.open .custom-options {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+/* 箭头在展开时的动画 */
+.custom-select.open .arrow::before {
+    transform: rotate(45deg);
+}
+
+.custom-select.open .arrow::after {
+    transform: rotate(-45deg);
+}
