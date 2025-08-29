@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import re
+import sys
 import time
 from datetime import datetime, timedelta
 from typing import Tuple, List, Dict, Any
@@ -151,7 +152,12 @@ class BangumiDataManager:
             month = yesterday.month
             quarter_month = BangumiDataManager._get_quarter_month(month)
             return year, quarter_month
-
+        year_only_match = re.search(r'(\d{4})开播', order_str)
+        if year_only_match:
+            year = int(year_only_match.group(1))
+            if year < 2015:
+                return "更早", None
+            return None, None
         match = re.search(r'(?:(\d{2,4})年)?(\d+)月', order_str)
         if not match:
             return None, None
@@ -171,7 +177,8 @@ class BangumiDataManager:
             if year < 100:  # 处理两位数年份
                 current_yy = datetime.now().year % 100
                 year = (1900 + year) if year > current_yy else (2000 + year)
-
+            if year < 2015:
+                return "更早", None
         return year, quarter_month
 
     def _execute_fetch_task(self, task_name: str, base_params: Dict[str, Any], pbar: tqdm = None) -> Tuple[
@@ -209,20 +216,20 @@ class BangumiDataManager:
             if year != '-1':
                 year_display = str(year).split(',')[0].strip('[')
                 context_details.append(f"年份: {year_display}")
-
-            # 提取地区信息
+            elif base_params.get('st') == 4 and base_params.get('order') == 5:
+                context_details.append("年份: 全部")
             area = base_params.get('area', -1)
             if area != -1:
                 area_map = {2: "日本", 3: "美国"}
                 context_details.append(f"地区: {area_map.get(area, '其他')}")
-
-            # 为全量排名任务提取排序信息
-            order = base_params.get('order', -1)
-            is_ranking_task = all(base_params.get(k) in ('-1', -1) for k in ['year', 'style_id', 'area'])
-            if is_ranking_task:
-                if order == 2: context_details.append("排序: 播放量")
-                if order == 3: context_details.append("排序: 追番量")
-
+            is_full_ranking_task = all(base_params.get(k, -1) in ('-1', -1) for k in ['year', 'style_id', 'area'])
+            if is_full_ranking_task:
+                order = base_params.get('order', -1)
+                st = base_params.get('st', -1)
+                scope_map = {1: "常规番剧", 4: "国产番剧"}
+                scope = scope_map.get(st, "未知范围")
+                if order == 2: context_details.append(f"排序: 播放量 ({scope})")
+                if order == 3: context_details.append(f"排序: 追番量 ({scope})")
             context_str = " | ".join(context_details)
 
         for i in range(1, self.pages_to_fetch + 1):
@@ -367,10 +374,10 @@ class BangumiDataManager:
 
         years_to_scan = list(range(datetime.now().year, 2015, -1))
 
-        # 1. 优先填充所有国产番剧作为基准
+        # 【修改点】将 file=sys.stdout 添加到所有 tqdm 调用中，以统一输出流
         domestic_years_to_scan = [f"{year}" for year in years_to_scan]
         domestic_years_to_scan.append('-1')
-        with tqdm(total=len(domestic_years_to_scan), desc="  - 正在获取国产番剧列表...") as pbar:
+        with tqdm(total=len(domestic_years_to_scan), desc="  - 正在获取国产番剧列表...", file=sys.stdout) as pbar:
             for year_str in domestic_years_to_scan:
                 # 根据您的要求，格式化年份参数
                 year_param_formatted = year_str
@@ -394,10 +401,8 @@ class BangumiDataManager:
                         all_bangumis[season_id] = item
 
                     parsed_year, parsed_month = self._parse_release_date_from_order(item.get('order', ''))
-
-                    # --- 修改：直接处理 "敬请期待" ---
-                    if parsed_year == "敬请期待":
-                        all_bangumis[season_id]['release_date'] = "敬请期待"
+                    if parsed_year in ["敬请期待", "更早"]:
+                        all_bangumis[season_id]['release_date'] = parsed_year
                         continue
 
                     year_to_use = parsed_year
@@ -415,8 +420,7 @@ class BangumiDataManager:
         time_params_list = [{'year_val': year, 'month_val': month, 'year_param': f"[{year},{year + 1})"}
                             for year in years_to_scan for month in months_to_scan]
         time_params_list.append({'year_val': -1, 'month_val': -1, 'year_param': '-1'})
-
-        with tqdm(total=len(time_params_list), desc="  - 正在获取常规番剧列表...") as pbar:
+        with tqdm(total=len(time_params_list), desc="  - 正在获取常规番剧列表...", file=sys.stdout) as pbar:
             for params in time_params_list:
                 time_based_list, _ = self._fetch_pages(order_type=2, style_id=-1, year=params['year_param'],
                                                        season_month=params['month_val'], pbar=pbar)
@@ -441,17 +445,16 @@ class BangumiDataManager:
             print("❌ 未能获取到任何番剧数据，任务终止。")
             return None
 
-        with tqdm(total=2, desc="  - 正在获取地区番剧列表...") as pbar:
+        with tqdm(total=1, desc="  - 正在获取日本地区番剧...", file=sys.stdout) as pbar:
             japan_list, _ = self._fetch_pages(order_type=2, style_id=-1, area=2, pbar=pbar)
-            japan_anime_ids = {item.get('season_id') for item in japan_list if item.get('season_id')}
             pbar.update(1)
-
+        with tqdm(total=1, desc="  - 正在获取美国地区番剧...", file=sys.stdout) as pbar:
             usa_list, _ = self._fetch_pages(order_type=2, style_id=-1, area=3, pbar=pbar)
-            usa_anime_ids = {item.get('season_id') for item in usa_list if item.get('season_id')}
             pbar.update(1)
 
-        # --- 修改：赋值给 area ---
-        print("\n--- 开始为番剧标记地区 ---")
+        print("\n--- 正在标记地区信息 ---")
+        japan_anime_ids = {item.get('season_id') for item in japan_list if item.get('season_id')}
+        usa_anime_ids = {item.get('season_id') for item in usa_list if item.get('season_id')}
         for season_id, item in all_bangumis.items():
             if item['area'] == '国内': continue
             if season_id in japan_anime_ids:
@@ -459,7 +462,7 @@ class BangumiDataManager:
             elif season_id in usa_anime_ids:
                 item['area'] = '美国'
 
-        with tqdm(total=len(self.REGULAR_API_STYLE_IDS), desc="  - 正在填充常规番剧风格...") as pbar:
+        with tqdm(total=len(self.REGULAR_API_STYLE_IDS), desc="  - 正在填充常规番剧风格...", file=sys.stdout) as pbar:
             for style_id in self.REGULAR_API_STYLE_IDS:
                 style_name = self.style_map.get(style_id)
                 if not style_name: continue
@@ -470,7 +473,7 @@ class BangumiDataManager:
                         all_bangumis[season_id]['styles'].append(style_name)
                 pbar.update(1)
 
-        with tqdm(total=len(self.DOMESTIC_API_STYLE_IDS), desc="  - 正在填充国产番剧风格...") as pbar:
+        with tqdm(total=len(self.DOMESTIC_API_STYLE_IDS), desc="  - 正在填充国产番剧风格...", file=sys.stdout) as pbar:
             for style_id in self.DOMESTIC_API_STYLE_IDS:
                 style_name = self.style_map.get(style_id)
                 if not style_name: continue
@@ -482,25 +485,26 @@ class BangumiDataManager:
                 pbar.update(1)
 
         views_list = []
-        with tqdm(total=2, desc="  - 正在获取全量播放数据...") as pbar:
+        with tqdm(total=1, desc="  - 获取常规番剧播放数据...", file=sys.stdout) as pbar:
             regular_views, _ = self._fetch_pages(order_type=2, style_id=-1, pbar=pbar)
             views_list.extend(regular_views)
             pbar.update(1)
-
+        with tqdm(total=1, desc="  - 获取国产番剧播放数据...", file=sys.stdout) as pbar:
             domestic_views, _ = self._fetch_domestic_ranking_pages(order_type=2, pbar=pbar)
             views_list.extend(domestic_views)
             pbar.update(1)
-        views_map = {item['season_id']: self._convert_order_to_int(item.get('order', '0')) for item in views_list}
 
         favorites_list = []
-        with tqdm(total=2, desc="  - 正在获取全量追番数据...") as pbar:
+        with tqdm(total=1, desc="  - 获取常规番剧追番数据...", file=sys.stdout) as pbar:
             regular_favs, _ = self._fetch_pages(order_type=3, style_id=-1, pbar=pbar)
             favorites_list.extend(regular_favs)
             pbar.update(1)
-
+        with tqdm(total=1, desc="  - 获取国产番剧追番数据...", file=sys.stdout) as pbar:
             domestic_favs, _ = self._fetch_domestic_ranking_pages(order_type=3, pbar=pbar)
             favorites_list.extend(domestic_favs)
             pbar.update(1)
+
+        views_map = {item['season_id']: self._convert_order_to_int(item.get('order', '0')) for item in views_list}
         favorites_map = {item['season_id']: self._convert_order_to_int(item.get('order', '0')) for item in
                          favorites_list}
 
