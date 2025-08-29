@@ -743,47 +743,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     /**
-     * @function initCategoryTrendButtons
-     * @description 初始化类别热度趋势按钮。从用户偏好中获取按钮数据。
-     */
-    async function initCategoryTrendButtons() {
-        const container = document.getElementById("category-trend-buttons");
-        if (!container) return;
-
-        if (userPreferences.length === 0) {
-            console.warn(`容器 category-trend-buttons 没有可用的偏好按钮数据。`);
-            container.innerHTML = '<small class="text-muted">无可用类别</small>';
-            // 确保图表在没有数据时显示为空状态
-            await updateCategoryTrendChart();
-            return;
-        }
-
-        // 根据用户偏好创建按钮HTML，默认全部激活
-        container.innerHTML = userPreferences
-            .map(
-                (preference) =>
-                    `<button class="btn btn-primary btn-sm active" data-category="${preference}">${preference}</button>`
-            )
-            .join("");
-
-        // 添加点击事件
-        container.addEventListener("click", function (e) {
-            if (e.target.tagName === "BUTTON") {
-                // 切换按钮状态
-                e.target.classList.toggle("active");
-                e.target.classList.toggle("btn-primary");
-                e.target.classList.toggle("btn-outline-secondary");
-
-                // 触发图表更新
-                updateCategoryTrendChart();
-            }
-        });
-
-        // 初始加载一次图表
-        await updateCategoryTrendChart();
-    }
-
-    /**
      * @function filterAnimeData
      * @description 根据传入的条件筛选番剧数据
      * @param {object} filters - 包含筛选条件的配置对象。
@@ -1190,49 +1149,183 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     /**
-     * @function updateCategoryTrendChart
-     * @description 更新类别热度趋势图表。
+     * @function updateStyleCombinationChart
+     * @description 分析并更新“热门风格组合”图表。
      */
-    async function updateCategoryTrendChart() {
+    async function updateStyleCombinationChart() {
         const chart = charts['category-trend'];
-        if (!chart) return;
-
-        const activeButtons = document.querySelectorAll('#category-trend-buttons .btn.active');
-        const selectedCategories = Array.from(activeButtons).map(btn => btn.dataset.category);
-
-        if (selectedCategories.length === 0) {
-            chart.setOption({legend: {data: []}, series: []});
+        if (!chart || !allRankedAnimes || allRankedAnimes.length === 0) {
             return;
         }
 
-        const selectedMonth = document.getElementById('categoryTrendInterval').value;
+        // --- 事件解绑，防止重复监听 ---
+        chart.off('click');
 
-        try {
-            chart.showLoading();
-            // 假设后端API为 /api/category_trend
-            const response = await fetch(`http://localhost:5000/api/category_trend?categories=${selectedCategories.join(',')}&month=${selectedMonth}`);
-            const data = await response.json(); // 预期格式: { legendData: [], seriesData: [{}], xAxisData: [] }
+        chart.showLoading();
 
+        // --- 数据处理部分 (携带更多信息) ---
+        const combinations = {};
+        allRankedAnimes.forEach(anime => {
+            if (Array.isArray(anime.styles) && anime.styles.length >= 2) {
+                const styles = [...anime.styles].sort();
+                for (let i = 0; i < styles.length; i++) {
+                    for (let j = i + 1; j < styles.length; j++) {
+                        const comboKey = `${styles[i]} + ${styles[j]}`;
+                        if (!combinations[comboKey]) {
+                            combinations[comboKey] = {totalFavorites: 0, count: 0, animes: []};
+                        }
+                        const favorites = Number(anime.favorites) || 0;
+                        combinations[comboKey].totalFavorites += favorites;
+                        combinations[comboKey].count++;
+                        // 携带更完整的番剧对象
+                        combinations[comboKey].animes.push({
+                            title: anime.title,
+                            cover: anime.cover,
+                            score: anime.score,
+                            favorites: anime.favorites,
+                            season_id: anime.season_id
+                        });
+                    }
+                }
+            }
+        });
+
+        const minAnimeCount = 5;
+        const topCombinations = Object.entries(combinations)
+            .map(([name, data]) => ({
+                name,
+                count: data.count,
+                avgFavorites: data.count > 0 ? data.totalFavorites / data.count : 0,
+                animes: data.animes.sort((a, b) => (b.favorites || 0) - (a.favorites || 0)) // 按追番数排序
+            }))
+            .filter(combo => combo.count >= minAnimeCount)
+            .sort((a, b) => b.avgFavorites - a.avgFavorites)
+            .slice(0, 20);
+
+        const seriesData = topCombinations.map(combo => ({
+            name: combo.name,
+            value: Math.round(combo.avgFavorites),
+            count: combo.count,
+            animes: combo.animes
+        }));
+
+        const fullOption = {
+            tooltip: {
+                trigger: 'item',
+                backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                textStyle: {color: '#f0f0f0'},
+                formatter: function (params) {
+                    if (!params.data || params.data.value == null) return '数据无效';
+                    const {name, value, count, animes} = params.data;
+                    const formatNumber = (num) => num ? num.toLocaleString() : 'N/A';
+                    let animeListHtml = '';
+                    if (animes && animes.length > 0) {
+                        const displayAnimes = animes.slice(0, 5);
+                        animeListHtml = displayAnimes.map(anime => `<li>${anime.title || '未知标题'}</li>`).join('');
+                        if (animes.length > 5) {
+                            animeListHtml += `<li>等 ${animes.length} 部番剧...</li>`;
+                        }
+                        animeListHtml = `<hr style="margin: 4px 0; border-color: rgba(255, 255, 255, 0.2);">
+                                         <span style="color:#d1d5db;">包含番剧 (部分):</span><ul style="padding-left: 15px; margin-top: 5px; margin-bottom: 0;">${animeListHtml}</ul>`;
+                    }
+                    return `<b>${name}</b><br/>
+                            <span style="font-size:1.2em; color:#34d399; font-weight:bold;">平均追番: ${formatNumber(value)}</span><br/>
+                            <hr style="margin: 4px 0; border-color: rgba(255, 255, 255, 0.2);">
+                            包含番剧数: ${count}${animeListHtml}`;
+                }
+            },
+            series: [{
+                type: 'treemap',
+                // 【关键修改】将 roam 设置为 false
+                // 这将禁用图表的缩放（鼠标滚轮）和拖拽（鼠标指针）功能
+                roam: false,
+                nodeClick: false,
+                breadcrumb: {show: false},
+                label: {
+                    show: true,
+                    position: 'inside',
+                    formatter: '{b}',
+                    color: '#fff',
+                    fontSize: 14,
+                    fontWeight: 'bold'
+                },
+                itemStyle: {gapWidth: 3, borderColor: '#fff', borderRadius: 5},
+                data: seriesData
+            }]
+        };
+
+        chart.setOption(fullOption, {notMerge: true});
+        chart.hideLoading();
+
+
+        const chartContainer = document.querySelector('#category .chart-container');
+        const detailPanel = chartContainer.querySelector('.combo-detail-panel');
+        const closeBtn = detailPanel.querySelector('.btn-close-detail');
+
+        chart.on('click', (params) => {
+            if (params.data) {
+                const {name, value, count, animes} = params.data;
+
+                if (!animes) {
+                    return;
+                }
+
+                // 隐藏主图表的Tooltip并禁用其事件
+                chart.dispatchAction({type: 'hideTip'});
+                chart.setOption({series: [{silent: true}]});
+
+                // 【新增修改】直接操作DOM来更新新的头部数据块
+                const detailBlock = document.getElementById('detail-block');
+                const detailBlockTitle = document.getElementById('detail-block-title');
+
+                // 1. 更新头部数据块的背景色和标题
+                detailBlock.style.backgroundColor = params.color;
+                detailBlockTitle.textContent = name;
+
+                // 2. 填充详情面板 (逻辑微调，使用 name 变量)
+                detailPanel.querySelector('#detail-title').textContent = name;
+                detailPanel.querySelector('#detail-stats').textContent = `共 ${count} 部番剧 · 平均追番 ${value.toLocaleString()}`;
+
+                const animeListContainer = detailPanel.querySelector('.detail-anime-list');
+
+                const formatLargeNumber = (num) => {
+                    if (num === null || num === undefined) return 'N/A';
+                    if (num >= 1e8) return (num / 1e8).toFixed(1) + '亿';
+                    if (num >= 1e4) return (num / 1e4).toFixed(1) + '万';
+                    return num.toLocaleString();
+                };
+
+                animeListContainer.innerHTML = animes.map((anime, index) => {
+                    const proxyUrl = `http://localhost:5000/api/image_proxy?url=${encodeURIComponent(anime.cover)}&title=${encodeURIComponent(anime.title)}&season_id=${anime.season_id}`;
+                    return `
+                    <div class="detail-anime-item">
+                        <span class="rank">${index + 1}</span>
+                        <img src="${proxyUrl}" alt="${anime.title}" class="cover">
+                        <div class="info">
+                            <h5>${anime.title}</h5>
+                            <p>
+                                <i class="fas fa-star"></i> ${anime.score || '暂无评分'} · 
+                                <i class="fas fa-heart"></i> ${formatLargeNumber(anime.favorites)}
+                            </p>
+                        </div>
+                    </div>
+                `;
+                }).join('');
+
+                // 3. 触发CSS动画
+                chartContainer.classList.add('detail-view-active');
+            }
+        });
+        // 4. 关闭详情视图
+        closeBtn.onclick = () => {
+            chartContainer.classList.remove('detail-view-active');
             chart.setOption({
-                legend: {
-                    data: data.legendData,
-                    type: data.legendData.length > 5 ? 'scroll' : 'plain'
-                },
-                xAxis: {
-                    data: data.xAxisData
-                },
-                series: data.seriesData.map(s => ({
-                    ...s,
-                    type: 'line',
-                    smooth: true
-                }))
-            }, {notMerge: true});
-
-        } catch (error) {
-            console.error('更新类别热度趋势图表失败:', error);
-        } finally {
-            chart.hideLoading();
-        }
+                series: [{
+                    silent: false
+                }]
+            });
+        };
     }
 
     /**
@@ -1244,16 +1337,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // 收藏占比
         document.getElementById('collectionInterval').addEventListener('change', updateQualityScoreChart);
 
-        // 类别热度趋势
-        document.getElementById('categoryTrendInterval').addEventListener('change', updateCategoryTrendChart);
-
-        // --- 2. 异步初始化所有按钮组 ---
-
         // 注意：按钮组的点击事件已在 initCommonControlButtons 和 initCategoryTrendButtons 中统一处理
         initCommonControlButtons("preference-anime-buttons");
         initCommonControlButtons("yearly-control-buttons");
         initCommonControlButtons("rating-control-buttons");
-        initCategoryTrendButtons("category_trend_buttons");
         // ...
 
         // --- 3. 初始化默认图表状态 ---
@@ -1262,7 +1349,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateYearlyChart();
             updatePreferenceChart();
             updateQualityScoreChart();
-            // updateCategoryTrendChart 在其初始化函数 initCategoryTrendButtons 中已调用
+            updateStyleCombinationChart();
         }, 500);
 
 
@@ -1490,14 +1577,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             }]
         };
 
-        // 番剧概览 - 类别热度趋势（折线图）
+        // 番剧概览 - 热门风格组合（矩形树图）
         const categoryTrendOption = {
-            tooltip: commonTooltip,
-            grid: {...commonGrid, bottom: '15%'}, // 为图例留出空间
-            xAxis: {type: 'category', data: ["1月", "2月", "3月", "4月", "5月", "6月", "7月"]},
-            yAxis: {type: 'value'},
-            legend: {data: [], bottom: 0, type: 'scroll'},
-            series: [] // 等待动态数据
+            tooltip: {trigger: 'item'},
+            series: [{
+                type: 'treemap',
+                data: []
+            }]
         };
 
         // --- 批量执行初始化 ---

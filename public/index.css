@@ -1692,3 +1692,172 @@ main > section {
 .custom-select.open .arrow::after {
     transform: rotate(-45deg);
 }
+
+/* --- 热门风格组合 - 详情下钻动画样式 (V3 - 统一侧滑) --- */
+
+/* 1. 父容器状态：当进入详情视图时 (保持不变) */
+.chart-container.detail-view-active #chart-category-trend {
+    filter: blur(5px) brightness(0.8);
+    transform: scale(0.95);
+    transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+
+/* 4. 详情面板的基础样式 (保持不变) */
+.combo-detail-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 55%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-left: 1px solid #e0e6ed;
+    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(101%);
+    transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* 5. 详情面板的滑入动画 (保持不变) */
+.chart-container.detail-view-active .combo-detail-panel {
+    transform: translateX(0%);
+}
+
+/* 4. 面板内部元素样式 */
+.combo-detail-panel .btn-close-detail {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 2.5rem;
+    color: #6c757d;
+    cursor: pointer;
+    line-height: 1;
+    transition: transform 0.2s ease;
+}
+
+.combo-detail-panel .btn-close-detail:hover {
+    color: #343a40;
+    transform: rotate(90deg);
+}
+
+.detail-header {
+    padding: 20px 25px;
+    border-bottom: 1px solid #e0e6ed;
+}
+
+.detail-header h4 {
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 5px;
+}
+
+.detail-header p {
+    color: #6c757d;
+    margin-bottom: 0;
+}
+
+.detail-anime-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 15px 25px;
+}
+
+/* 番剧列表单项样式 */
+.detail-anime-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f0f2f5;
+}
+
+.detail-anime-item:last-child {
+    border-bottom: none;
+}
+
+.detail-anime-item .rank {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #adb5bd;
+    width: 30px;
+}
+
+.detail-anime-item .cover {
+    width: 45px;
+    height: 63px;
+    object-fit: cover;
+    border-radius: 4px;
+    margin: 0 15px;
+}
+
+.detail-anime-item .info h5 {
+    font-size: 1rem;
+    font-weight: 500;
+    margin-bottom: 2px;
+}
+
+.detail-anime-item .info p {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-bottom: 0;
+}
+
+.detail-anime-item .info .fa-star {
+    color: #ffc107;
+}
+
+
+/* --- 热门风格组合 - 左右布局优化 --- */
+
+/* 【新增】左右布局的flex容器 */
+.detail-content-wrapper {
+    display: flex;
+    flex-grow: 1; /* 占据面板的剩余所有空间 */
+    min-height: 0; /* Flex布局中实现内部滚动的关键属性 */
+}
+
+/* 【新增】右侧信息列（标题+列表） */
+.detail-info-column {
+    flex: 1; /* 占据剩余宽度 */
+    min-width: 0; /* 防止内容溢出 */
+    display: flex;
+    flex-direction: column;
+    background-color: #ffffff; /* 为右侧添加一个明确的白色背景 */
+}
+
+/* 【修改】调整左侧数据块的样式 */
+.combo-detail-header-block {
+    flex: 0 0 40%; /* 固定宽度为40%，不拉伸不收缩 */
+    display: flex; /* 使用flex来垂直居中标题 */
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0; /* 移除原有的下边距 */
+    border-radius: 0; /* 由于是面板的一部分，移除圆角 */
+}
+
+/* 【修改】确保详情列表可以独立滚动 */
+.detail-anime-list {
+    flex-grow: 1; /* 占据右侧列的剩余所有高度 */
+    overflow-y: auto; /* 内容超出时出现滚动条 */
+}
+
+/* 优化滚动条样式 */
+.detail-anime-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.detail-anime-list::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.detail-anime-list::-webkit-scrollbar-thumb {
+    background: #fb7299;
+    border-radius: 10px;
+}
+
+.detail-anime-list::-webkit-scrollbar-thumb:hover {
+    background: #e0648a;
+}
