@@ -2,6 +2,7 @@ body {
     background-color: #f5f7fa;
     color: #333;
     overflow: hidden; /* 新增：默认隐藏全局滚动条 */
+    --header-height: 80px; /* 定义一个变量来管理头部高度 */
 }
 
 .container {
@@ -18,30 +19,73 @@ body {
     border-radius: 8px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
     border: none;
+    height: 500px;
+    display: flex;
+    flex-direction: column;
 }
 
-/* 新增：首页滚动控制 */
+main > section {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 首页整体布局 */
 #home {
-    height: calc(100vh - 180px); /* 精确计算高度 */
-    overflow: hidden; /* 隐藏溢出 */
+    height: calc(100vh - 180px);
+    overflow: hidden;
     display: flex;
     flex-direction: column;
 }
 
 .home-row {
     flex: 1;
-    min-height: 0; /* 关键：允许内部滚动 */
-    overflow: hidden; /* 隐藏外部滚动 */
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 1rem;
+    align-items: stretch;
+    padding-bottom: 20px;
 }
 
-.chart-placeholder {
-    height: 100%;
+/* 首页左侧容器 */
+.fixed-height-container {
+    height: 100%; /* 修改此行 */
+    overflow-y: hidden;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: #f9f9f9;
-    border: 1px dashed #ddd;
-    border-radius: 4px;
+    flex-direction: column;
+    padding-bottom: 20px;
+    flex: 3;
+}
+
+.fixed-height-container > .row:first-of-type {
+    flex-shrink: 0;
+}
+
+.fixed-height-container > .row:last-of-type {
+    flex-grow: 1;
+    min-height: 0;
+}
+
+.fixed-height-container > .row:last-child > .col-md-6 .card {
+    height: 520px;
+}
+
+
+.col-md-9 {
+    height: calc(100vh - 180px);
+    overflow-y: auto;
+}
+
+.col-md-9 .card {
+    height: 100%;
+}
+
+.col-md-3 {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 
 /* 顶部导航 */
@@ -71,12 +115,25 @@ body {
 }
 
 /* 图表容器 */
+.chart-container {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    min-height: 0;
+}
 
 /* 排行榜样式 */
 .rank-list {
     background-color: white;
     border-radius: 8px;
     overflow: hidden;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 280px;
+    max-width: 100%;
+    max-height: calc(100vh - 200px);
 }
 
 .rank-header {
@@ -84,16 +141,11 @@ body {
     color: white;
     padding: 12px 15px;
     font-weight: bold;
+    position: relative;
 }
 
-.badge.bg-pink {
-    background-color: #fb7299;
-    color: white;
-    font-weight: normal;
-    font-size: 0.8rem;
-    padding: 0.25rem 0.5rem;
-    margin-left: 0.5rem;
-    border-radius: 10px;
+.rank-header > div {
+    position: relative;
 }
 
 .rank-item {
@@ -137,6 +189,7 @@ body {
 
 .rank-info {
     flex: 1;
+    min-width: 0;
 }
 
 .rank-title {
@@ -144,9 +197,6 @@ body {
     margin-bottom: 5px;
 }
 
-.rank-score {
-    color: #ff9d6c;
-}
 
 .rank-tags {
     margin-top: 5px;
@@ -161,32 +211,41 @@ body {
     margin-bottom: 0.25rem;
 }
 
-/* 新增登录/注册模态框样式 */
-.modal-content {
-    border-radius: 10px;
-    overflow: hidden;
-    border: none;
-}
-
-.modal-header {
-    background: linear-gradient(135deg, #fb7299, #ff9d6c);
-    color: white;
-    border: none;
-    padding: 15px 20px;
-}
-
-.modal-title {
-    font-weight: 600;
-}
-
-.close {
-    color: white;
-    opacity: 0.8;
-}
-
-.form-label {
+.rank-value {
+    color: #fb7299;
     font-weight: 500;
-    color: #555;
+    display: flex;
+    align-items: center;
+}
+
+
+/* 滚动容器 */
+.rank-scroll-container {
+    overflow-y: auto !important;
+    flex: 1;
+    max-height: 100%;
+}
+
+.rank-scroll-container::-webkit-scrollbar,
+.col-md-9::-webkit-scrollbar {
+    width: 6px;
+}
+
+.rank-scroll-container::-webkit-scrollbar-track,
+.col-md-9::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.rank-scroll-container::-webkit-scrollbar-thumb,
+.col-md-9::-webkit-scrollbar-thumb {
+    background: #fb7299;
+    border-radius: 10px;
+}
+
+.rank-scroll-container::-webkit-scrollbar-thumb:hover,
+.col-md-9::-webkit-scrollbar-thumb:hover {
+    background: #e0648a;
 }
 
 .form-control {
@@ -199,73 +258,10 @@ body {
     border-color: #fb7299;
     box-shadow: 0 0 0 0.25rem rgba(251, 114, 153, 0.25);
 }
-
-.btn-login {
-    background: linear-gradient(135deg, #fb7299, #ff9d6c);
-    border: none;
-    border-radius: 6px;
-    padding: 10px;
-    font-weight: 500;
-    width: 100%;
-    margin-top: 15px;
-}
-
-.btn-login:hover {
-    background: linear-gradient(135deg, #e0648a, #e58d60);
-}
-
-.btn-register {
-    background: #f0f0f0;
-    border: none;
-    border-radius: 6px;
-    padding: 10px;
-    font-weight: 500;
-    width: 100%;
-    color: #666;
-}
-
-.btn-register:hover {
-    background: #e0e0e0;
-}
-
-.form-footer {
-    text-align: center;
-    margin-top: 20px;
-    font-size: 14px;
-}
-
-.form-footer a {
-    color: #fb7299;
-    text-decoration: none;
-}
-
-.form-footer a:hover {
-    text-decoration: underline;
-}
-
-.form-icon {
-    position: absolute;
-    top: 12px;
-    left: 15px;
-    color: #aaa;
-}
-
 .input-group {
     position: relative;
 }
 
-.password-toggle {
-    position: absolute;
-    right: 15px;
-    top: 12px;
-    cursor: pointer;
-    color: #aaa;
-    z-index: 10;
-}
-
-.password-toggle:hover {
-    color: #666;
-}
 
 .user-info {
     display: flex;
@@ -294,72 +290,6 @@ body {
     color: #fb7299;
 }
 
-.register-options {
-    display: flex;
-    justify-content: center;
-    gap: 15px;
-    margin-top: 15px;
-}
-
-.register-option {
-    width: 45px;
-    height: 45px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #f5f5f5;
-    color: #666;
-    font-size: 18px;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.register-option:hover {
-    background: #e0e0e0;
-    transform: translateY(-3px);
-}
-
-.register-option.qq {
-    color: #12b7f5;
-}
-
-.register-option.weibo {
-    color: #e6162d;
-}
-
-.register-option.wechat {
-    color: #09bb07;
-}
-
-/* 个人空间样式 - 新增 */
-.personal-space {
-    background-color: #fff;
-    border-radius: 10px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-    padding: 25px;
-    margin-top: 20px;
-}
-
-.profile-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 25px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #eee;
-}
-
-.profile-header h2 {
-    color: #fb7299;
-    font-weight: 700;
-    margin: 0;
-}
-
-.profile-header p {
-    color: #666;
-    margin: 5px 0 0;
-}
 
 .btn-secondary {
     background-color: #f0f0f0;
@@ -375,95 +305,6 @@ body {
     background-color: #e0e0e0;
 }
 
-.profile-content {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-}
-
-.profile-info {
-    flex: 1;
-    min-width: 300px;
-    display: flex;
-    gap: 25px;
-    background: #f9f9f9;
-    border-radius: 10px;
-    padding: 20px;
-}
-
-.profile-avatar {
-    width: 100px;
-    height: 100px;
-    background: linear-gradient(135deg, #fb7299, #ff9d6c);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 40px;
-}
-
-.profile-details {
-    flex: 1;
-}
-
-.profile-detail-item {
-    margin-bottom: 15px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #eee;
-}
-
-.profile-detail-item:last-child {
-    border-bottom: none;
-    margin-bottom: 0;
-    padding-bottom: 0;
-}
-
-.profile-detail-item h4 {
-    margin: 0 0 5px;
-    color: #666;
-    font-size: 14px;
-}
-
-.profile-detail-item p {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 500;
-}
-
-.enter-recommendation {
-    flex: 1;
-    min-width: 300px;
-    background: #f9f9f9;
-    border-radius: 10px;
-    padding: 25px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.3s;
-    border: 2px solid transparent;
-}
-
-.enter-recommendation:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
-    border-color: #fb7299;
-}
-
-.enter-recommendation i {
-    font-size: 50px;
-    color: #fb7299;
-    margin-bottom: 15px;
-}
-
-.enter-recommendation h3 {
-    margin: 10px 0;
-    color: #333;
-}
-
-.enter-recommendation p {
-    color: #666;
-    margin: 0;
-}
 
 .back-button {
     background: #f0f0f0;
@@ -481,12 +322,14 @@ body {
     background: #e0e0e0;
 }
 
+/* 数据卡片样式 */
 .icon-box {
     width: 40px;
     height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 1.2rem;
 }
 
 .bg-pink {
@@ -505,13 +348,33 @@ body {
     background-color: rgba(255, 206, 86, 0.15);
 }
 
+.bg-pink .fa-film {
+    color: #fb7299;
+}
+
+.bg-blue .fa-play-circle {
+    color: #23ade5;
+}
+
+.bg-purple .fa-heart {
+    color: #722ed1;
+}
+
+.bg-yellow .fa-star {
+    color: #ffce56;
+}
+
+.card h5.card-title {
+    font-size: 1.05rem;
+    font-weight: 500;
+}
 
 .card .display-5 {
     font-size: 2rem;
     margin-bottom: 0.5rem;
 }
 
-/* 偏好按钮样式 */
+/* 按钮和控件样式 */
 .btn-pink {
     background-color: #fb7299;
     color: white;
@@ -526,7 +389,6 @@ body {
     background-color: #e0648a;
 }
 
-/* 偏好提示样式 */
 .preferences-tooltip {
     position: absolute;
     top: 100%;
@@ -555,15 +417,6 @@ body {
     color: #ffc107;
 }
 
-.rank-header > div {
-    position: relative;
-}
-
-/* 排行榜头部调整 */
-.rank-header {
-    padding: 12px 15px;
-    position: relative;
-}
 
 .sort-buttons-container {
     padding: 10px 15px;
@@ -576,287 +429,6 @@ body {
     font-size: 0.8rem;
 }
 
-/* 调整排名值样式 */
-.rank-value {
-    color: #fb7299;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-}
-
-/* 调整排名信息区域 */
-.rank-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.rank-scroll-container {
-    overflow-y: auto;
-    max-height: calc(100% - 100px);
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-/* 确保排行榜高度与左侧一致 */
-@media (min-width: 768px) {
-    .home-row {
-        display: flex;
-        flex-wrap: wrap;
-    }
-
-    .home-row > [class*="col-"] {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .rank-list {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-    }
-}
-
-/* 滚动条美化 */
-.rank-scroll-container::-webkit-scrollbar {
-    width: 6px;
-}
-
-.rank-scroll-container::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 10px;
-}
-
-.rank-scroll-container::-webkit-scrollbar-thumb {
-    background: #fb7299;
-    border-radius: 10px;
-}
-
-.rank-scroll-container::-webkit-scrollbar-thumb:hover {
-    background: #e0648a;
-}
-
-/* 新增固定高度容器样式 */
-.fixed-height-container {
-    height: 100vh;
-    max-height: 100vh;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
-/* 调整数据卡片和图表区域 */
-.fixed-height-container > .row:first-child {
-    flex: 0 0 auto;
-}
-
-.fixed-height-container > .row:last-child {
-    flex: 1;
-    min-height: 0;
-}
-
-/* 图表容器高度调整 */
-
-/* 排行榜高度调整 */
-.rank-scroll-container {
-    max-height: calc(100vh - 200px);
-    overflow-y: auto;
-}
-
-/* 滚动条美化 */
-.rank-scroll-container::-webkit-scrollbar {
-    width: 6px;
-}
-
-.rank-scroll-container::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 10px;
-}
-
-.rank-scroll-container::-webkit-scrollbar-thumb {
-    background: #fb7299;
-    border-radius: 10px;
-}
-
-.rank-scroll-container::-webkit-scrollbar-thumb:hover {
-    background: #e0648a;
-}
-
-/* 确保在移动端恢复正常布局 */
-@media (max-width: 768px) {
-    .fixed-height-container {
-        height: auto;
-        max-height: none;
-    }
-
-    .rank-scroll-container {
-        max-height: none;
-    }
-}
-
-/* 新增固定高度容器样式 */
-.home-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-}
-
-/* 左侧容器 */
-.col-md-9 {
-    height: calc(100vh - 180px);
-    overflow-y: auto;
-}
-
-/* 调整卡片高度 */
-.col-md-9 .card {
-    min-height: 150px;
-    height: auto;
-}
-
-/* 图表容器高度调整 */
-.col-md-9 .chart-container {
-    height: calc(50% - 20px);
-}
-
-/* 右侧排行榜容器 */
-.col-md-3 {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    padding-bottom: 20px;
-}
-
-.rank-list {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    height: 100%;
-    max-height: calc(100vh - 200px);
-}
-
-.rank-scroll-container {
-    overflow-y: auto;
-    flex: 1;
-    max-height: 100%;
-}
-
-/* 移动端适配 */
-@media (max-width: 768px) {
-    .home-row {
-        flex-direction: column;
-    }
-
-    .col-md-3 {
-        height: auto;
-        max-height: 50vh;
-    }
-
-    .rank-scroll-container {
-        max-height: none;
-    }
-}
-
-/* 图表容器高度调整 */
-
-/* 固定左侧内容高度 */
-.col-md-9 {
-    height: calc(100vh - 180px);
-    overflow-y: auto;
-}
-
-/* 调整卡片高度 */
-.col-md-9 .card {
-    height: 100%;
-}
-
-/* 图表容器高度调整 */
-.col-md-9 .chart-container {
-    height: calc(50% - 20px);
-}
-
-/* 确保滚动容器正确显示 */
-.rank-scroll-container {
-    overflow-y: auto !important;
-}
-
-/* 调整排行榜内部布局 */
-.rank-list {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-}
-
-.rank-scroll-container {
-    flex: 1;
-}
-
-/* 加载动画 */
-@keyframes spin {
-    0% {
-        transform: rotate(0deg);
-    }
-    100% {
-        transform: rotate(360deg);
-    }
-}
-
-.loading-spinner {
-    display: inline-block;
-    width: 20px;
-    height: 20px;
-    border: 3px solid rgba(251, 114, 153, 0.3);
-    border-radius: 50%;
-    border-top: 3px solid #fb7299;
-    animation: spin 1s linear infinite;
-    margin-right: 10px;
-}
-
-.text-success {
-    color: #198754 !important;
-}
-
-.text-danger {
-    color: #dc3545 !important;
-}
-
-.growth-wrapper {
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-}
-
-.text-success {
-    color: #28a745 !important;
-}
-
-.text-danger {
-    color: #dc3545 !important;
-}
-
-.home-row {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 1rem;
-}
-
-.fixed-height-container {
-    flex: 3;
-}
-
-.rank-list {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 280px;
-    max-width: 100%;
-    height: 100%;
-}
-
-.rank-scroll-container {
-    flex-grow: 1;
-    overflow-y: auto;
-}
-
 .form-select {
     display: inline-block;
     width: auto;
@@ -867,13 +439,11 @@ body {
     border: 1px solid #ced4da;
 }
 
-
-/* 下拉菜单和按钮组合样式 */
 .d-flex > .form-select {
     margin-right: 0.5rem;
 }
 
-/* 标签页样式调整 */
+/* 标签页样式 */
 .nav-pills .nav-link {
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
@@ -888,385 +458,10 @@ body {
 .chart-card-header {
     min-height: 38px;
 }
-.chart-container {
-    display: flex;
-    flex-direction: column;
-    flex-grow: 1;
-    min-height: 0;
-}
 
 #chart-type-distribution {
     flex-grow: 1;
     min-height: 0;
-}
-
-
-.alert {
-    border-radius: 8px;
-    margin: 10px 15px 0;
-}
-
-#categoryButtons {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.category-btn,
-.total-btn {
-    padding: 6px 12px;
-    background-color: #4caf50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.category-btn:hover,
-.total-btn:hover {
-    background-color: #45a049;
-}
-
-#categoryButtons {
-    display: flex;
-    flex-direction: column; /* 竖直排列 */
-    gap: 8px; /* 按钮间距 */
-}
-
-#categoryButtons button {
-    padding: 6px 12px;
-    background-color: #4caf50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-#categoryButtons button:hover {
-    background-color: #45a049;
-}
-
-body {
-    background-color: #f5f7fa;
-    color: #333;
-    overflow: hidden; /* 新增：默认隐藏全局滚动条 */
-}
-
-.container {
-    max-width: 1400px;
-}
-
-.section-title {
-    margin-bottom: 20px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid #fb7299;
-}
-
-.card {
-    border-radius: 8px;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-    border: none;
-}
-
-/* 新增：首页滚动控制 */
-#home {
-    height: calc(100vh - 180px); /* 精确计算高度 */
-    overflow: hidden; /* 隐藏溢出 */
-    display: flex;
-    flex-direction: column;
-}
-
-.home-row {
-    flex: 1;
-    min-height: 0; /* 关键：允许内部滚动 */
-    overflow: hidden; /* 隐藏外部滚动 */
-}
-
-.chart-placeholder {
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: #f9f9f9;
-    border: 1px dashed #ddd;
-    border-radius: 4px;
-}
-
-/* 顶部导航 */
-.header {
-    background-color: white;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    padding: 15px 0;
-}
-
-.logo {
-    height: 40px;
-    margin-right: 15px;
-}
-
-.nav-item {
-    margin-right: 20px;
-}
-
-.nav-link {
-    color: #666;
-    font-weight: 500;
-}
-
-.nav-link.active {
-    color: #fb7299;
-    border-bottom: 3px solid #fb7299;
-}
-
-/* 图表容器 */
-.chart-container {
-    height: 350px;
-}
-
-/* 排行榜样式 */
-.rank-list {
-    background-color: white;
-    border-radius: 8px;
-    overflow: hidden;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-}
-
-.rank-header {
-    background-color: #fb7299;
-    color: white;
-    padding: 12px 15px;
-    font-weight: bold;
-}
-
-.badge.bg-pink {
-    background-color: #fb7299;
-    color: white;
-    font-weight: normal;
-    font-size: 0.8rem;
-    padding: 0.25rem 0.5rem;
-    margin-left: 0.5rem;
-    border-radius: 10px;
-}
-
-.rank-item {
-    display: flex;
-    align-items: center;
-    padding: 12px 15px;
-    border-bottom: 1px solid #f0f0f0;
-}
-
-.rank-item:last-child {
-    border-bottom: none;
-}
-
-.rank-item:hover {
-    background-color: #f9f9f9;
-}
-
-.rank-num {
-    width: 24px;
-    height: 24px;
-    line-height: 24px;
-    text-align: center;
-    border-radius: 50%;
-    background-color: #eee;
-    margin-right: 12px;
-    font-size: 14px;
-}
-
-.rank-num.top3 {
-    background-color: #fb7299;
-    color: white;
-}
-
-.rank-img {
-    width: 60px;
-    height: 84px;
-    object-fit: cover;
-    border-radius: 4px;
-    margin-right: 12px;
-}
-
-.rank-info {
-    flex: 1;
-}
-
-.rank-title {
-    font-weight: 500;
-    margin-bottom: 5px;
-}
-
-.rank-score {
-    color: #ff9d6c;
-}
-
-.rank-tags {
-    margin-top: 5px;
-    display: flex;
-    flex-wrap: wrap;
-}
-
-.rank-tags .badge {
-    font-size: 0.7rem;
-    padding: 0.25rem 0.4rem;
-    margin-right: 0.25rem;
-    margin-bottom: 0.25rem;
-}
-
-
-.back-button {
-    background: #f0f0f0;
-    color: #666;
-    border: none;
-    padding: 8px 15px;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: all 0.3s;
-    display: flex;
-    align-items: center;
-}
-
-.back-button:hover {
-    background: #e0e0e0;
-}
-
-.icon-box {
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-}
-
-.bg-pink .fa-film {
-    color: #fb7299;
-}
-
-.bg-blue .fa-play-circle {
-    color: #23ade5;
-}
-
-.bg-purple .fa-heart {
-    color: #722ed1;
-}
-
-.bg-yellow .fa-star {
-    color: #ffce56;
-}
-
-
-.bg-pink {
-    background-color: rgba(251, 114, 153, 0.15);
-}
-
-.bg-blue {
-    background-color: rgba(35, 173, 229, 0.15);
-}
-
-.bg-purple {
-    background-color: rgba(114, 46, 209, 0.15);
-}
-
-.bg-yellow {
-    background-color: rgba(255, 206, 86, 0.15);
-}
-
-/* 调整卡片内部间距 */
-.card h5.card-title {
-    font-size: 1.05rem;
-    font-weight: 500;
-}
-
-.card .display-5 {
-    font-size: 2rem;
-    margin-bottom: 0.5rem;
-}
-
-.btn-pink {
-    background-color: #fb7299;
-    color: white;
-    border: none;
-    font-size: 0.8rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 10px;
-    position: relative;
-}
-
-.btn-pink:hover {
-    background-color: #e0648a;
-}
-
-.sort-buttons-container {
-    padding: 10px 15px;
-    background-color: #f9f9f9;
-    border-bottom: 1px solid #f0f0f0;
-}
-
-.btn-group-sm > .btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.8rem;
-}
-
-.rank-scroll-container {
-    overflow-y: auto;
-    flex-grow: 1;
-}
-
-.fixed-height-container > .row:last-child > .col-md-6 .card {
-    height: 100%;
-}
-
-.fixed-height-container .chart-container {
-    height: calc(100% - 40px);
-}
-
-.fixed-height-container {
-    height: calc(100vh - 180px);
-    display: flex;
-    flex-direction: column;
-}
-
-.fixed-height-container > .row:first-of-type {
-    flex-shrink: 0;
-}
-
-.fixed-height-container > .row:last-of-type {
-    flex-grow: 1;
-    min-height: 0;
-}
-
-@media (min-width: 768px) {
-    .home-row {
-        display: flex;
-        flex-wrap: nowrap;
-        height: calc(100vh - 250px);
-    }
-}
-
-/* 滚动条美化 */
-.rank-scroll-container::-webkit-scrollbar,
-.col-md-9::-webkit-scrollbar {
-    width: 6px;
-}
-
-.rank-scroll-container::-webkit-scrollbar-track,
-.col-md-9::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 10px;
-}
-
-.rank-scroll-container::-webkit-scrollbar-thumb,
-.col-md-9::-webkit-scrollbar-thumb {
-    background: #fb7299;
-    border-radius: 10px;
-}
-
-.rank-scroll-container::-webkit-scrollbar-thumb:hover,
-.col-md-9::-webkit-scrollbar-thumb:hover {
-    background: #e0648a;
 }
 
 /* 加载动画 */
@@ -1289,6 +484,7 @@ body {
     animation: spin 1s linear infinite;
 }
 
+/* 文本颜色 */
 .text-success {
     color: #28a745 !important;
 }
@@ -1297,30 +493,19 @@ body {
     color: #dc3545 !important;
 }
 
-/* 概览模块按钮样式 */
-#preference-anime-buttons .btn, #category-trend-buttons .btn {
-    width: 100%;
+.growth-wrapper {
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
 }
 
-.fixed-height-container {
-    height: calc(100vh - var(--header-height));
-    overflow-y: hidden;
-    display: flex;
-    flex-direction: column;
-    padding-bottom: 20px;
-}
 
+/* 概览模块布局 */
 .content-area {
     flex-grow: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
-}
-
-main > section {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
 }
 
 .row.h-100 {
@@ -1333,20 +518,12 @@ main > section {
     flex-direction: column;
 }
 
-.card {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-}
-
 .card-body {
     flex-grow: 1;
     display: flex;
     flex-direction: column;
 }
 
-.chart-container,
-#rank-list-container,
 .tab-content,
 #episode-list-container {
     flex-grow: 1;
@@ -1359,124 +536,6 @@ main > section {
     flex-direction: column;
 }
 
-/* 新增：调整类别趋势控制区域样式 */
-#category .col-md-2 {
-    padding-left: 10px;
-    border-left: 1px solid #eee;
-}
-
-/* 调整下拉选择框和刷新按钮的布局 */
-#category .d-flex.align-items-center.mb-3 {
-    flex-wrap: wrap;
-}
-
-/* 移动端适配 */
-@media (max-width: 768px) {
-    #category .col-md-2 {
-        padding-left: 0;
-        border-left: none;
-        border-top: 1px solid #eee;
-        padding-top: 15px;
-        margin-top: 15px;
-    }
-
-    #category-trend-buttons .btn {
-        font-size: 0.875rem;
-        white-space: nowrap;
-    }
-}
-
-.custom-control-panel {
-    width: 180px; /* 进一步减少宽度 */
-    padding-left: 10px;
-    border-left: 1px solid #eee;
-    flex-shrink: 0;
-}
-
-.custom-chart-panel {
-    flex: 1;
-    min-width: 0; /* 防止图表区域溢出 */
-}
-
-/* 调整下拉选择框和刷新按钮的布局 */
-#category .d-flex.align-items-center.mb-3 {
-    flex-wrap: wrap;
-}
-
-#categoryTrendInterval {
-    margin-bottom: 8px;
-    width: 80%;
-    font-size: 0.8rem;
-}
-
-#refresh-category-trend {
-    font-size: 0.75rem; /* 从 0.8rem 减小 */
-    padding: 0.2rem 0.3rem; /* 减小内边距 */
-}
-
-/* 调整标题样式 */
-#category .control-panel-title {
-    font-size: 0.85rem; /* 从 0.9rem 减小 */
-    margin-bottom: 6px; /* 从 8px 减小 */
-    text-align: center;
-}
-
-/* 移动端适配 */
-@media (max-width: 768px) {
-    #category-trend-buttons {
-        flex-direction: row;
-        flex-wrap: wrap;
-        overflow-x: auto;
-        max-height: 120px;
-        margin-bottom: 15px;
-    }
-
-    #category-trend-buttons .btn {
-        padding: 0.3rem 0.6rem; /* 减小内边距 */
-        font-size: 0.8rem; /* 减小字体大小 */
-        min-width: 60px; /* 设置最小宽度 */
-        width: auto; /* 宽度自适应 */
-        display: inline-flex; /* 使用内联布局 */
-        justify-content: center;
-        margin: 0 4px 6px 0; /* 添加右侧和下侧间距 */
-        white-space: nowrap; /* 防止文字换行 */
-    }
-}
-
-#category-trend-buttons .btn {
-    padding-top: 0.15rem !important; /* 减少垂直内边距 */
-    padding-bottom: 0.15rem !important;
-    line-height: 1.2 !important; /* 减少行高 */
-    min-height: unset !important; /* 移除最小高度限制 */
-}
-
-/* 移动端保持可用性 */
-@media (max-width: 768px) {
-    #category-trend-buttons .btn {
-        padding-top: 0.25rem !important;
-        padding-bottom: 0.25rem !important;
-    }
-}
-
-/* 确保图表容器有明确的高度 */
-#chart-collection-ratio {
-    height: 100%;
-    min-height: 300px; /* 添加最小高度保证图表显示 */
-}
-
-/* 调整卡片布局 */
-#rating .card {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-}
-
-#rating .chart-container {
-    flex: 1;
-    min-height: 300px; /* 关键：确保图表区域有足够高度 */
-}
-
-/* index.css 添加的样式 */
 .custom-control-panel {
     width: 180px;
     padding-left: 10px;
@@ -1497,53 +556,30 @@ main > section {
     font-weight: 500;
 }
 
-/* 移动端适配 */
-@media (max-width: 768px) {
-    .card.p-3[style*="height: 500px"] {
-        height: auto !important;
-    }
-
-    .card.p-3 .d-flex.h-100 {
-        flex-direction: column;
-    }
-
-    .custom-control-panel {
-        width: 100%;
-        padding-left: 0;
-        border-left: none;
-        border-top: 1px solid #eee;
-        padding-top: 15px;
-        margin-top: 15px;
-    }
-}
-
-/* --- 概览模块控制面板优化 --- */
+/* 控制面板按钮组 */
 .control-buttons-group {
     display: flex;
     flex-direction: column;
-    gap: 8px; /* 为按钮之间提供统一的垂直间距 */
+    gap: 8px;
     overflow-y: auto;
-    padding-right: 5px; /* 为滚动条留出空间 */
+    padding-right: 5px;
 }
 
-/* 按钮通用样式 */
 .control-buttons-group .btn {
     width: 100%;
     text-align: center;
     border-radius: 6px;
     font-weight: 500;
     border-width: 1px;
-    transition: all 0.2s ease-in-out; /* 平滑过渡效果 */
+    transition: all 0.2s ease-in-out;
     padding: 6px 10px;
 }
 
-/* 按钮悬停效果 */
 .control-buttons-group .btn:not(.active):hover {
-    transform: translateY(-2px); /* 轻微上浮效果 */
+    transform: translateY(-2px);
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 
-/* 未选中按钮的样式 (btn-outline-secondary 的重写) */
 .control-buttons-group .btn.btn-outline-secondary {
     background-color: #f5f7fa;
     border-color: #e0e6ed;
@@ -1555,44 +591,20 @@ main > section {
     border-color: #d1d9e3;
 }
 
-/* 选中按钮的样式 (btn-primary 的重写) */
 .control-buttons-group .btn.btn-primary.active {
-    background-color: #fb7299; /* 使用主题色 */
+    background-color: #fb7299;
     border-color: #fb7299;
     color: white;
     box-shadow: 0 2px 8px rgba(251, 114, 153, 0.4);
 }
 
-/* --- 针对“类别热度趋势”的多选样式优化 --- */
-#category-trend-buttons {
-    flex-direction: row; /* 水平排列 */
-    flex-wrap: wrap; /* 允许自动换行 */
-    gap: 10px; /* 调整按钮间距 */
-}
-
-#category-trend-buttons .btn {
-    width: auto; /* 宽度由内容决定 */
-    flex-grow: 1; /* 允许按钮伸展以填充空间 */
-}
-
-/* 为多选的激活按钮添加“✔”图标，使其更直观 */
-#category-trend-buttons .btn.active::before {
-    content: '✔';
-    font-size: 0.8em;
-    margin-right: 6px;
-    font-weight: bold;
-}
-
-/* --- 番剧概览 - 自定义下拉框样式 --- */
-
-/* 1. 容器：定位的基准 */
+/* 自定义下拉框 */
 .custom-select-wrapper {
     position: relative;
-    user-select: none; /* 禁止文本选中 */
+    user-select: none;
     width: 100%;
 }
 
-/* 2. 模拟的输入框 (触发器) */
 .custom-select-trigger {
     position: relative;
     display: flex;
@@ -1610,10 +622,9 @@ main > section {
 }
 
 .custom-select-wrapper:hover .custom-select-trigger {
-    border-color: #f78fb3; /* 悬停时边框变色 */
+    border-color: #f78fb3;
 }
 
-/* 3. 自定义箭头 */
 .custom-select .arrow {
     position: relative;
     height: 10px;
@@ -1640,11 +651,10 @@ main > section {
     transform: rotate(45deg);
 }
 
-/* 4. 选项列表容器 */
 .custom-options {
     position: absolute;
     display: block;
-    top: 110%; /* 出现在触发器下方 */
+    top: 110%;
     left: 0;
     right: 0;
     min-width: 100%;
@@ -1653,7 +663,6 @@ main > section {
     border: 1px solid #e0e6ed;
     box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
     z-index: 10;
-    /* 默认隐藏，通过JS控制显示 */
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -1661,7 +670,6 @@ main > section {
     transition: all 0.3s ease;
 }
 
-/* 5. 单个选项的样式 */
 .custom-option {
     position: relative;
     display: block;
@@ -1672,11 +680,10 @@ main > section {
 }
 
 .custom-option:hover {
-    background-color: #ffe8f0; /* 悬停时变为淡淡的粉色 */
+    background-color: #ffe8f0;
     color: #d63384;
 }
 
-/* 6. 通过JS添加的类，用于控制下拉框的显示/隐藏 */
 .custom-select.open .custom-options {
     opacity: 1;
     visibility: visible;
@@ -1684,7 +691,6 @@ main > section {
     transform: translateY(0);
 }
 
-/* 箭头在展开时的动画 */
 .custom-select.open .arrow::before {
     transform: rotate(45deg);
 }
@@ -1693,17 +699,13 @@ main > section {
     transform: rotate(-45deg);
 }
 
-/* --- 热门风格组合 - 详情下钻动画样式 (V3 - 统一侧滑) --- */
-
-/* 1. 父容器状态：当进入详情视图时 (保持不变) */
+/* 热门风格组合 - 详情面板动画 */
 .chart-container.detail-view-active #chart-category-trend {
     filter: blur(5px) brightness(0.8);
     transform: scale(0.95);
     transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-
-/* 4. 详情面板的基础样式 (保持不变) */
 .combo-detail-panel {
     position: absolute;
     top: 0;
@@ -1720,12 +722,10 @@ main > section {
     transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-/* 5. 详情面板的滑入动画 (保持不变) */
 .chart-container.detail-view-active .combo-detail-panel {
     transform: translateX(0%);
 }
 
-/* 4. 面板内部元素样式 */
 .combo-detail-panel .btn-close-detail {
     position: absolute;
     top: 10px;
@@ -1766,7 +766,6 @@ main > section {
     padding: 15px 25px;
 }
 
-/* 番剧列表单项样式 */
 .detail-anime-item {
     display: flex;
     align-items: center;
@@ -1810,41 +809,30 @@ main > section {
 }
 
 
-/* --- 热门风格组合 - 左右布局优化 --- */
-
-/* 【新增】左右布局的flex容器 */
+/* 热门风格组合 - 左右布局优化 */
 .detail-content-wrapper {
     display: flex;
-    flex-grow: 1; /* 占据面板的剩余所有空间 */
-    min-height: 0; /* Flex布局中实现内部滚动的关键属性 */
+    flex-grow: 1;
+    min-height: 0;
 }
 
-/* 【新增】右侧信息列（标题+列表） */
 .detail-info-column {
-    flex: 1; /* 占据剩余宽度 */
-    min-width: 0; /* 防止内容溢出 */
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    background-color: #ffffff; /* 为右侧添加一个明确的白色背景 */
+    background-color: #ffffff;
 }
 
-/* 【修改】调整左侧数据块的样式 */
 .combo-detail-header-block {
-    flex: 0 0 40%; /* 固定宽度为40%，不拉伸不收缩 */
-    display: flex; /* 使用flex来垂直居中标题 */
+    flex: 0 0 40%;
+    display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 0; /* 移除原有的下边距 */
-    border-radius: 0; /* 由于是面板的一部分，移除圆角 */
+    margin-bottom: 0;
+    border-radius: 0;
 }
 
-/* 【修改】确保详情列表可以独立滚动 */
-.detail-anime-list {
-    flex-grow: 1; /* 占据右侧列的剩余所有高度 */
-    overflow-y: auto; /* 内容超出时出现滚动条 */
-}
-
-/* 优化滚动条样式 */
 .detail-anime-list::-webkit-scrollbar {
     width: 6px;
 }
