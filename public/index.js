@@ -315,6 +315,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             allRankedAnimes = data.list || [];
             updateRankDisplay();
             updateTypeDistributionChart(allRankedAnimes);
+            updateReputationPopularityChart(allRankedAnimes);
         } catch (error) {
             console.error('获取排行榜数据失败:', error);
             rankContainer.innerHTML = '<div class="text-center py-5">加载失败，请刷新重试</div>';
@@ -562,6 +563,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     /**
+     * @function updateReputationPopularityChart
+     * @description 【新增】处理番剧数据并更新口碑热度分布散点图
+     * @param {Array} animes - 包含所有番剧信息的数组
+     */
+    function updateReputationPopularityChart(animes) {
+        const chart = charts['season-trend']; // 获取图表实例
+        if (!chart || !Array.isArray(animes)) return;
+
+        try {
+            // 1. 数据清洗和格式化
+            const chartData = animes
+                .map(anime => {
+                    const score = parseFloat(anime.score);
+                    const favorites = parseInt(anime.favorites, 10);
+                    const views = parseInt(anime.views, 10);
+                    // 必须有评分和追番数才能在图上展示
+                    if (!isNaN(score) && score > 0 && !isNaN(favorites) && favorites > 0) {
+                        // 数据结构: [x轴, y轴, ...其他需要在tooltip中显示的数据]
+                        return [score, favorites, anime.title, views];
+                    }
+                    return null;
+                })
+                .filter(item => item !== null); // 过滤掉无效数据
+
+            // 2. 更新图表
+            chart.setOption({
+                series: [{
+                    data: chartData
+                }]
+            });
+
+        } catch (error) {
+            console.error('更新口碑热度分布图表失败:', error);
+        }
+    }
+
+    /**
      * @function initializeBangumiSearch
      * @description 【已更新】初始化番剧状态检测模块，并添加图表联动功能。
      */
@@ -710,9 +748,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }).join("");
             } else {
                 if (userPreferences.length === 0) {
-                container.innerHTML = '<small class="text-muted">请先在个人中心设置偏好</small>';
-                return;
-            }
+                    container.innerHTML = '<small class="text-muted">请先在个人中心设置偏好</small>';
+                    return;
+                }
                 buttonsHtml = `<button class="btn btn-primary btn-sm active" data-value="all">所有番剧</button>`;
                 buttonsHtml += userPreferences.map(
                     (p) => `<button class="btn btn-outline-secondary btn-sm" data-value="${p}">${p}</button>`
@@ -775,7 +813,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // 按类型筛选
             if (category !== 'all') {
-                if (!Array.isArray(anime.styles) || !anime.styles.includes(selectedCategory)) return false;
+                if (!Array.isArray(anime.styles) || !anime.styles.includes(category)) return false;
             }
 
             return true;
@@ -1475,17 +1513,68 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
 
-        // 首页 - 季度趋势（折线图）
-        const seasonTrendOption = {
-            tooltip: commonTooltip,
+        // 首页 - 口碑热度分布（散点图）
+        const reputationPopularityOption = {
+            tooltip: {
+                trigger: 'item',
+                axisPointer: {
+                    type: 'cross'
+                },
+                formatter: function (params) {
+                    if (params.value) {
+                        // params.value 的数据结构: [评分, 追番数, '标题', 播放量]
+                        const title = params.value[2];
+                        const score = params.value[0];
+                        const followers = params.value[1];
+                        const views = params.value[3];
+                        const formattedFollowers = followers >= 10000 ? (followers / 10000).toFixed(1) + '万' : followers;
+                        const formattedViews = views >= 10000 ? (views / 10000).toFixed(1) + '万' : views;
+
+                        return `${params.marker}<b>${title}</b><br/>
+                        评分: <b>${score}</b><br/>
+                        追番: <b>${formattedFollowers}</b><br/>
+                        播放: <b>${formattedViews}</b>`;
+                    }
+                    return '无数据';
+                }
+            },
             grid: commonGrid,
-            xAxis: {type: "category", data: ["第一季度", "第二季度", "第三季度", "第四季度"]},
-            yAxis: {type: "value"},
+            xAxis: {
+                type: 'value',
+                name: '评分',
+                nameLocation: 'middle',
+                nameGap: 25,
+                splitLine: {
+                    lineStyle: {
+                        type: 'dashed'
+                    }
+                },
+                min: 7 // 聚焦于7分以上的作品，使分布更有意义
+            },
+            yAxis: {
+                type: 'log', // 使用对数轴，避免高热度作品压缩其他数据点
+                name: '追番人数',
+                splitLine: {
+                    lineStyle: {
+                        type: 'dashed'
+                    }
+                }
+            },
             series: [{
-                name: '番剧数量',
-                type: "line",
-                smooth: true,
-                data: [320, 432, 401, 534]
+                name: '番剧',
+                type: 'scatter',
+                symbolSize: 10,
+                data: [], // 等待动态数据填充
+                emphasis: {
+                    focus: 'series',
+                    label: {
+                        show: true,
+                        formatter: function (params) {
+                            return params.value[2]; // 鼠标悬停时显示番剧标题
+                        },
+                        position: 'top'
+                    }
+                }
             }]
         };
 
@@ -1587,7 +1676,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         // --- 批量执行初始化 ---
-        initChart('chart-season-trend', seasonTrendOption);
+        initChart('chart-season-trend', reputationPopularityOption);
         initChart('chart-play-trend', playTrendOption);
         initChart('chart-watch-time', watchTimeOption);
         initChart('chart-yearly-trend', yearlyTrendOption);
