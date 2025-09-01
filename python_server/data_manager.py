@@ -64,7 +64,7 @@ class BangumiDataManager:
         'Referer': 'https://www.bilibili.com/'
     }
 
-    def __init__(self, pages_to_fetch=4, pagesize=820):
+    def __init__(self, pages_to_fetch=5, pagesize=820):
         """
         BangumiDataManager类的构造函数。
         负责初始化requests会话、设置抓取参数，并打印初始化信息。

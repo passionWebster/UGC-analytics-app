@@ -11,6 +11,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_apscheduler import APScheduler
 from flask_cors import CORS
 
+from data_manager import BangumiDataManager
 from scraper import BilibiliBangumiScraper
 
 # 确定脚本所在的目录
@@ -319,14 +320,29 @@ class BilibiliAnalyticsApp:
     def get_rank_cache():
         """
         获取排名缓存数据。
+        如果缓存文件不存在，则自动调用 data_manager 生成一次。
 
         Returns:
             Response: 包含排名缓存数据的 JSON 响应。
         """
         filename = "rank_cache.json"
         file_path = os.path.join(CURRENT_DIR, filename)
+
         if not os.path.exists(file_path):
-            return jsonify({"error": f"排名缓存文件未找到"}), 404
+            print(f"'{filename}' 未找到，正在尝试自动生成...")
+            try:
+                data_manager = BangumiDataManager()
+                data_manager.run_monthly_aggregation()
+
+                if not os.path.exists(file_path):
+                    print(f"❌ 自动生成缓存失败，'{filename}' 仍然不存在。")
+                    return jsonify({"error": "排名缓存文件不存在，且自动生成失败"}), 500
+                print(f"✅ 缓存文件已成功生成。")
+
+            except Exception as e:
+                print(f"❌ 自动生成缓存时发生严重错误: {e}")
+                return jsonify({"error": f"自动生成缓存时出错: {str(e)}"}), 500
+
         return send_from_directory(CURRENT_DIR, filename)
 
     def health_check(self):
