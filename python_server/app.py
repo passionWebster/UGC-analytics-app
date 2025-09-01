@@ -5,6 +5,7 @@ import re
 import threading
 import time
 from datetime import datetime
+from math import log10
 
 import requests
 from flask import Flask, request, jsonify, send_from_directory
@@ -19,6 +20,285 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_FILE = os.path.join(CURRENT_DIR, 'cache.json')
 COVER_CACHE_DIR = os.path.join(os.path.dirname(CURRENT_DIR), "cover_cache")
 
+
+def _get_animes_from_rank_cache():
+    """
+    一个辅助函数，用于安全地从 rank_cache.json 文件中读取番剧列表。
+
+    Returns:
+        list: 包含番剧数据的列表。如果文件不存在或解析失败，则返回一个空列表。
+    """
+    rank_cache_path = os.path.join(CURRENT_DIR, 'rank_cache.json')
+    try:
+        with open(rank_cache_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return data.get('list', [])
+    except (FileNotFoundError, json.JSONDecodeError):
+        # 如果文件不存在或JSON解析错误，返回空列表以避免程序崩溃
+        return []
+
+
+def get_type_distribution_chart():
+    """
+    计算并返回番剧的类型（风格）分布数据。
+
+    该函数统计 `rank_cache.json` 中所有番剧的每种风格出现的次数，
+    并按出现次数从高到低排序。
+
+    Returns:
+        Response: 一个 JSON 响应，其数据格式为 [[style_name, count], ...]。
+    """
+    animes = _get_animes_from_rank_cache()
+    style_counts = {}
+    for anime in animes:
+        if anime.get('styles') and isinstance(anime['styles'], list):
+            for style in anime['styles']:
+                style_counts[style] = style_counts.get(style, 0) + 1
+
+    sorted_styles = sorted(style_counts.items(), key=lambda item: item[1], reverse=True)
+    return jsonify(sorted_styles)
+
+
+def get_reputation_popularity_chart():
+    """
+    生成用于展示番剧口碑与热度关系的散点图数据。
+
+    对于 `rank_cache.json` 中的每个番剧，提取其评分、收藏数、标题和播放量，
+    构成一个数据点。
+
+    Returns:
+        Response: 一个 JSON 响应，其数据格式为 [[score, favorites, title, views], ...]。
+    """
+    animes = _get_animes_from_rank_cache()
+    chart_data = []
+    for anime in animes:
+        score_str = anime.get('score')
+        if not score_str:
+            continue
+        try:
+            score = float(score_str)
+        except (ValueError, TypeError):
+            continue
+
+        favorites = int(anime.get('favorites', 0))
+        views = int(anime.get('views', 0))
+        if score > 0 and favorites > 0:
+            chart_data.append([score, favorites, anime.get('title'), views])
+
+    return jsonify(chart_data)
+
+
+def get_yearly_quantity_chart():
+    """
+    按年份和季度统计番剧的发布数量。
+
+    该函数可以根据查询参数 `category` 对番剧类型进行过滤。
+    然后，它将统计每年每个季度（1-3月、4-6月等）发布的番剧数量。
+
+    Query Parameters:
+        category (str): 可选参数，用于筛选特定类型的番剧。如果为 'all' 或未提供，则统计所有番剧。
+
+    Returns:
+        Response: 一个 JSON 响应，其数据格式为 { "year": [q1_count, q2_count, q3_count, q4_count], ... }。
+    """
+    animes = _get_animes_from_rank_cache()
+    category = request.args.get('category', 'all')
+
+    filtered_animes = []
+    if category == 'all':
+        filtered_animes = animes
+    else:
+        for anime in animes:
+            if anime.get('styles') and isinstance(anime['styles'], list) and category in anime['styles']:
+                filtered_animes.append(anime)
+
+    yearly_data = {}
+    for anime in filtered_animes:
+        if anime.get('release_date') and isinstance(anime['release_date'], str):
+            date_parts = anime['release_date'].split('-')
+            if len(date_parts) >= 2:
+                year = date_parts[0]
+                month = int(date_parts[1])
+
+                if year not in yearly_data:
+                    yearly_data[year] = [0, 0, 0, 0]
+
+                if 1 <= month <= 3:
+                    yearly_data[year][0] += 1
+                elif 4 <= month <= 6:
+                    yearly_data[year][1] += 1
+                elif 7 <= month <= 9:
+                    yearly_data[year][2] += 1
+                elif 10 <= month <= 12:
+                    yearly_data[year][3] += 1
+
+    return jsonify(yearly_data)
+
+
+def get_preference_difference_chart():
+    """
+    计算特定地区与全球平均对不同番剧类型的偏好差异指数。
+
+    该函数首先计算每种类型的全球平均收藏数。然后，根据查询参数 `region` 筛选出
+    特定地区的番剧，并计算该地区每种类型的平均收藏数。最后，通过将地区平均值
+    除以全球平均值，得到偏好指数。
+
+    Query Parameters:
+        region (str): 必选参数，用于指定地区（例如 '国内', '日本'）。默认为 '国内'。
+
+    Returns:
+        Response: 一个 JSON 响应，其数据格式为 [{'name': style, 'value': preference_index, ...}, ...]。
+    """
+    animes = _get_animes_from_rank_cache()
+
+    # 计算全球各类别的平均收藏数
+    global_genre_stats = {}
+    for anime in animes:
+        if anime.get('styles') and isinstance(anime['styles'], list):
+            for style in anime['styles']:
+                if style not in global_genre_stats:
+                    global_genre_stats[style] = {'totalFavorites': 0, 'count': 0}
+                global_genre_stats[style]['totalFavorites'] += anime.get('favorites', 0)
+                global_genre_stats[style]['count'] += 1
+
+    for style in global_genre_stats:
+        stats = global_genre_stats[style]
+        stats['avgFavorites'] = stats['totalFavorites'] / stats['count'] if stats['count'] > 0 else 0
+
+    # 筛选特定地区的番剧
+    selected_region = request.args.get('region', '国内')
+    regional_animes = [anime for anime in animes if selected_region == 'all' or anime.get('area') == selected_region]
+
+    # 计算地区内各类别的平均收藏数
+    regional_genre_stats = {}
+    for anime in regional_animes:
+        if anime.get('styles') and isinstance(anime['styles'], list):
+            for style in anime['styles']:
+                if style not in regional_genre_stats:
+                    regional_genre_stats[style] = {'totalFavorites': 0, 'count': 0}
+                regional_genre_stats[style]['totalFavorites'] += anime.get('favorites', 0)
+                regional_genre_stats[style]['count'] += 1
+
+    for style in regional_genre_stats:
+        stats = regional_genre_stats[style]
+        stats['avgFavorites'] = stats['totalFavorites'] / stats['count'] if stats['count'] > 0 else 0
+
+    # 计算偏好指数
+    chart_data = []
+    for style, regional_stats in regional_genre_stats.items():
+        global_stats = global_genre_stats.get(style)
+        if global_stats and global_stats['avgFavorites'] > 0 and regional_stats['count'] >= 3:
+            preference_index = regional_stats['avgFavorites'] / global_stats['avgFavorites']
+            chart_data.append({
+                'name': style,
+                'value': round(preference_index, 2),
+                'regionalAvg': round(regional_stats['avgFavorites']),
+                'globalAvg': round(global_stats['avgFavorites'])
+            })
+
+    return jsonify(chart_data)
+
+
+def get_reputation_heat_index_chart():
+    """
+    计算并返回番剧的“口碑热度指数”排名前15的作品。
+
+    该指数通过公式 `score * log10(favorites) * log10(views)` 计算得出。
+    支持通过查询参数 `season` 和 `category` 进行筛选。
+
+    Query Parameters:
+        season (str): 可选参数，筛选特定季节 ('winter', 'spring', 'summer', 'autumn')。
+        category (str): 可选参数，筛选特定类型。
+
+    Returns:
+        Response: 一个 JSON 响应，包含排名前15的番剧完整信息的列表。
+    """
+    animes = _get_animes_from_rank_cache()
+    season = request.args.get('season', 'all')
+    category = request.args.get('category', 'all')
+
+    season_map = {
+        'winter': [1, 2, 3], 'spring': [4, 5, 6],
+        'summer': [7, 8, 9], 'autumn': [10, 11, 12]
+    }
+
+    processed_data = []
+    for anime in animes:
+        score = anime.get('score')
+        views = anime.get('views')
+        favorites = anime.get('favorites')
+
+        if not all([score, views, favorites]) or float(score) <= 0 or int(views) <= 0 or int(favorites) <= 0:
+            continue
+
+        if season != 'all':
+            release_date_parts = anime.get('release_date', '').split('-')
+            if len(release_date_parts) < 2 or int(release_date_parts[1]) not in season_map.get(season, []):
+                continue
+
+        if category != 'all':
+            if not (anime.get('styles') and category in anime.get('styles', [])):
+                continue
+
+        anime['qualityScore'] = float(score) * log10(int(favorites)) * log10(int(views))
+        processed_data.append(anime)
+
+    top_animes = sorted(processed_data, key=lambda x: x.get('qualityScore', 0), reverse=True)[:15]
+
+    return jsonify(top_animes)
+
+
+def get_popular_style_combination_chart():
+    """
+    找出最受欢迎的“风格组合”（两种类型的搭配），并按平均收藏数排序。
+
+    该函数遍历所有番剧，找出所有两两风格的组合。然后，计算每个组合下的
+    作品总数和平均收藏数。只考虑作品数达到一定门槛（默认为5）的组合，
+    并返回平均收藏数排名前20的组合。
+
+    Returns:
+        Response: 一个 JSON 响应，数据格式为 [{'name': '类型A + 类型B', 'avgFavorites': avg_fav, ...}, ...]。
+    """
+    animes = _get_animes_from_rank_cache()
+
+    combinations = {}
+    for anime in animes:
+        styles = anime.get('styles')
+        if styles and isinstance(styles, list) and len(styles) >= 2:
+            sorted_styles = sorted(styles)
+            for i in range(len(sorted_styles)):
+                for j in range(i + 1, len(sorted_styles)):
+                    combo_key = f"{sorted_styles[i]} + {sorted_styles[j]}"
+                    if combo_key not in combinations:
+                        combinations[combo_key] = {'totalFavorites': 0, 'count': 0, 'animes': []}
+
+                    favorites = int(anime.get('favorites', 0))
+                    combinations[combo_key]['totalFavorites'] += favorites
+                    combinations[combo_key]['count'] += 1
+                    combinations[combo_key]['animes'].append({
+                        'title': anime.get('title'),
+                        'cover': anime.get('cover'),
+                        'score': anime.get('score'),
+                        'favorites': favorites,
+                        'season_id': anime.get('season_id')
+                    })
+
+    min_anime_count = 5
+    top_combinations = sorted(
+        [
+            {
+                'name': name,
+                'count': data['count'],
+                'avgFavorites': data['totalFavorites'] / data['count'] if data['count'] > 0 else 0,
+                'animes': sorted(data['animes'], key=lambda x: x['favorites'], reverse=True)
+            }
+            for name, data in combinations.items() if data['count'] >= min_anime_count
+        ],
+        key=lambda x: x['avgFavorites'],
+        reverse=True
+    )[:20]
+
+    return jsonify(top_combinations)
 
 class BilibiliAnalyticsApp:
     def __init__(self):
@@ -57,6 +337,12 @@ class BilibiliAnalyticsApp:
         self.app.route('/api/monthly_data/<int:month>', methods=['GET'])(self.get_monthly_data)
         self.app.route('/api/rank_cache', methods=['GET'])(self.get_rank_cache)
         self.app.route('/health_check', methods=['GET'])(self.health_check)
+        self.app.route('/api/type_distribution_chart', methods=['GET'])(get_type_distribution_chart)
+        self.app.route('/api/reputation_popularity_chart', methods=['GET'])(get_reputation_popularity_chart)
+        self.app.route('/api/yearly_quantity_chart', methods=['GET'])(get_yearly_quantity_chart)
+        self.app.route('/api/preference_difference_chart', methods=['GET'])(get_preference_difference_chart)
+        self.app.route('/api/reputation_heat_index_chart', methods=['GET'])(get_reputation_heat_index_chart)
+        self.app.route('/api/popular_style_combination_chart', methods=['GET'])(get_popular_style_combination_chart)
 
     def _read_cache(self) -> dict:
         """
