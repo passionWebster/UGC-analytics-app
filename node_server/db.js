@@ -1,12 +1,14 @@
 // db.js
 const mysql = require('mysql2');
+const {resolve} = require("node:path");
+require('dotenv').config({path: resolve(__dirname, '..', '.env')});
 
 // 创建连接池,并使用 promise() 以支持 async/await
 const pool = mysql.createPool({
-    host: 'localhost',
-    user: 'root',
-    password: '123456', // <-- 请确保这是您正确的MySQL密码
-    database: 'blibl',
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0

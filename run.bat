@@ -11,12 +11,11 @@ echo Starting all servers from directory: %cd%
 echo.
 
 rem 启动 Node.js 服务器
-start "Node Server AI" node node_server/ai-assistant-server.js
-start "Node Server DB" node node_server/db.js
 start "Node Server SERVER" node node_server/server.js
 
 rem 启动 Python 服务器
 start "Python Server" python python_server/app.py
+start "Setup" python python_server/setup.py
 
 echo.
 echo All server startup commands have been issued.

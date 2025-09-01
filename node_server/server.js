@@ -2,22 +2,27 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
+const cors = require('cors');
+const axios = require('axios');
 const {
     authenticateUser,
     registerUser,
     updateUserPreferences,
     getUserInfo,
-} = require('./db'); // 确保导入 getUserInfo
+} = require('./db');
+const {resolve} = require("node:path");
+require('dotenv').config({path: resolve(__dirname, '..', '.env')});
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.NODE_PORT || 3000;
+const DOUBAO_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
+const API_KEY = '14ff6bd4-93b1-4c48-b9f4-ba7db33089b2';
 
 // 配置中间件
+app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
-// 2.【核心新增】提供 cover_cache 文件夹中的静态文件 (图片)
-//    当前端请求 /cover_cache/some_image.gif 时，Express会去 ../cover_cache/ 目录下查找文件
-app.use('/cover_cache', express.static(path.join(__dirname, '../cover_cache')));
+app.use('/cover_cache', express.static(path.join(__dirname, '..', 'cover_cache')));
 
 
 // 根路径重定向到 login.html
@@ -130,6 +135,39 @@ app.post('/api/register', async (req, res) => {
         } else {
             res.status(500).json({success: false, message: '注册失败'});
         }
+    }
+});
+
+// AI服务状态API
+app.get('/api/aiservicestatus', (req, res) => {
+    res.json({
+        status: 'online', timestamp: new Date().toISOString(), version: '1.0.0'
+    });
+});
+
+// 处理AI聊天请求
+app.post('/api/chat', async (req, res) => {
+    try {
+        const {message} = req.body;
+        const requestBody = {
+            model: "doubao-seed-1-6-250615", messages: [{
+                role: "system", content: "你是一个B站数据分析助手，帮助用户理解B站番剧数据、用户行为分析报告和系统使用。"
+            }, {
+                role: "user", content: message
+            }], temperature: 0.7, max_tokens: 500
+        };
+        const response = await axios.post(DOUBAO_API_URL, requestBody, {
+            headers: {
+                'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}`
+            }
+        });
+        const reply = response.data.choices[0].message.content;
+        res.json({reply});
+    } catch (error) {
+        console.error('AI 助手服务错误:', error.response ? error.response.data : error.message);
+        res.status(500).json({
+            error: 'AI 服务暂时不可用，请稍后再试'
+        });
     }
 });
 

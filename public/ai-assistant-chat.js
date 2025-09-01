@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function checkServiceStatus() {
         try {
             // 向Node.js后端发送请求
-            const response = await fetch('http://localhost:3001/api/status');
+            const response = await fetch('http://localhost:3000/api/aiservicestatus');
             if (response.ok) {
                 const data = await response.json();
                 serviceOnline = data.status === 'online';
@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     async function getAIResponse(prompt) {
         try {
-            const response = await fetch('http://localhost:3001/api/chat', {
+            const response = await fetch('http://localhost:3000/api/chat', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({message: prompt})
