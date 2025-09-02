@@ -42,8 +42,6 @@ app.get('/api/user-info', async (req, res) => {
             return res.status(404).json({success: false, message: '用户不存在'});
         }
 
-        console.log('用户信息:', user);
-
         // 格式化偏好设置
         let preferences = [];
         if (user.preferences) {

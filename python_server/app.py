@@ -456,6 +456,7 @@ class BilibiliAnalyticsApp:
         self.scheduler = APScheduler()
         self.scheduler.init_app(self.app)
         self.scraper = BilibiliBangumiScraper()
+        self.data_manager = BangumiDataManager(pages_to_fetch=5)  # 使用默认值初始化
         self.cache_lock = threading.Lock()
         self._register_routes()
 
@@ -467,6 +468,16 @@ class BilibiliAnalyticsApp:
             minute='0',
             misfire_grace_time=None
         )
+
+        self.scheduler.add_job(
+            func=self.run_monthly_aggregation_job,
+            trigger='cron',
+            id='monthly_aggregation_job',
+            day='1',
+            hour='2',
+            minute='0'
+        )
+
         self.scheduler.start()
 
     def _register_routes(self):
@@ -512,6 +523,18 @@ class BilibiliAnalyticsApp:
         with self.cache_lock:
             with open(self.cache_file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
+
+    def run_monthly_aggregation_job(self):
+        """
+        由调度器调用的月度聚合任务的包装器方法。
+        """
+        print(f"--- [MONTHLY JOB at {datetime.now()}] ---")
+        print("--- 开始执行月度数据聚合... ---")
+        try:
+            self.data_manager.run_monthly_aggregation()
+            print("--- [MONTHLY JOB] 月度数据聚合任务成功完成。 ---")
+        except Exception as e:
+            print(f"--- [MONTHLY JOB ERROR] 月度数据聚合任务失败: {e} ---")
 
     def update_all_tracked_bangumi(self, is_health_check=False) -> dict:
         """
