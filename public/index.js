@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let isPreferenceMode = false; // 偏好模式是否激活
     let userPreferences = []; // 存储从后端获取的用户偏好
     let currentSortBy = 'score'; // 当前的排序标准
+    let selectedAreasForReputationChart = ['国内', '日本', '美国'];
 
     // ------------------- 【核心修改 1/3】: 新增一个通用的、带自动 resize 功能的图表初始化函数 -------------------
     /**
@@ -251,6 +252,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         await updateRankDisplay();
         await updateTypeDistributionChart();
         await updateReputationPopularityChart();
+
+        document.getElementById('reputation-chart-controls').addEventListener('change', (e) => {
+            if (e.target.type === 'checkbox') {
+                const area = e.target.value;
+                if (e.target.checked) {
+                    // 如果选中，添加到数组
+                    if (!selectedAreasForReputationChart.includes(area)) {
+                        selectedAreasForReputationChart.push(area);
+                    }
+                } else {
+                    // 如果取消选中，从数组中移除
+                    selectedAreasForReputationChart = selectedAreasForReputationChart.filter(a => a !== area);
+                }
+                // 重新获取并渲染图表
+                updateReputationPopularityChart();
+            }
+        });
     }
 
     /**
@@ -537,11 +555,63 @@ document.addEventListener('DOMContentLoaded', async () => {
      */
     async function updateReputationPopularityChart() {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/reputation_popularity_chart`);
+            const areasQuery = selectedAreasForReputationChart.join(',');
+            const response = await fetch(`${API_BASE_URL}/api/reputation_popularity_chart?areas=${encodeURIComponent(areasQuery)}`);
             const chartData = await response.json();
-            charts['season-trend'].setOption({
-                series: [{data: chartData}]
-            });
+            const areaColorMap = {
+                '国内': '#FB7299', // 粉色
+                '日本': '#23ADE5', // 蓝色
+                '美国': '#FFCE56', // 黄色
+            };
+
+            const seriesData = chartData.map(item => ({
+                value: item,
+                itemStyle: {
+                    color: areaColorMap[item[5]] || '#cccccc' // item[5] 是地区信息
+                }
+            }));
+
+            const fullOption = {
+                tooltip: {
+                    trigger: 'item',
+                    formatter: function (params) {
+                        if (params.value) {
+                            const [jitteredScore, followers, title, views, originalScore, area] = params.value;
+                            const scoreToDisplay = originalScore !== undefined ? originalScore : jitteredScore;
+                            const formattedFollowers = followers >= 10000 ? (followers / 10000).toFixed(1) + '万' : followers;
+                            const formattedViews = views >= 10000 ? (views / 10000).toFixed(1) + '万' : views;
+                            return `${params.marker}<b>${title}</b><br/>地区: <b>${area || '未知'}</b><br/>评分: <b>${scoreToDisplay.toFixed(1)}</b><br/>追番: <b>${formattedFollowers}</b><br/>播放: <b>${formattedViews}</b>`;
+                        }
+                        return '无数据';
+                    }
+                },
+                grid: {left: '3%', right: '4%', bottom: '3%', containLabel: true},
+                xAxis: {
+                    type: 'value',
+                    nameLocation: 'middle',
+                    nameGap: 25,
+                    splitLine: {lineStyle: {type: 'dashed'}},
+                    min: 7
+                },
+                yAxis: {
+                    type: 'log',
+                    name: '追番人数',
+                    splitLine: {lineStyle: {type: 'dashed'}},
+                    min: 1000
+                },
+                series: [{
+                    name: '番剧',
+                    type: 'scatter',
+                    symbolSize: 10,
+                    data: seriesData,
+                    emphasis: {focus: 'series', label: {show: true, formatter: (p) => p.value[2], position: 'top'}}
+                }]
+            };
+            const chart = charts['season-trend'];
+            if (chart) {
+                chart.setOption(fullOption, true);
+            }
+
         } catch (error) {
             console.error('更新口碑热度分布图表失败:', error);
         }
@@ -1091,32 +1161,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         // 首页 - 口碑热度分布（散点图）
         const reputationPopularityOption = {
-            tooltip: {
-                trigger: 'item', axisPointer: {type: 'cross'},
-                formatter: function (params) {
-                    if (params.value) {
-                        const [score, followers, title, views] = params.value;
-                        const formattedFollowers = followers >= 10000 ? (followers / 10000).toFixed(1) + '万' : followers;
-                        const formattedViews = views >= 10000 ? (views / 10000).toFixed(1) + '万' : views;
-                        return `${params.marker}<b>${title}</b><br/>评分: <b>${score}</b><br/>追番: <b>${formattedFollowers}</b><br/>播放: <b>${formattedViews}</b>`;
-                    }
-                    return '无数据';
-                }
-            },
             grid: commonGrid,
-            xAxis: {
-                type: 'value',
-                name: '评分',
-                nameLocation: 'middle',
-                nameGap: 25,
-                splitLine: {lineStyle: {type: 'dashed'}},
-                min: 7
-            },
-            yAxis: {type: 'log', name: '追番人数', splitLine: {lineStyle: {type: 'dashed'}}, min: 1000},
-            series: [{
-                name: '番剧', type: 'scatter', symbolSize: 10, data: [],
-                emphasis: {focus: 'series', label: {show: true, formatter: (p) => p.value[2], position: 'top'}}
-            }]
+            xAxis: {name: '评分'},
+            yAxis: {name: '追番人数'}
         };
 
         // 番剧状态检测 - 播放量趋势（面积图）

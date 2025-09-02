@@ -80,15 +80,28 @@ def get_reputation_popularity_chart():
     """
     生成用于展示番剧口碑与热度关系的散点图数据。
 
-    对于 `rank_cache.json` 中的每个番剧，提取其评分、收藏数、标题和播放量，
-    构成一个数据点。
+    支持通过 'areas' 查询参数按地区筛选数据（例如 '国内,日本'）。
+    为了解决数据点在同一评分上重叠的问题，我们为评分添加了微小的随机“抖动”(jitter)。
+
+    Query Parameters:
+        areas (str): 可选参数，一个用逗号分隔的地区字符串列表。
 
     Returns:
-        Response: 一个 JSON 响应，其数据格式为 [[score, favorites, title, views], ...]。
+        Response: 一个 JSON 响应，其数据格式为 [[jittered_score, favorites, title, views, original_score, area], ...]。
     """
     animes = _get_animes_from_rank_cache()
     chart_data = []
+
+    # 1. 获取并解析地区筛选参数
+    selected_areas_str = request.args.get('areas', '')
+    selected_areas = [area.strip() for area in selected_areas_str.split(',') if
+                      area.strip()] if selected_areas_str else []
+
     for anime in animes:
+        # 2. 如果设置了地区筛选，则跳过不匹配的番剧
+        if selected_areas and anime.get('area') not in selected_areas:
+            continue
+
         score_str = anime.get('score')
         if not score_str:
             continue
@@ -99,8 +112,11 @@ def get_reputation_popularity_chart():
 
         favorites = int(anime.get('favorites', 0))
         views = int(anime.get('views', 0))
+
         if score > 0 and favorites > 0:
-            chart_data.append([score, favorites, anime.get('title'), views])
+            jitter = random.uniform(-0.05, 0.05)
+            jittered_score = round(score + jitter, 2)
+            chart_data.append([jittered_score, favorites, anime.get('title'), views, score, anime.get('area')])
 
     return jsonify(chart_data)
 
@@ -487,7 +503,7 @@ class BilibiliAnalyticsApp:
         self.app.route('/search', methods=['POST'])(self.search)
         self.app.route('/api/image_proxy')(image_proxy)
         self.app.route('/api/monthly_data/<int:month>', methods=['GET'])(self.get_monthly_data)
-        self.app.route('/api/rank_list', methods=['GET'])(get_rank_list)
+        # self.app.route('/api/rank_list', methods=['GET'])(get_rank_list)
         self.app.route('/health_check', methods=['GET'])(self.health_check)
         self.app.route('/api/type_distribution_chart', methods=['GET'])(get_type_distribution_chart)
         self.app.route('/api/reputation_popularity_chart', methods=['GET'])(get_reputation_popularity_chart)
