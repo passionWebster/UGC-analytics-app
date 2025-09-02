@@ -51,6 +51,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     let userPreferences = []; // 存储从后端获取的用户偏好
     let currentSortBy = 'score'; // 当前的排序标准
 
+    // ------------------- 【核心修改 1/3】: 新增一个通用的、带自动 resize 功能的图表初始化函数 -------------------
+    /**
+     * @function initChartWithResizeObserver
+     * @description 初始化 ECharts 实例并使用 ResizeObserver 自动监听容器尺寸变化以调整图表大小。
+     * @param {string} elementId - 图表容器的 DOM 元素 ID.
+     * @param {object} option - ECharts 的配置项.
+     * @returns {echarts.ECharts | null} - 返回 ECharts 实例或 null.
+     */
+    function initChartWithResizeObserver(elementId, option) {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            console.error(`图表容器 #${elementId} 未找到。`);
+            return null;
+        }
+
+        // 销毁可能存在的旧实例
+        const existingInstance = echarts.getInstanceByDom(element);
+        if (existingInstance) {
+            existingInstance.dispose();
+        }
+
+        const chart = echarts.init(element);
+        chart.setOption(option);
+
+        // 使用 ResizeObserver 监听容器大小变化
+        const resizeObserver = new ResizeObserver(() => {
+            chart.resize();
+        });
+        resizeObserver.observe(element);
+
+        // 将图表实例存入全局对象
+        charts[elementId.replace('chart-', '')] = chart;
+        return chart;
+    }
+
     /**
      * @function fetchUserPreferences
      * @description 获取当前登录用户的偏好设置。
@@ -93,11 +128,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error("初始化时发生错误:", error);
     }
 
-
-    window.addEventListener('resize', () => {
-        setTimeout(() => Object.values(charts).forEach(chart => chart.resize()), 200);
-    });
-
     /**
      * @function ensureElementVisible
      * @description 确保元素可见的辅助函数
@@ -135,7 +165,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 navLink.classList.remove("active");
                 if (navLink.getAttribute("href") === `#${sectionId}`) navLink.classList.add("active");
             });
-            setTimeout(() => Object.values(charts).forEach(chart => chart.resize()), 200);
+            // 【核心修改】: 这里的 resize 逻辑可以移除，因为 ResizeObserver 会自动处理。
+            // 但如果切换 section 导致 flex 容器尺寸在JS切换后才最终确定，保留一个延时 resize 作为双重保险也可以。
+            // 为了最稳妥的体验，我们在这里保留一个延时，但时间可以缩短。
+            setTimeout(() => {
+                const visibleChart = targetSection.querySelector('[id^="chart-"]');
+                if (visibleChart) {
+                    const chartInstance = echarts.getInstanceByDom(visibleChart);
+                    if (chartInstance) chartInstance.resize();
+                }
+            }, 50);
         };
 
         navLinks.forEach(link => {
@@ -969,7 +1008,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     /**
      * @function initializeOverviewModule
-     * @description 初始化概述模块，包括为各种交互元素添加事件监听器并更新图表。
+     * @description 初始化概述模块，并为标签页切换添加精准的 resize 逻辑。
      */
     function initializeOverviewModule() {
         elements.collectionIntervalSelect.addEventListener('change', updateQualityScoreChart);
@@ -986,14 +1025,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 500);
 
         document.querySelectorAll('#overviewTabs button[data-bs-toggle="pill"]').forEach(tabEl => {
-            tabEl.addEventListener("shown.bs.tab", async (event) => {
-                const targetId = event.target.dataset.bsTarget.substring(1);
-                await ensureElementVisible(`#${targetId}`);
-                setTimeout(() => Object.values(charts).forEach(chart => chart.resize()), 100);
+            tabEl.addEventListener("shown.bs.tab", (event) => {
+                // 获取新激活的标签页内容区的 ID
+                const targetPaneId = event.target.getAttribute('data-bs-target');
+                if (!targetPaneId) return;
+
+                // 找到该内容区内的图表容器
+                const chartElement = document.querySelector(`${targetPaneId} [id^="chart-"]`);
+                if (chartElement) {
+                    // 获取对应的 ECharts 实例并调用 resize
+                    const chartInstance = echarts.getInstanceByDom(chartElement);
+                    if (chartInstance) {
+                        chartInstance.resize();
+                    }
+                }
             });
         });
-
-        setTimeout(() => Object.values(charts).forEach(chart => chart.resize()), 500);
     }
 
     /**
@@ -1001,23 +1048,6 @@ document.addEventListener('DOMContentLoaded', async () => {
      * @description 初始化页面上所有的 ECharts 实例。
      */
     function initializeCharts() {
-        const initChart = (id, option) => {
-            const element = document.getElementById(id);
-            if (element) {
-                try {
-                    const existingChart = echarts.getInstanceByDom(element);
-                    if (existingChart) existingChart.dispose();
-                    const chart = echarts.init(element);
-                    chart.setOption(option);
-                    charts[id.replace('chart-', '')] = chart;
-                    return chart;
-                } catch (e) {
-                    console.error(`初始化图表失败: ${id}`, e);
-                }
-            }
-        };
-
-        // --- 各图表具体配置 ---
 
         // 首页 - 类型分布（饼图）
         const typeDistributionOption = {
@@ -1043,7 +1073,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }]
         };
 
-        const typeChart = initChart('chart-type-distribution', typeDistributionOption);
+        const typeChart = initChartWithResizeObserver('chart-type-distribution', typeDistributionOption);
         if (typeChart) {
             typeChart.on('click', (params) => {
                 if (!isTypeChartDrilledDown && params.name === '其他' && typeChartOtherData.seriesData.length > 0) {
@@ -1141,12 +1171,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         // --- 批量执行初始化 ---
-        initChart('chart-season-trend', reputationPopularityOption);
-        initChart('chart-play-trend', playTrendOption);
-        initChart('chart-watch-time', watchTimeOption);
-        initChart('chart-yearly-trend', yearlyTrendOption);
-        initChart('chart-preference-diff', preferenceDiffOption);
-        initChart('chart-collection-ratio', collectionRatioOption);
-        initChart('chart-category-trend', categoryTrendOption);
+        initChartWithResizeObserver('chart-season-trend', reputationPopularityOption);
+        initChartWithResizeObserver('chart-play-trend', playTrendOption);
+        initChartWithResizeObserver('chart-watch-time', watchTimeOption);
+        initChartWithResizeObserver('chart-yearly-trend', yearlyTrendOption);
+        initChartWithResizeObserver('chart-preference-diff', preferenceDiffOption);
+        initChartWithResizeObserver('chart-collection-ratio', collectionRatioOption);
+        initChartWithResizeObserver('chart-category-trend', categoryTrendOption);
     }
 });
