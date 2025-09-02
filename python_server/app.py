@@ -503,7 +503,7 @@ class BilibiliAnalyticsApp:
         self.app.route('/search', methods=['POST'])(self.search)
         self.app.route('/api/image_proxy')(image_proxy)
         self.app.route('/api/monthly_data/<int:month>', methods=['GET'])(self.get_monthly_data)
-        self.app.route('/api/rank_list', methods=['GET'])(get_rank_list)
+        # self.app.route('/api/rank_list', methods=['GET'])(get_rank_list)
         self.app.route('/health_check', methods=['GET'])(self.health_check)
         self.app.route('/api/type_distribution_chart', methods=['GET'])(get_type_distribution_chart)
         self.app.route('/api/reputation_popularity_chart', methods=['GET'])(get_reputation_popularity_chart)
