@@ -40,7 +40,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let charts = {};
     let currentAnimeData = null;
-    let allRankedAnimes = []; // 【新增】用于存储从 rank_cache.json 获取的全量番剧数据
 
     // 用于饼图下钻的状态变量
     let isTypeChartDrilledDown = false;
@@ -209,7 +208,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // --- 【核心修改】排行榜数据加载和排序逻辑 ---
-        await fetchAndInitializeRankList();
+        initializeRankListControls();
+        await updateRankDisplay();
+        await updateTypeDistributionChart();
+        await updateReputationPopularityChart();
     }
 
     /**
@@ -241,24 +243,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     /**
-     * @function fetchAndInitializeRankList
-     * @description 获取番剧排名数据并初始化相关功能。
+     * @function updateRankDisplay
+     * @description 【新增】从后端获取根据当前选项（排序、偏好）处理好的排名列表并渲染。
      */
-    async function fetchAndInitializeRankList() {
-        // --- 1. 初始化悬停提示功能 ---
-        initializePreferencesTooltip();
-
-        // --- 2. 统一的渲染入口函数 ---
-        const updateRankDisplay = () => {
-            let animesToDisplay = isPreferenceMode && userPreferences.length > 0
-                ? allRankedAnimes.filter(anime => anime.styles?.some(style => userPreferences.includes(style)))
-                : [...allRankedAnimes];
+    async function updateRankDisplay() {
+        elements.rankListContainer.innerHTML = '<div class="d-flex justify-content-center align-items-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+        try {
+            const params = new URLSearchParams({
+                sortBy: currentSortBy,
+                isPreferenceMode: isPreferenceMode,
+                preferences: isPreferenceMode ? userPreferences.join(',') : ''
+            });
+            const response = await fetch(`${API_BASE_URL}/api/rank_list?${params.toString()}`);
+            const animesToDisplay = await response.json();
             renderRankList(animesToDisplay, currentSortBy);
-        };
+        } catch (error) {
+            console.error('获取排行榜数据失败:', error);
+            elements.rankListContainer.innerHTML = '<div class="text-center py-5">加载失败，请刷新重试</div>';
+        }
+    }
+
+    /**
+     * @function initializeRankListControls
+     * @description 【新增】初始化排行榜的控制按钮（排序按钮、偏好开关）。
+     */
+    function initializeRankListControls() {
+        initializePreferencesTooltip();
 
         elements.sortButtons.addEventListener('click', (e) => {
             const button = e.target.closest('button');
-            if (button) {
+            if (button && button.dataset.sort !== currentSortBy) {
                 elements.sortButtons.querySelectorAll('.btn').forEach(btn => {
                     btn.classList.remove('btn-primary', 'active');
                     btn.classList.add('btn-outline-primary');
@@ -275,21 +289,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             elements.preferencesBtn.classList.toggle('active', isPreferenceMode);
             updateRankDisplay();
         });
-
-        // --- 4. 初始数据加载 ---
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/rank_cache`);
-            if (!response.ok) throw new Error('无法加载排名数据');
-            const data = await response.json();
-            allRankedAnimes = data.list || [];
-            updateRankDisplay();
-            await updateTypeDistributionChart();
-            await updateReputationPopularityChart();
-        } catch (error) {
-            console.error('获取排行榜数据失败:', error);
-            elements.rankListContainer.innerHTML = '<div class="text-center py-5">加载失败，请刷新重试</div>';
-        }
     }
+
 
     /**
      * @function updateTypeDistributionChart
@@ -417,22 +418,14 @@ document.addEventListener('DOMContentLoaded', async () => {
      * @function renderRankList
      * @description 纯粹的渲染函数，负责将数据生成HTML，并高亮匹配偏好的标签。
      * @param {Array} animes - 要渲染的番剧对象数组。
-     * @param {string} sortBy - 排序依据。
+     * @param {string} sortBy - 排序依据，用于决定显示哪个指标。
      */
     function renderRankList(animes, sortBy) {
         if (!Array.isArray(animes) || animes.length === 0) {
-            elements.rankListContainer.innerHTML = `<div class="text-center py-5">${isPreferenceMode ? '没有找到符合您偏好的番剧' : '暂无数据'}</div>`;
+            elements.rankListContainer.innerHTML = `<div class="text-center py-5">${isPreferenceMode && userPreferences.length > 0 ? '没有找到符合您偏好的番剧' : '暂无数据'}</div>`;
             return;
         }
-
-        const sortedAnimes = [...animes].sort((a, b) => {
-            const key = sortBy === 'followers' ? 'favorites' : sortBy;
-            const valA = key === 'score' ? parseFloat(a[key] || 0) : (a[key] || 0);
-            const valB = key === 'score' ? parseFloat(b[key] || 0) : (b[key] || 0);
-            return valB - valA;
-        });
-
-        const topAnimes = sortedAnimes.slice(0, 10);
+        const topAnimes = animes;
 
         const formatLargeNumber = (num) => {
             if (num >= 1e8) return (num / 1e8).toFixed(1) + '亿';
@@ -444,8 +437,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const rankClass = index < 3 ? 'top3' : '';
             const proxyUrl = `${API_BASE_URL}/api/image_proxy?url=${encodeURIComponent(anime.cover)}&title=${encodeURIComponent(anime.title)}&season_id=${anime.season_id}`;
 
-            let displayValue = '';
-            let valueIconClass = '';
+            let displayValue;
+            let valueIconClass;
             switch (sortBy) {
                 case 'views':
                     valueIconClass = 'fas fa-play-circle';
@@ -462,7 +455,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             const animeStyles = anime.styles || [];
-            let tagsHtml = '';
+            let tagsHtml;
 
             if (isPreferenceMode && userPreferences.length > 0) {
                 // 1. 分离出匹配的标签和不匹配的标签
@@ -663,7 +656,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 e.target.classList.add("btn-primary", "active");
                 e.target.classList.remove("btn-outline-secondary");
-                updateChartBasedOnSelection(containerId, e.target.dataset.value);
+                updateChartBasedOnSelection(containerId);
             }
         });
     }
@@ -672,7 +665,7 @@ document.addEventListener('DOMContentLoaded', async () => {
      * @function updateChartBasedOnSelection
      * @description 根据选择更新图表
      */
-    function updateChartBasedOnSelection(containerId, selectedValue) {
+    function updateChartBasedOnSelection(containerId) {
         // 这里需要根据具体的标签页实现不同的更新逻辑
         if (containerId === "preference-anime-buttons") {
             updatePreferenceChart();

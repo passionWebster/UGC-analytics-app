@@ -1,6 +1,7 @@
 # app.py
 import json
 import os
+import random
 import re
 import threading
 import time
@@ -24,17 +25,33 @@ COVER_CACHE_DIR = os.path.join(os.path.dirname(CURRENT_DIR), "cover_cache")
 def _get_animes_from_rank_cache():
     """
     一个辅助函数，用于安全地从 rank_cache.json 文件中读取番剧列表。
+    如果文件不存在，它将自动触发数据获取和处理流程来创建该文件。
 
     Returns:
-        list: 包含番剧数据的列表。如果文件不存在或解析失败，则返回一个空列表。
+        list: 包含番剧数据的列表。如果文件不存在、自动创建失败或解析失败，则返回一个空列表。
     """
     rank_cache_path = os.path.join(CURRENT_DIR, 'rank_cache.json')
+
+    # 1. 检查缓存文件是否存在，如果不存在则自动生成
+    if not os.path.exists(rank_cache_path):
+        print("排名缓存文件 'rank_cache.json' 未找到。")
+        print("正在启动自动数据获取流程，这可能需要几分钟时间...")
+        try:
+            data_manager = BangumiDataManager(pages_to_fetch=5)
+            result = data_manager.update_rank_cache()
+            if not result:
+                print("自动数据获取流程未能成功生成缓存文件。")
+                return []
+        except Exception as e:
+            print(f"自动数据获取流程因异常而失败: {e}")
+            return []
+
     try:
         with open(rank_cache_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
             return data.get('list', [])
-    except (FileNotFoundError, json.JSONDecodeError):
-        # 如果文件不存在或JSON解析错误，返回空列表以避免程序崩溃
+    except Exception as e:
+        print(f"读取缓存文件 '{rank_cache_path}' 时发生未知错误: {e}")
         return []
 
 
@@ -300,6 +317,130 @@ def get_popular_style_combination_chart():
 
     return jsonify(top_combinations)
 
+
+def get_rank_list():
+    """
+    获取经过处理的番剧排名列表。
+
+    该函数替代了前端直接访问 rank_cache 的逻辑，并在后端处理筛选、排序和创新的随机化刷新。
+    它将排序后的番剧分为三个等级，并从每个等级中随机抽取一定数量的番剧，
+    以确保每次刷新都能看到部分新面孔，同时保持结果的高质量。
+
+    Query Parameters:
+        sortBy (str): 排序依据，可选值为 'score', 'followers', 'views'。默认为 'score'。
+        isPreferenceMode (str): 'true' 或 'false'，指示是否启用偏好筛选。默认为 'false'。
+        preferences (str): 逗号分隔的用户偏好类型字符串，例如 '奇幻,战斗,搞笑'。
+
+    Returns:
+        Response: 一个包含10个番剧对象的JSON响应列表。
+    """
+    # 1. 获取查询参数
+    sort_by = request.args.get('sortBy', 'score')
+    is_preference_mode = request.args.get('isPreferenceMode', 'false').lower() == 'true'
+    preferences_str = request.args.get('preferences', '')
+    user_preferences = preferences_str.split(',') if preferences_str else []
+
+    # 2. 读取基础数据
+    all_animes = _get_animes_from_rank_cache()
+
+    # 3. 根据偏好进行筛选
+    if is_preference_mode and user_preferences:
+        filtered_animes = [
+            anime for anime in all_animes
+            if anime.get('styles') and any(style in user_preferences for style in anime['styles'])
+        ]
+    else:
+        filtered_animes = all_animes
+
+    # 4. 根据指定字段排序
+    sort_key = 'favorites' if sort_by == 'followers' else sort_by
+    sorted_animes = sorted(
+        filtered_animes,
+        key=lambda x: (
+            float(x.get(sort_key, 0)) if str(x.get(sort_key, '0')).replace('.', '', 1).isdigit() else 0
+        ),
+        reverse=True
+    )
+
+    # 5. 实现带随机性的分层抽样逻辑
+    total_count = len(sorted_animes)
+    animes_to_return = []
+
+    if total_count <= 10:
+        animes_to_return = sorted_animes
+    else:
+        # 定义三个等级的范围
+        tier1_end = max(5, int(total_count * 0.1))
+        tier2_end = max(tier1_end + 15, int(total_count * 0.3))
+
+        tier1 = sorted_animes[:tier1_end]
+        tier2 = sorted_animes[tier1_end:tier2_end]
+        tier3 = sorted_animes[tier2_end:]
+
+        # 定义从每个等级抽取的数量
+        picks = {'tier1': 4, 'tier2': 4, 'tier3': 2}
+
+        # 从每个等级安全地抽取番剧
+        tier1_picks = random.sample(tier1, min(len(tier1), picks['tier1']))
+        tier2_picks = random.sample(tier2, min(len(tier2), picks['tier2']))
+        tier3_picks = random.sample(tier3, min(len(tier3), picks['tier3']))
+
+        combined_picks = tier1_picks + tier2_picks + tier3_picks
+
+        # 如果数量不足10，从剩余的番剧中补充
+        if len(combined_picks) < 10:
+            remaining_animes = [anime for anime in sorted_animes if anime not in combined_picks]
+            needed = 10 - len(combined_picks)
+            combined_picks.extend(remaining_animes[:needed])
+
+        # 按原始排名（即排序键）对最终选出的番剧再次排序
+        animes_to_return = sorted(
+            combined_picks,
+            key=lambda x: (
+                float(x.get(sort_key, 0)) if str(x.get(sort_key, '0')).replace('.', '', 1).isdigit() else 0
+            ),
+            reverse=True
+        )[:10]
+
+    return jsonify(animes_to_return)
+
+
+def image_proxy():
+    """
+    代理图片请求，实现图片缓存功能。
+    """
+    image_url = request.args.get('url')
+    title = request.args.get('title')
+    season_id = request.args.get('season_id')
+    if not all([image_url, title, season_id]):
+        return "缺少必要的参数 (url, title, season_id)", 400
+
+    os.makedirs(COVER_CACHE_DIR, exist_ok=True)
+
+    safe_title = re.sub(r'[\\/*?:"<>|]', "", title)
+    _, ext = os.path.splitext(image_url)
+    if not ext: ext = '.jpg'
+    filename = f"{safe_title}_{season_id}_cover{ext}"
+    local_filepath = os.path.join(COVER_CACHE_DIR, filename)
+
+    if not os.path.exists(local_filepath):
+        print(f"缓存未命中，正在下载图片: {image_url}")
+        try:
+            headers = {'Referer': 'https://www.bilibili.com/'}
+            response = requests.get(image_url, headers=headers, stream=True, timeout=10)
+            response.raise_for_status()
+            with open(local_filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print(f"图片已成功缓存到: {local_filepath}")
+        except requests.exceptions.RequestException as e:
+            print(f"下载图片失败: {e}")
+            return "图片下载失败", 500
+    else:
+        print(f"缓存命中，直接提供图片: {filename}")
+    return send_from_directory(os.path.dirname(local_filepath), os.path.basename(local_filepath))
+
+
 class BilibiliAnalyticsApp:
     def __init__(self):
         """
@@ -333,9 +474,9 @@ class BilibiliAnalyticsApp:
         在 Flask 应用中注册路由。
         """
         self.app.route('/search', methods=['POST'])(self.search)
-        self.app.route('/api/image_proxy')(self.image_proxy)
+        self.app.route('/api/image_proxy')(image_proxy)
         self.app.route('/api/monthly_data/<int:month>', methods=['GET'])(self.get_monthly_data)
-        self.app.route('/api/rank_cache', methods=['GET'])(self.get_rank_cache)
+        self.app.route('/api/rank_list', methods=['GET'])(get_rank_list)
         self.app.route('/health_check', methods=['GET'])(self.health_check)
         self.app.route('/api/type_distribution_chart', methods=['GET'])(get_type_distribution_chart)
         self.app.route('/api/reputation_popularity_chart', methods=['GET'])(get_reputation_popularity_chart)
@@ -548,42 +689,6 @@ class BilibiliAnalyticsApp:
             return jsonify({'status': 'error', 'message': f"未能找到“{keyword}”的相关数据"}), 404
 
     @staticmethod
-    def image_proxy():
-        """
-        代理图片请求，实现图片缓存功能。
-        """
-        image_url = request.args.get('url')
-        title = request.args.get('title')
-        season_id = request.args.get('season_id')
-        if not all([image_url, title, season_id]):
-            return "缺少必要的参数 (url, title, season_id)", 400
-
-        os.makedirs(COVER_CACHE_DIR, exist_ok=True)
-
-        safe_title = re.sub(r'[\\/*?:"<>|]', "", title)
-        _, ext = os.path.splitext(image_url)
-        if not ext: ext = '.jpg'
-        filename = f"{safe_title}_{season_id}_cover{ext}"
-        local_filepath = os.path.join(COVER_CACHE_DIR, filename)
-
-        if not os.path.exists(local_filepath):
-            print(f"缓存未命中，正在下载图片: {image_url}")
-            try:
-                headers = {'Referer': 'https://www.bilibili.com/'}
-                response = requests.get(image_url, headers=headers, stream=True, timeout=10)
-                response.raise_for_status()
-                with open(local_filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                print(f"图片已成功缓存到: {local_filepath}")
-            except requests.exceptions.RequestException as e:
-                print(f"下载图片失败: {e}")
-                return "图片下载失败", 500
-        else:
-            print(f"缓存命中，直接提供图片: {filename}")
-        return send_from_directory(os.path.dirname(local_filepath), os.path.basename(local_filepath))
-
-    @staticmethod
     def get_monthly_data(month):
         """
         获取指定月份的聚合数据。
@@ -600,35 +705,6 @@ class BilibiliAnalyticsApp:
         file_path = os.path.join(CURRENT_DIR, filename)
         if not os.path.exists(file_path):
             return jsonify({"error": f"未找到 {month} 月的数据"}), 404
-        return send_from_directory(CURRENT_DIR, filename)
-
-    @staticmethod
-    def get_rank_cache():
-        """
-        获取排名缓存数据。
-        如果缓存文件不存在，则自动调用 data_manager 生成一次。
-
-        Returns:
-            Response: 包含排名缓存数据的 JSON 响应。
-        """
-        filename = "rank_cache.json"
-        file_path = os.path.join(CURRENT_DIR, filename)
-
-        if not os.path.exists(file_path):
-            print(f"'{filename}' 未找到，正在尝试自动生成...")
-            try:
-                data_manager = BangumiDataManager()
-                data_manager.run_monthly_aggregation()
-
-                if not os.path.exists(file_path):
-                    print(f"❌ 自动生成缓存失败，'{filename}' 仍然不存在。")
-                    return jsonify({"error": "排名缓存文件不存在，且自动生成失败"}), 500
-                print(f"✅ 缓存文件已成功生成。")
-
-            except Exception as e:
-                print(f"❌ 自动生成缓存时发生严重错误: {e}")
-                return jsonify({"error": f"自动生成缓存时出错: {str(e)}"}), 500
-
         return send_from_directory(CURRENT_DIR, filename)
 
     def health_check(self):
