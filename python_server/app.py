@@ -3,6 +3,8 @@ import json
 import os
 import random
 import re
+import shutil
+import sys
 import threading
 import time
 from datetime import datetime
@@ -13,45 +15,37 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_apscheduler import APScheduler
 from flask_cors import CORS
 
+
+def get_base_path():
+    """获取应用的基础路径，兼容源码运行和PyInstaller打包运行"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    else:
+        return os.path.dirname(os.path.abspath(__file__))
+
+
+BASE_PATH = get_base_path()
+CACHE_DIR = os.path.join(BASE_PATH, 'cache')
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+CACHE_FILE = os.path.join(CACHE_DIR, 'cache.json')
+RANK_CACHE_FILE = os.path.join(CACHE_DIR, 'rank_cache.json')
+COVER_CACHE_DIR = os.path.join(BASE_PATH, "cover_cache")
+
 from data_manager import BangumiDataManager
 from scraper import BilibiliBangumiScraper
-
-# 确定脚本所在的目录
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-CACHE_FILE = os.path.join(CURRENT_DIR, 'cache.json')
-COVER_CACHE_DIR = os.path.join(os.path.dirname(CURRENT_DIR), "cover_cache")
 
 
 def _get_animes_from_rank_cache():
     """
     一个辅助函数，用于安全地从 rank_cache.json 文件中读取番剧列表。
-    如果文件不存在，它将自动触发数据获取和处理流程来创建该文件。
-
-    Returns:
-        list: 包含番剧数据的列表。如果文件不存在、自动创建失败或解析失败，则返回一个空列表。
     """
-    rank_cache_path = os.path.join(CURRENT_DIR, 'rank_cache.json')
-
-    # 1. 检查缓存文件是否存在，如果不存在则自动生成
-    if not os.path.exists(rank_cache_path):
-        print("排名缓存文件 'rank_cache.json' 未找到。")
-        print("正在启动自动数据获取流程，这可能需要几分钟时间...")
-        try:
-            data_manager = BangumiDataManager(pages_to_fetch=5)
-            result = data_manager.update_rank_cache()
-            if not result:
-                print("自动数据获取流程未能成功生成缓存文件。")
-                return []
-        except Exception as e:
-            print(f"自动数据获取流程因异常而失败: {e}")
-            return []
-
     try:
-        with open(rank_cache_path, 'r', encoding='utf-8') as f:
+        with open(RANK_CACHE_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
             return data.get('list', [])
-    except Exception as e:
-        print(f"读取缓存文件 '{rank_cache_path}' 时发生未知错误: {e}")
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"读取或解析缓存文件 '{RANK_CACHE_FILE}' 时发生错误: {e}")
         return []
 
 
@@ -471,9 +465,10 @@ class BilibiliAnalyticsApp:
         self.app.config['SCHEDULER_API_ENABLED'] = True
         self.scheduler = APScheduler()
         self.scheduler.init_app(self.app)
-        self.scraper = BilibiliBangumiScraper()
-        self.data_manager = BangumiDataManager(pages_to_fetch=5)  # 使用默认值初始化
+        self.scraper = BilibiliBangumiScraper(cache_dir=CACHE_DIR)
+        self.data_manager = BangumiDataManager(pages_to_fetch=5, cache_dir=CACHE_DIR)
         self.cache_lock = threading.Lock()
+        self.initialize_data_files()
         self._register_routes()
 
         self.scheduler.add_job(
@@ -496,6 +491,46 @@ class BilibiliAnalyticsApp:
 
         self.scheduler.start()
 
+    def initialize_data_files(self):
+        print("[*] 正在执行启动数据文件检查...")
+
+        if not os.path.exists(RANK_CACHE_FILE):
+            print(f"  -> '{os.path.basename(RANK_CACHE_FILE)}' 未找到，正在自动生成...")
+            try:
+                self.data_manager.update_rank_cache()
+                print(f"  -> '{os.path.basename(RANK_CACHE_FILE)}' 已成功生成。")
+            except Exception as e:
+                print(f"  -> [错误] 生成 '{os.path.basename(RANK_CACHE_FILE)}' 失败: {e}")
+                return
+
+        current_month = datetime.now().month
+        current_month_file = f"rank_fetcher_{current_month}th.json"
+        current_month_path = os.path.join(CACHE_DIR, current_month_file)
+
+        if not os.path.exists(current_month_path):
+            print(f"  -> '{current_month_file}' 未找到，正在自动生成...")
+            try:
+                self.data_manager.run_monthly_aggregation()
+                print(f"  -> '{current_month_file}' 已成功生成。")
+            except Exception as e:
+                print(f"  -> [错误] 生成 '{current_month_file}' 失败: {e}")
+
+        previous_month = current_month - 1 if current_month > 1 else 12
+        previous_month_file = f"rank_fetcher_{previous_month}th.json"
+        previous_month_path = os.path.join(CACHE_DIR, previous_month_file)
+
+        if not os.path.exists(previous_month_path):
+            print(f"  -> '{previous_month_file}' 未找到，将复制当月数据作为替代。")
+            if os.path.exists(current_month_path):
+                try:
+                    shutil.copy(current_month_path, previous_month_path)
+                    print(f"  -> 成功将 '{current_month_file}' 复制为 '{previous_month_file}'。")
+                except Exception as e:
+                    print(f"  -> [错误] 复制文件失败: {e}")
+            else:
+                print(f"  -> [警告] 无法复制，因为 '{current_month_file}' 也不存在。")
+        print("[*] 数据文件检查完成。")
+
     def _register_routes(self):
         """
         在 Flask 应用中注册路由。
@@ -503,7 +538,7 @@ class BilibiliAnalyticsApp:
         self.app.route('/search', methods=['POST'])(self.search)
         self.app.route('/api/image_proxy')(image_proxy)
         self.app.route('/api/monthly_data/<int:month>', methods=['GET'])(self.get_monthly_data)
-        # self.app.route('/api/rank_list', methods=['GET'])(get_rank_list)
+        self.app.route('/api/rank_list', methods=['GET'])(get_rank_list)
         self.app.route('/health_check', methods=['GET'])(self.health_check)
         self.app.route('/api/type_distribution_chart', methods=['GET'])(get_type_distribution_chart)
         self.app.route('/api/reputation_popularity_chart', methods=['GET'])(get_reputation_popularity_chart)
@@ -657,8 +692,7 @@ class BilibiliAnalyticsApp:
             bangumi_info = bangumi_data[keyword]
             first_fetched_timestamp = bangumi_info.get("first_fetched_timestamp", 0)
             current_timestamp = time.time()
-            cache_age_seconds = current_timestamp - first_fetched_timestamp
-            if cache_age_seconds < 43200:
+            if current_timestamp - first_fetched_timestamp < 43200:
                 print(f"'{keyword}' 命中有效缓存，直接返回数据。")
                 return jsonify({'status': 'cached', 'data': bangumi_info['data']})
             else:
@@ -685,13 +719,9 @@ class BilibiliAnalyticsApp:
                     old_episodes_map = {ep.get('cid'): ep for ep in old_data.get('episodes', []) if ep.get('cid')}
 
                     merged_episodes = []
-                    new_episodes_list = fresh_dynamic_data.get('episodes', [])
-
-                    for new_ep in new_episodes_list:
+                    for new_ep in fresh_dynamic_data.get('episodes', []):
                         cid = new_ep.get('cid')
-                        old_ep = old_episodes_map.get(cid)
-
-                        if old_ep:
+                        if old_ep := old_episodes_map.get(cid):
                             new_ep['online_history'] = old_ep.get('online_history', {})
 
                         merged_episodes.append(new_ep)
@@ -741,10 +771,10 @@ class BilibiliAnalyticsApp:
         if not 1 <= month <= 12:
             return jsonify({"error": "无效的月份"}), 400
         filename = f"rank_fetcher_{month}th.json"
-        file_path = os.path.join(CURRENT_DIR, filename)
+        file_path = os.path.join(CACHE_DIR, filename)
         if not os.path.exists(file_path):
             return jsonify({"error": f"未找到 {month} 月的数据"}), 404
-        return send_from_directory(CURRENT_DIR, filename)
+        return send_from_directory(CACHE_DIR, filename)
 
     def health_check(self):
         """
@@ -767,8 +797,7 @@ class BilibiliAnalyticsApp:
             status["checks"].append({"name": "Cache Readability", "status": "error", "details": str(e)})
             status["app_status"] = "error"
 
-        rank_cache_path = os.path.join(CURRENT_DIR, "rank_cache.json")
-        if os.path.exists(rank_cache_path):
+        if os.path.exists(RANK_CACHE_FILE):
             status["checks"].append(
                 {"name": "Rank Cache Existence", "status": "ok", "details": "rank_cache.json found."})
         else:

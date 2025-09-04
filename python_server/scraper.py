@@ -1,12 +1,23 @@
 # scraper.py
 import json
 import os
+import sys
 import time
 
 import requests
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-CACHE_FILE = os.path.join(CURRENT_DIR, 'cache.json')
+
+def get_base_path():
+    """获取应用的基础路径，兼容源码运行和PyInstaller打包运行"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    else:
+        return os.path.dirname(os.path.abspath(__file__))
+
+
+BASE_PATH = get_base_path()
+CACHE_DIR = os.path.join(BASE_PATH, 'cache')
+
 
 class BilibiliBangumiScraper:
     """
@@ -19,16 +30,18 @@ class BilibiliBangumiScraper:
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept': 'application/json, text/plain, */*'
     }
-    # 定义依赖的排名缓存文件路径
-    RANK_CACHE_FILE = os.path.join(CURRENT_DIR, 'rank_cache.json')
 
-    def __init__(self):
-        """
-        类的构造函数。
-        初始化一个requests.Session对象，用于复用TCP连接和保持请求头。
-        """
+    def __init__(self, cache_dir=None):
         self.session = requests.Session()
         self.session.headers.update(self.BASE_HEADERS)
+
+        if not cache_dir:
+            print("[Scraper WARNING] cache_dir not provided, using default path.")
+            self.CACHE_DIR = CACHE_DIR
+        else:
+            self.CACHE_DIR = cache_dir
+
+        self.RANK_CACHE_FILE = os.path.join(self.CACHE_DIR, 'rank_cache.json')
 
     @staticmethod
     def _convert_chinese_number_str(num_str: str) -> int | None:
@@ -75,10 +88,7 @@ class BilibiliBangumiScraper:
             with open(self.RANK_CACHE_FILE, 'r', encoding='utf-8') as f:
                 cache_data = json.load(f)
 
-            bangumi_list = cache_data.get('list', [])
-
-            # 遍历列表，查找标题完全匹配的项
-            for item in bangumi_list:
+            for item in cache_data.get('list', []):
                 if item.get('title') == keyword:
                     season_id = item.get('season_id')
                     print(f"✅ 在缓存中找到匹配项: '{keyword}' -> season_id: {season_id}")
@@ -88,7 +98,7 @@ class BilibiliBangumiScraper:
             return None
 
         except (json.JSONDecodeError, IOError) as e:
-            print(f"❌ 读取或解析缓存文件 '{self.RANK_CACHE_FILE}' 时出错: {e}")
+            print(f"❌ 读取或解析缓存文件时出错: {e}")
             return None
 
     def get_episode_views(self, bvid: str) -> int | None:
@@ -199,8 +209,7 @@ class BilibiliBangumiScraper:
         Returns:
             dict | None: 完整的番剧详情字典，如果任何一步失败则返回None。
         """
-        bangumi_id = self.get_bangumi_id(keyword)
-        if bangumi_id:
+        if bangumi_id := self.get_bangumi_id(keyword):
             return self.get_bangumi_details(bangumi_id)
         return None
 

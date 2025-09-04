@@ -12,8 +12,6 @@ import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 from tqdm import tqdm
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-
 
 class BangumiDataManager:
     """
@@ -26,8 +24,6 @@ class BangumiDataManager:
 
     # B站番剧索引API的URL
     BASE_API_URL = "https://api.bilibili.com/pgc/season/index/result"
-    # 最终生成的排名缓存文件名
-    RANK_CACHE_FILE = os.path.join(CURRENT_DIR, 'rank_cache.json')
 
     # 存储所有已知的风格ID及其对应的中文名称
     STYLE_MAP = {
@@ -64,7 +60,7 @@ class BangumiDataManager:
         'Referer': 'https://www.bilibili.com/'
     }
 
-    def __init__(self, pages_to_fetch=5, pagesize=820):
+    def __init__(self, pages_to_fetch=5, pagesize=820, cache_dir=None):
         """
         BangumiDataManager类的构造函数。
         负责初始化requests会话、设置抓取参数，并打印初始化信息。
@@ -72,14 +68,20 @@ class BangumiDataManager:
         Args:
             pages_to_fetch (int): 在单次抓取任务中，对每个分类要请求的最大页数。
             pagesize (int): 每一页请求的数据条目数。
+            cache_dir(any): 程序的缓存目录
         """
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
         self.pages_to_fetch = pages_to_fetch
         self.pagesize = pagesize
         self.style_map = self.STYLE_MAP
+        if not cache_dir:
+            raise ValueError("cache_dir must be provided during initialization.")
+        self.CACHE_DIR = cache_dir
+        self.RANK_CACHE_FILE = os.path.join(self.CACHE_DIR, 'rank_cache.json')
         print(f"--- 管理器已初始化：将抓取 {self.pages_to_fetch} 页，每页最多 {self.pagesize} 条 ---")
         print(f"--- 已内置 {len(self.style_map)} 个番剧风格 ---")
+        print(f"--- DataManager已初始化：目标缓存目录 '{self.CACHE_DIR}' ---")
 
     @staticmethod
     def _convert_order_to_int(order_str: Any) -> int:
@@ -519,7 +521,7 @@ class BangumiDataManager:
         try:
             with open(self.RANK_CACHE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, ensure_ascii=False, indent=4)
-            print(f"\n🎉 成功！排名缓存已更新到 '{self.RANK_CACHE_FILE}'，总计 {len(merged_list)} 条独立番剧。")
+            print(f"\n🎉 成功！排名缓存已更新到 '{self.RANK_CACHE_FILE}'")
             return cache_data
         except IOError as e:
             print(f"❌ 写入排名缓存失败: {e}")
@@ -546,7 +548,7 @@ class BangumiDataManager:
         print(f"  - 总播放量 (Total Views):     {total_views:,}")
         current_month = datetime.now().month
         output_filename = f"rank_fetcher_{current_month}th.json"
-        output_filepath = os.path.join(CURRENT_DIR, output_filename)
+        output_filepath = os.path.join(self.CACHE_DIR, output_filename)
         aggregated_data = {
             "month": current_month,
             "calculation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -583,7 +585,16 @@ def main():
         "--pages", type=int, default=5, help="指定要抓取的页数，默认为5。"
     )
     args = parser.parse_args()
-    manager = BangumiDataManager(pages_to_fetch=args.pages)
+
+    def get_script_base_path():
+        return os.path.dirname(os.path.abspath(__file__))
+
+    script_base_path = get_script_base_path()
+    default_cache_dir = os.path.join(script_base_path, 'cache')
+    os.makedirs(default_cache_dir, exist_ok=True)
+
+    manager = BangumiDataManager(pages_to_fetch=args.pages, cache_dir=default_cache_dir)
+
     if args.action == 'fetch':
         manager.update_rank_cache()
     elif args.action == 'aggregate':
