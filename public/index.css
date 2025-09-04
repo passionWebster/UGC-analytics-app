@@ -19,7 +19,7 @@ body {
     border-radius: 8px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
     border: none;
-    height: 480px;
+    height: -webkit-fill-available;
     display: flex;
     flex-direction: column;
 }
@@ -30,6 +30,23 @@ main > section {
     flex-direction: column;
 }
 
+#status {
+    height: calc(100vh - 180px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+#overview {
+    height: calc(100vh - 180px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.col-md-6 {
+    height: -webkit-fill-available;
+}
 /* 首页整体布局 */
 #home {
     height: calc(100vh - 180px);
@@ -46,7 +63,16 @@ main > section {
     flex-wrap: nowrap;
     gap: 1rem;
     align-items: stretch;
-    padding-bottom: 20px;
+}
+
+.graph-row {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 1rem;
+    align-items: stretch;
 }
 
 /* 首页左侧容器 */
@@ -560,7 +586,7 @@ main > section {
     flex-direction: column;
     gap: 8px;
     overflow-y: auto;
-    padding-right: 5px;
+    padding-top: 5px;
 }
 
 .control-buttons-group .btn {

@@ -838,7 +838,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 tooltip: {
                     trigger: 'item',
                     formatter: (params) => {
-                        if (!params?.data || params.data.value == null) return '';
+                        if ((params.data?.children && params.data.children.length > 0) || params.data?.value == null) {
+                            return null;
+                        }
                         const data = params.data;
                         let comparisonText = data.value > 1.1 ? `<span style="color: #28a745;">(高于全球)</span>` :
                             data.value < 0.9 ? `<span style="color: #dc3545;">(低于全球)</span>` :
@@ -1007,7 +1009,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     trigger: 'item', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(255, 255, 255, 0.1)',
                     textStyle: {color: '#f0f0f0'},
                     formatter: function (params) {
-                        if (!params.data || params.data.value == null) return '数据无效';
+                        if ((params.data.children && params.data.children.length > 0) || params.data.value == null) {
+                            return null;
+                        }
                         const {name, value, count, animes} = params.data;
                         const formatNumber = (num) => num ? num.toLocaleString() : 'N/A';
                         let animeListHtml = '';
@@ -1168,8 +1172,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 番剧状态检测 - 播放量趋势（面积图）
         const playTrendOption = {
-            tooltip: commonTooltip,
-            grid: {...commonGrid, bottom: "10%"},
+            tooltip: commonTooltip, grid: commonGrid,
             xAxis: {type: "category", boundaryGap: false, axisLabel: {show: false}, data: []},
             yAxis: {type: "value", name: "单集播放量"},
             series: [{name: "单集播放量", type: "line", areaStyle: {}, smooth: true, data: []}]
@@ -1185,7 +1188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 番剧概览 - 年度上新趋势（折线图）
         const yearlyTrendOption = {
-            tooltip: commonTooltip, grid: {...commonGrid, bottom: '15%'},
+            tooltip: commonTooltip, grid: commonGrid,
             xAxis: {type: 'category', data: []},
             yAxis: {type: 'value', name: '上新数量'},
             legend: {data: [], bottom: 0, type: 'scroll'},
