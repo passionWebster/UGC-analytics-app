@@ -1230,3 +1230,149 @@ document.addEventListener('DOMContentLoaded', async () => {
         initChartWithResizeObserver('chart-category-trend', categoryTrendOption);
     }
 });
+    /**
+     * @function initializeRecommendationSection
+     * @description Initialize the new recommendation section
+     */
+    async function initializeRecommendationSection() {
+        const preferencesBtn2 = document.getElementById('preferencesBtn2');
+        const sortButtons2 = document.getElementById('sortButtons2');
+        const recommendationGrid = document.getElementById('recommendationGrid');
+        let isPreferenceMode2 = false;
+        let currentSortBy2 = 'score';
+        
+        // Initialize tooltip
+        const tooltip2 = document.getElementById('preferencesTooltip2');
+        if (preferencesBtn2 && tooltip2) {
+            preferencesBtn2.addEventListener('mouseenter', () => {
+                tooltip2.innerHTML = userPreferences.length > 0 ?
+                    `<i class="fas fa-info-circle me-2"></i>根据您的偏好：${userPreferences.join(", ")}。` :
+                    `<i class="fas fa-exclamation-triangle me-2"></i>您尚未设置偏好，显示全部推荐。`;
+                tooltip2.style.display = 'block';
+            });
+            
+            preferencesBtn2.addEventListener('mouseleave', () => {
+                tooltip2.style.display = 'none';
+            });
+        }
+        
+        // Preference button click
+        if (preferencesBtn2) {
+            preferencesBtn2.addEventListener('click', () => {
+                isPreferenceMode2 = !isPreferenceMode2;
+                preferencesBtn2.classList.toggle('active', isPreferenceMode2);
+                updateRecommendationGrid(currentSortBy2, isPreferenceMode2);
+            });
+        }
+        
+        // Sort buttons click
+        if (sortButtons2) {
+            sortButtons2.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button && button.dataset.sort !== currentSortBy2) {
+                    sortButtons2.querySelectorAll('.btn').forEach(btn => {
+                        btn.classList.remove('btn-primary', 'active');
+                        btn.classList.add('btn-outline-primary');
+                    });
+                    button.classList.add('btn-primary', 'active');
+                    button.classList.remove('btn-outline-primary');
+                    currentSortBy2 = button.dataset.sort;
+                    updateRecommendationGrid(currentSortBy2, isPreferenceMode2);
+                }
+            });
+        }
+        
+        /**
+         * Update recommendation grid
+         */
+        async function updateRecommendationGrid(sortBy, preferenceMode) {
+            if (!recommendationGrid) return;
+            
+            recommendationGrid.innerHTML = '<div class="d-flex justify-content-center align-items-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+            
+            try {
+                const params = new URLSearchParams({
+                    sortBy: sortBy,
+                    isPreferenceMode: preferenceMode,
+                    preferences: preferenceMode ? userPreferences.join(',') : ''
+                });
+                const response = await fetch(`${API_BASE_URL}/api/rank_list?${params.toString()}`);
+                const animes = await response.json();
+                
+                if (!Array.isArray(animes) || animes.length === 0) {
+                    recommendationGrid.innerHTML = `<div class="text-center py-5" style="grid-column: 1 / -1;">${preferenceMode && userPreferences.length > 0 ? '没有找到符合您偏好的番剧' : '暂无数据'}</div>`;
+                    return;
+                }
+                
+                const formatLargeNumber = (num) => {
+                    if (num >= 1e8) return (num / 1e8).toFixed(1) + '亿';
+                    if (num >= 1e4) return (num / 1e4).toFixed(1) + '万';
+                    return num.toLocaleString();
+                };
+                
+                recommendationGrid.innerHTML = animes.map((anime, index) => {
+                    const proxyUrl = `${API_BASE_URL}/api/image_proxy?url=${encodeURIComponent(anime.cover)}&title=${encodeURIComponent(anime.title)}&season_id=${anime.season_id}`;
+                    
+                    let displayValue;
+                    let icon;
+                    switch (sortBy) {
+                        case 'views':
+                            icon = 'fa-play-circle';
+                            displayValue = formatLargeNumber(anime.views || 0);
+                            break;
+                        case 'followers':
+                            icon = 'fa-heart';
+                            displayValue = formatLargeNumber(anime.favorites || 0);
+                            break;
+                        default:
+                            icon = 'fa-star';
+                            displayValue = `${parseFloat(anime.score || 0).toFixed(1)}分`;
+                            break;
+                    }
+                    
+                    const animeStyles = anime.styles || [];
+                    let tagsHtml;
+                    
+                    if (preferenceMode && userPreferences.length > 0) {
+                        const matchingTags = animeStyles.filter(style => userPreferences.includes(style));
+                        const otherTags = animeStyles.filter(style => !userPreferences.includes(style));
+                        const orderedTags = [...matchingTags, ...otherTags];
+                        
+                        tagsHtml = orderedTags.slice(0, 3).map(tag => {
+                            const badgeClass = matchingTags.includes(tag) ? 'badge bg-primary me-1' : 'badge bg-secondary me-1';
+                            return `<span class="${badgeClass}">${tag}</span>`;
+                        }).join('');
+                    } else {
+                        tagsHtml = animeStyles.slice(0, 3).map(tag => `<span class="badge bg-secondary me-1">${tag}</span>`).join('');
+                    }
+                    
+                    const rankBadge = index < 3 ? `<div class="recommendation-rank-badge">Top ${index + 1}</div>` : '';
+                    
+                    return `
+                        <div class="recommendation-card">
+                            <div class="recommendation-card-image-wrapper">
+                                ${rankBadge}
+                                <img src="${proxyUrl}" alt="${anime.title}" class="recommendation-card-image">
+                            </div>
+                            <div class="recommendation-card-content">
+                                <div class="recommendation-card-title">${anime.title}</div>
+                                <div class="recommendation-card-stats">
+                                    <span><i class="fas ${icon}"></i>${displayValue}</span>
+                                </div>
+                                <div class="recommendation-card-tags">${tagsHtml}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('获取推荐数据失败:', error);
+                recommendationGrid.innerHTML = '<div class="text-center py-5" style="grid-column: 1 / -1;">加载失败，请刷新重试</div>';
+            }
+        }
+        
+        // Initial load
+        await updateRecommendationGrid(currentSortBy2, isPreferenceMode2);
+    }
+    
+    // Initialize recommendation section
+    initializeRecommendationSection();

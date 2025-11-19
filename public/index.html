@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>B站番剧分析系统</title>
+    <title>Bilibili 智能分析平台 - Intelligence Analytics Platform</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
     <link href="ai-assistant-chat.css" rel="stylesheet"/>
@@ -17,7 +17,7 @@
         <div class="d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center">
                 <img alt="B站Logo" class="logo" src="https://www.bilibili.com/favicon.ico"/>
-                <h3 class="mb-0">基于AI的B站番剧多维剖析与可视化交互平台</h3>
+                <h3 class="mb-0">Bilibili 智能分析平台 · Intelligence Analytics Platform</h3>
             </div>
             <nav class="navbar navbar-expand-lg">
                 <ul class="navbar-nav">
@@ -29,6 +29,14 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="#overview">番剧概览</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#recommendation">番剧推荐</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="data-screen.html" target="_blank">
+                            <i class="fas fa-tv me-1"></i>数据大屏
+                        </a>
                     </li>
                 </ul>
             </nav>
@@ -93,7 +101,7 @@
             </button>
         </div>
         <div class="row home-row">
-            <div class="col-md-9 fixed-height-container">
+            <div class="col-md-12 fixed-height-container">
                 <div class="row mb-4">
                     <div class="col-md-3 mb-4">
                         <div class="card p-3 h-100">
@@ -209,37 +217,6 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="rank-list">
-                    <div class="rank-header d-flex justify-content-between align-items-center">
-                        <span>番剧推荐</span>
-                        <div>
-                            <button class="btn btn-sm btn-pink" id="preferencesBtn">
-                                <i class="fas fa-heart me-1"></i>
-                                根据偏好推荐
-                            </button>
-                        </div>
-                    </div>
-                    <div class="sort-buttons-container">
-                        <div class="btn-group btn-group-sm" id="sortButtons" role="group">
-                            <button class="btn btn-primary active" data-sort="score" type="button">
-                                <i class="fas fa-star me-1"></i>评分
-                            </button>
-                            <button class="btn btn-outline-primary" data-sort="views" type="button">
-                                <i class="fas fa-play-circle me-1"></i>播放量
-                            </button>
-                            <button class="btn btn-outline-primary" data-sort="followers" type="button">
-                                <i class="fas fa-heart me-1"></i>追番
-                            </button>
-                        </div>
-                    </div>
-                    <div class="rank-scroll-container">
-                        <div id="rank-list-container">
-                            <div class="text-center py-5">加载中...</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </section>
 
@@ -291,6 +268,43 @@
                         <div id="chart-watch-time" style="height: 100%; width:100%"></div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="d-none" id="recommendation">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2 class="section-title">番剧推荐</h2>
+            <button class="back-button" id="backToHome4">
+                <i class="fas fa-arrow-left me-2"></i>返回首页
+            </button>
+        </div>
+        <div class="recommendation-content">
+            <div class="recommendation-header">
+                <div class="preference-status">
+                    <button class="btn btn-lg btn-pink" id="preferencesBtn2">
+                        <i class="fas fa-heart me-2"></i>
+                        <span id="preferenceStatus">根据偏好推荐</span>
+                    </button>
+                    <div class="preference-tooltip" id="preferencesTooltip2"></div>
+                </div>
+                <div class="sort-controls">
+                    <label class="sort-label">排序方式：</label>
+                    <div class="btn-group" id="sortButtons2" role="group">
+                        <button class="btn btn-primary active" data-sort="score" type="button">
+                            <i class="fas fa-star me-1"></i>评分
+                        </button>
+                        <button class="btn btn-outline-primary" data-sort="views" type="button">
+                            <i class="fas fa-play-circle me-1"></i>播放量
+                        </button>
+                        <button class="btn btn-outline-primary" data-sort="followers" type="button">
+                            <i class="fas fa-heart me-1"></i>追番人数
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="recommendation-grid" id="recommendationGrid">
+                <div class="text-center py-5">加载中...</div>
             </div>
         </div>
     </section>

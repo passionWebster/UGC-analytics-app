@@ -1,9 +1,8 @@
-# Bilibili Insights Hub - 使用文档
+# Bilibili Intelligence Analytics Platform - 使用文档
 
 ## 1. 项目概述
 
-Bilibili Insights
-Hub是一个全栈Web应用，旨在提供对Bilibili番剧数据的深度分析和可视化。项目前端负责数据展示和用户交互，后端则分为三个部分：一个Python服务器用于数据抓取、处理和定时更新；一个Node.js服务器用于处理用户认证和偏好设置；以及一个独立的Node.js服务器为AI助手提供支持。
+Bilibili Intelligence Analytics Platform（Bilibili 智能分析平台）是一个企业级全栈Web应用，旨在提供对Bilibili番剧数据的深度分析和可视化。项目前端负责数据展示和用户交互，后端则分为三个部分：一个Python服务器用于数据抓取、处理和定时更新；一个Node.js服务器用于处理用户认证和偏好设置；以及一个独立的Node.js服务器为AI助手提供支持。
 
 ## 2. 项目架构
 
