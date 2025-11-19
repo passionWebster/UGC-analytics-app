@@ -58,6 +58,7 @@ main > section {
 .home-row {
     flex: 1;
     min-height: 0;
+    max-height: 100%;
     overflow: hidden;
     display: flex;
     flex-wrap: nowrap;
@@ -80,6 +81,7 @@ main > section {
     display: flex;
     flex-direction: column;
     flex: 3;
+    max-width: 100%;
 }
 
 .fixed-height-container > .row:first-of-type {
@@ -89,6 +91,8 @@ main > section {
 .fixed-height-container > .row:nth-of-type(2) {
     flex-grow: 1;
     min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
 }
 
 .fixed-height-container > .row:nth-of-type(2) > .col-md-4,
@@ -96,14 +100,22 @@ main > section {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    max-height: 100%;
 }
 
 .fixed-height-container > .row:nth-of-type(2) .card {
     height: 100%;
     overflow: hidden;
+    max-height: 100%;
 }
 
 .fixed-height-container > .row:nth-of-type(2) .col-md-6 {
+    overflow: hidden;
+    max-height: 100%;
+}
+
+.fixed-height-container > .row:nth-of-type(2) .row {
+    max-height: 100%;
     overflow: hidden;
 }
 
@@ -169,7 +181,7 @@ main > section {
     flex: 1;
     min-width: 250px;
     max-width: 100%;
-    max-height: 99%;
+    max-height: 100%;
 }
 
 .rank-header {
@@ -367,6 +379,38 @@ main > section {
 
 .back-button:hover {
     background: #e0e0e0;
+}
+
+/* Floating back button */
+.floating-back-button {
+    position: fixed;
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #fb7299, #f14668);
+    color: white;
+    border: none;
+    box-shadow: 0 4px 12px rgba(251, 114, 153, 0.4);
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    z-index: 1000;
+}
+
+.floating-back-button:hover {
+    background: linear-gradient(135deg, #e0648a, #d63a5a);
+    box-shadow: 0 6px 16px rgba(251, 114, 153, 0.6);
+    transform: translateY(-50%) scale(1.1);
+}
+
+.floating-back-button:active {
+    transform: translateY(-50%) scale(0.95);
 }
 
 /* 数据卡片样式 */
@@ -1282,27 +1326,27 @@ main > section {
 }
 
 #charts-row.hidden {
-    opacity: 0;
-    transform: translateY(-20px);
-    pointer-events: none;
-    height: 0;
-    overflow: hidden;
-    margin: 0;
+    display: none !important;
 }
 
 #episode-details-section {
-    transition: opacity 0.3s ease, transform 0.3s ease, max-height 0.3s ease;
-    max-height: 0;
-    overflow: hidden;
-    opacity: 0;
-    transform: translateY(20px);
+    display: none;
 }
 
 #episode-details-section.show {
-    opacity: 1;
-    transform: translateY(0);
-    max-height: 2000px;
     display: block !important;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeInEpisodeDetails {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .card {

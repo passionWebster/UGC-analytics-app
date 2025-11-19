@@ -793,16 +793,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (isDetailsVisible) {
                 // Hide charts and show episode details
                 chartsRow.classList.add('hidden');
-                setTimeout(() => {
-                    episodeDetailsSection.classList.add('show');
-                }, 300);
+                episodeDetailsSection.classList.add('show');
                 toggleEpisodeDetailsBtn.innerHTML = '<i class="fas fa-chart-bar me-1"></i>返回图表';
             } else {
                 // Hide episode details and show charts
                 episodeDetailsSection.classList.remove('show');
-                setTimeout(() => {
-                    chartsRow.classList.remove('hidden');
-                }, 300);
+                chartsRow.classList.remove('hidden');
                 toggleEpisodeDetailsBtn.innerHTML = '<i class="fas fa-list me-1"></i>剧集详情';
             }
         });
