@@ -1,8 +1,9 @@
-# B站番剧分析系统 - 使用文档
+# Bilibili Insights Hub - 使用文档
 
 ## 1. 项目概述
 
-B站番剧分析系统是一个全栈Web应用，旨在提供对Bilibili番剧数据的深度分析和可视化。项目前端负责数据展示和用户交互，后端则分为三个部分：一个Python服务器用于数据抓取、处理和定时更新；一个Node.js服务器用于处理用户认证和偏好设置；以及一个独立的Node.js服务器为AI助手提供支持。
+Bilibili Insights
+Hub是一个全栈Web应用，旨在提供对Bilibili番剧数据的深度分析和可视化。项目前端负责数据展示和用户交互，后端则分为三个部分：一个Python服务器用于数据抓取、处理和定时更新；一个Node.js服务器用于处理用户认证和偏好设置；以及一个独立的Node.js服务器为AI助手提供支持。
 
 ## 2. 项目架构
 
@@ -116,9 +117,9 @@ B站番剧分析系统是一个全栈Web应用，旨在提供对Bilibili番剧�
 
 1. 打开终端，进入 `python_server` 目录。
 
-2. 运行以下命令来抓取B站全站番剧的排名、播放和追番数据：
+2. 运行以下命令以抓取B站全站番剧的排名、播放和追番数据：
 
-   ```python
+   ```powershell
    python data_manager.py fetch
    ```
 
@@ -126,7 +127,7 @@ B站番剧分析系统是一个全栈Web应用，旨在提供对Bilibili番剧�
 
 4. （可选）您可以运行月度聚合命令来生成当月的统计文件：
 
-   ```python
+   ```powershell
    python data_manager.py aggregate
    ```
 
