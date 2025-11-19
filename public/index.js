@@ -112,8 +112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ------------------- 2.1 全局通用 ECharts 配置 -------------------
     const commonGrid = {left: '3%', right: '4%', bottom: '3%', containLabel: true};
     const commonTooltip = {
-        trigger: 'axis',
-        axisPointer: {type: 'cross', label: {backgroundColor: '#6a7985'}}
+        trigger: 'axis', axisPointer: {type: 'cross', label: {backgroundColor: '#6a7985'}}
     };
     // ------------------- 3. 功能模块初始化 -------------------
 
@@ -141,8 +140,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             const checkVisibility = () => {
-                if (element.offsetParent !== null) resolve(true);
-                else setTimeout(checkVisibility, 50);
+                if (element.offsetParent !== null) resolve(true); else setTimeout(checkVisibility, 50);
             };
             checkVisibility();
         });
@@ -180,8 +178,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         navLinks.forEach(link => {
             link.addEventListener("click", function (e) {
-                e.preventDefault();
-                showSection(this.getAttribute("href").substring(1));
+                const href = this.getAttribute("href");
+                // Only handle hash links (internal navigation), allow external links to work normally
+                if (href && href.startsWith("#")) {
+                    e.preventDefault();
+                    showSection(href.substring(1));
+                }
             });
         });
 
@@ -219,10 +221,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const currentMonth = today.getMonth() + 1;
         const previousMonth = currentMonth === 1 ? 12 : currentMonth - 1;
 
-        const [currentData, previousData] = await Promise.all([
-            fetchMonthlyData(currentMonth),
-            fetchMonthlyData(previousMonth)
-        ]);
+        const [currentData, previousData] = await Promise.all([fetchMonthlyData(currentMonth), fetchMonthlyData(previousMonth)]);
 
         if (currentData) {
             const previousRatio = previousData && previousData.total_views > 0 ? (previousData.total_favorites / previousData.total_views) * 100 : 0;
@@ -231,16 +230,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 total_anime: {
                     value: currentData.source_bangumi_count || 0,
                     growth: calculateGrowth(currentData.source_bangumi_count, previousData ? previousData.source_bangumi_count : 0)
-                },
-                total_views: {
+                }, total_views: {
                     value: currentData.total_views || 0,
                     growth: calculateGrowth(currentData.total_views, previousData ? previousData.total_views : 0)
-                },
-                total_favorites: {
+                }, total_favorites: {
                     value: currentData.total_favorites || 0,
                     growth: calculateGrowth(currentData.total_favorites, previousData ? previousData.total_favorites : 0)
-                },
-                collection_ratio: {value: currentRatio, change: currentRatio - previousRatio}
+                }, collection_ratio: {value: currentRatio, change: currentRatio - previousRatio}
             };
             updateHomepageCards(summaryData);
         } else {
@@ -288,9 +284,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.preferencesBtn.parentNode.appendChild(tooltip);
 
         elements.preferencesBtn.addEventListener("mouseenter", () => {
-            tooltipContent.innerHTML = userPreferences.length > 0 ?
-                `<i class="fas fa-info-circle me-2"></i>根据您的偏好：${userPreferences.join(", ")}。` :
-                `<i class="fas fa-exclamation-triangle me-2"></i>您尚未设置偏好，显示全部推荐。`;
+            tooltipContent.innerHTML = userPreferences.length > 0 ? `<i class="fas fa-info-circle me-2"></i>根据您的偏好：${userPreferences.join(", ")}。` : `<i class="fas fa-exclamation-triangle me-2"></i>您尚未设置偏好，显示全部推荐。`;
             tooltip.style.display = "block";
         });
 
@@ -416,11 +410,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const legendDataRight = legendNames.slice(midIndex);
 
         chart.setOption({
-            legend: [
-                {orient: 'vertical', left: '5%', top: 'center', data: legendDataLeft},
-                {orient: 'vertical', right: '5%', top: 'center', data: legendDataRight}
-            ],
-            series: [{data: dataToShow}]
+            legend: [{orient: 'vertical', left: '5%', top: 'center', data: legendDataLeft}, {
+                orient: 'vertical',
+                right: '5%',
+                top: 'center',
+                data: legendDataRight
+            }], series: [{data: dataToShow}]
         }, {replaceMerge: ['legend']});
 
         if (isTypeChartDrilledDown) {
@@ -565,16 +560,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
 
             const seriesData = chartData.map(item => ({
-                value: item,
-                itemStyle: {
+                value: item, itemStyle: {
                     color: areaColorMap[item[5]] || '#cccccc' // item[5] 是地区信息
                 }
             }));
 
             const fullOption = {
                 tooltip: {
-                    trigger: 'item',
-                    formatter: function (params) {
+                    trigger: 'item', formatter: function (params) {
                         if (params.value) {
                             const [jitteredScore, followers, title, views, originalScore, area] = params.value;
                             const scoreToDisplay = originalScore !== undefined ? originalScore : jitteredScore;
@@ -584,22 +577,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                         return '无数据';
                     }
-                },
-                grid: {left: '3%', right: '4%', bottom: '3%', containLabel: true},
-                xAxis: {
-                    type: 'value',
-                    nameLocation: 'middle',
-                    nameGap: 25,
-                    splitLine: {lineStyle: {type: 'dashed'}},
-                    min: 7
-                },
-                yAxis: {
-                    type: 'log',
-                    name: '追番人数',
-                    splitLine: {lineStyle: {type: 'dashed'}},
-                    min: 1000
-                },
-                series: [{
+                }, grid: {left: '3%', right: '4%', bottom: '3%', containLabel: true}, xAxis: {
+                    type: 'value', nameLocation: 'middle', nameGap: 25, splitLine: {lineStyle: {type: 'dashed'}}, min: 7
+                }, yAxis: {
+                    type: 'log', name: '追番人数', splitLine: {lineStyle: {type: 'dashed'}}, min: 1000
+                }, series: [{
                     name: '番剧',
                     type: 'scatter',
                     symbolSize: 10,
@@ -646,12 +628,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             return timeSlots;
         };
-        
+
         const findPeakTimeSlot = (onlineHistory) => {
             if (!onlineHistory || typeof onlineHistory !== 'object') return '暂无数据';
             const slots = {
-                "00:00": '0-4点', "04:00": '4-8点', "08:00": '8-12点',
-                "12:00": '12-16点', "16:00": '16-20点', "20:00": '20-24点'
+                "00:00": '0-4点',
+                "04:00": '4-8点',
+                "08:00": '8-12点',
+                "12:00": '12-16点',
+                "16:00": '16-20点',
+                "20:00": '20-24点'
             };
             let maxValue = 0;
             let peakSlot = '';
@@ -663,25 +649,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             return peakSlot || '暂无数据';
         };
-        
+
         const getPeakOnlineCount = (onlineHistory) => {
             if (!onlineHistory || typeof onlineHistory !== 'object') return 0;
             return Math.max(...Object.values(onlineHistory));
         };
-        
+
         const updateEpisodeDetailsTable = (episodes) => {
             const detailsSection = document.getElementById('episode-details-section');
             const tbody = document.getElementById('episode-details-tbody');
-            
+
             if (!episodes || episodes.length === 0) {
                 detailsSection.style.display = 'none';
                 return;
             }
-            
+
             tbody.innerHTML = episodes.map((ep, index) => {
                 const peakTime = findPeakTimeSlot(ep.online_history);
                 const peakOnline = getPeakOnlineCount(ep.online_history);
-                
+
                 return `
                     <tr>
                         <td><span class="badge bg-primary">${index + 1}</span></td>
@@ -692,7 +678,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </tr>
                 `;
             }).join('');
-            
+
             detailsSection.style.display = 'block';
         };
 
@@ -713,9 +699,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             try {
                 const response = await fetch(`${API_BASE_URL}/search`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({keyword}),
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({keyword}),
                 });
                 const result = await response.json();
                 if (!response.ok) {
@@ -724,7 +708,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     currentAnimeData = null;
                 } else {
                     currentAnimeData = result.data;
-                    
+
                     // Update basic stats
                     elements.favoritesCount.textContent = formatNumber(currentAnimeData.stats.favorites);
                     elements.viewsCount.textContent = formatNumber(currentAnimeData.stats.views);
@@ -734,21 +718,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const episodeCount = episodes.length;
                         const totalViews = episodes.reduce((sum, ep) => sum + (ep.views || 0), 0);
                         const avgViews = totalViews / episodeCount;
-                        
+
                         // Update enhanced stats
                         document.getElementById('episodes-count').textContent = episodeCount;
                         document.getElementById('avg-views').textContent = formatNumber(Math.round(avgViews));
-                        
+
                         // Update charts
-                        const episodeLabels = episodes.map(ep => ep.title.replace(/第(\d+)话\s*/, '第$1话
-'));
+                        const episodeLabels = episodes.map(ep => ep.title.replace(/第(\d+)话\s*/, '第$1话 '));
                         const episodeViews = episodes.map(ep => ep.views || 0);
 
                         charts['play-trend'].setOption({
                             xAxis: {data: episodeLabels, axisLabel: {interval: 0, rotate: 30}},
                             series: [{name: '单集播放量', data: episodeViews}]
                         });
-                        
+
                         // Update episode details table
                         updateEpisodeDetailsTable(episodes);
                     } else {
@@ -819,8 +802,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 container.innerHTML = '<small class="text-muted">请先在个人中心设置偏好</small>';
                 return;
             }
-            buttonsHtml = `<button class="btn btn-primary btn-sm active" data-value="all">所有番剧</button>` +
-                userPreferences.map(p => `<button class="btn btn-outline-secondary btn-sm" data-value="${p}">${p}</button>`).join("");
+            buttonsHtml = `<button class="btn btn-primary btn-sm active" data-value="all">所有番剧</button>` + userPreferences.map(p => `<button class="btn btn-outline-secondary btn-sm" data-value="${p}">${p}</button>`).join("");
         }
 
         container.innerHTML = buttonsHtml;
@@ -903,35 +885,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             chart.setOption({
                 tooltip: {
-                    trigger: 'item',
-                    formatter: (params) => {
+                    trigger: 'item', formatter: (params) => {
                         if ((params.data?.children && params.data.children.length > 0) || params.data?.value == null) {
                             return null;
                         }
                         const data = params.data;
-                        let comparisonText = data.value > 1.1 ? `<span style="color: #28a745;">(高于全球)</span>` :
-                            data.value < 0.9 ? `<span style="color: #dc3545;">(低于全球)</span>` :
-                                `<span>(与全球持平)</span>`;
+                        let comparisonText = data.value > 1.1 ? `<span style="color: #28a745;">(高于全球)</span>` : data.value < 0.9 ? `<span style="color: #dc3545;">(低于全球)</span>` : `<span>(与全球持平)</span>`;
                         return `<b>${data.name}</b><br/>地区偏好指数: <b style="font-size: 1.2em;">${data.value}</b> ${comparisonText}<br/><hr style="margin: 4px 0;">该地区均追番: ${parseInt(data.regionalAvg).toLocaleString()}<br/>全球平均追番: ${parseInt(data.globalAvg).toLocaleString()}`;
                     }
-                },
-                series: [{
-                    type: 'treemap',
-                    roam: false,
-                    nodeClick: false,
-                    breadcrumb: {show: false},
-                    label: {
+                }, series: [{
+                    type: 'treemap', roam: false, nodeClick: false, breadcrumb: {show: false}, label: {
                         show: true,
                         position: 'inside',
                         formatter: (p) => `${p.name}\n${p.value}`,
                         color: '#fff',
                         fontSize: 14
-                    },
-                    data: chartData.map(d => ({
-                        ...d,
-                        itemStyle: {
+                    }, data: chartData.map(d => ({
+                        ...d, itemStyle: {
                             color: userPreferences.includes(d.name) ? '#fb7299' : '#87CEFA',
-                            borderRadius: 4, borderWidth: 2, borderColor: '#fff', gapWidth: 2
+                            borderRadius: 4,
+                            borderWidth: 2,
+                            borderColor: '#fff',
+                            gapWidth: 2
                         }
                     }))
                 }]
@@ -959,10 +934,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const yearlyData = await response.json();
             const legendData = Object.keys(yearlyData).sort((a, b) => b - a);
             const seriesData = legendData.map(year => ({
-                name: year,
-                type: 'line',
-                smooth: true,
-                data: yearlyData[year]
+                name: year, type: 'line', smooth: true, data: yearlyData[year]
             }));
 
             const xData = ['春季(1-3月)', '夏季(4-6月)', '秋季(7-9月)', '冬季(10-12月)'];
@@ -1004,8 +976,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const fullOption = {
                 tooltip: {
-                    trigger: 'axis', axisPointer: {type: 'shadow'}, backgroundColor: 'rgba(30, 41, 59, 0.9)',
-                    borderColor: 'rgba(255, 255, 255, 0.1)', textStyle: {color: '#f0f0f0'},
+                    trigger: 'axis',
+                    axisPointer: {type: 'shadow'},
+                    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    textStyle: {color: '#f0f0f0'},
                     formatter: function (params) {
                         if (!params || params.length === 0) return '';
                         const data = params[0].data;
@@ -1028,19 +1003,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     axisLine: {show: false}
                 },
                 series: [{
-                    name: '口碑热度指数', type: 'bar', barWidth: '60%', data: seriesData,
-                    itemStyle: {
-                        borderRadius: [0, 5, 5, 0],
-                        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{
-                            offset: 0,
-                            color: '#f97316'
+                    name: '口碑热度指数', type: 'bar', barWidth: '60%', data: seriesData, itemStyle: {
+                        borderRadius: [0, 5, 5, 0], color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{
+                            offset: 0, color: '#f97316'
                         }, {offset: 1, color: '#facc15'}])
-                    },
-                    emphasis: {
+                    }, emphasis: {
                         itemStyle: {
                             color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{
-                                offset: 0,
-                                color: '#fb923c'
+                                offset: 0, color: '#fb923c'
                             }, {offset: 1, color: '#fde047'}])
                         }
                     }
@@ -1067,13 +1037,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const response = await fetch(`${API_BASE_URL}/api/popular_style_combination_chart`);
             const topCombinations = await response.json();
             const seriesData = topCombinations.map(combo => ({
-                name: combo.name, value: Math.round(combo.avgFavorites),
-                count: combo.count, animes: combo.animes
+                name: combo.name, value: Math.round(combo.avgFavorites), count: combo.count, animes: combo.animes
             }));
 
             const fullOption = {
                 tooltip: {
-                    trigger: 'item', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(255, 255, 255, 0.1)',
+                    trigger: 'item',
+                    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
                     textStyle: {color: '#f0f0f0'},
                     formatter: function (params) {
                         if ((params.data.children && params.data.children.length > 0) || params.data.value == null) {
@@ -1090,19 +1061,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                         return `<b>${name}</b><br/><span style="font-size:1.2em; color:#34d399; font-weight:bold;">平均追番: ${formatNumber(value)}</span><br/><hr style="margin: 4px 0; border-color: rgba(255, 255, 255, 0.2);">包含番剧数: ${count}${animeListHtml}`;
                     }
-                },
-                series: [{
-                    type: 'treemap', roam: false, nodeClick: false, breadcrumb: {show: false},
-                    label: {
+                }, series: [{
+                    type: 'treemap', roam: false, nodeClick: false, breadcrumb: {show: false}, label: {
                         show: true,
                         position: 'inside',
                         formatter: '{b}',
                         color: '#fff',
                         fontSize: 14,
                         fontWeight: 'bold'
-                    },
-                    itemStyle: {gapWidth: 3, borderColor: '#fff', borderRadius: 5},
-                    data: seriesData
+                    }, itemStyle: {gapWidth: 3, borderColor: '#fff', borderRadius: 5}, data: seriesData
                 }]
             };
             chart.setOption(fullOption, {notMerge: true});
@@ -1193,24 +1160,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         // 首页 - 类型分布（饼图）
         const typeDistributionOption = {
             tooltip: {
-                trigger: "item",
-                formatter: (params) => {
+                trigger: "item", formatter: (params) => {
                     if (!params || params.value == null || params.name == null) return '';
                     const defaultFormat = `${params.marker}${params.name}: ${params.value} (${params.percent}%)`;
                     if (params.name === '其他') return `${defaultFormat}<br><small style="color: #999; margin-left: 18px;">点击可查看细分</small>`;
                     return defaultFormat;
                 }
             },
-            legend: [
-                {orient: 'vertical', left: '5%', top: 'center', data: []},
-                {orient: 'vertical', right: '5%', top: 'center', data: []}
-            ],
+            legend: [{orient: 'vertical', left: '5%', top: 'center', data: []}, {
+                orient: 'vertical',
+                right: '5%',
+                top: 'center',
+                data: []
+            }],
             series: [{
-                name: '类型分布', type: "pie", radius: ["35%", "60%"], center: ['50%', '50%'],
-                avoidLabelOverlap: false, itemStyle: {borderRadius: 10, borderColor: '#fff', borderWidth: 2},
+                name: '类型分布',
+                type: "pie",
+                radius: ["35%", "60%"],
+                center: ['50%', '50%'],
+                avoidLabelOverlap: false,
+                itemStyle: {borderRadius: 10, borderColor: '#fff', borderWidth: 2},
                 label: {show: false, position: 'center'},
                 emphasis: {label: {show: true, fontSize: '20', fontWeight: 'bold'}},
-                labelLine: {show: false}, data: []
+                labelLine: {show: false},
+                data: []
             }]
         };
 
@@ -1232,14 +1205,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         // 首页 - 口碑热度分布（散点图）
         const reputationPopularityOption = {
-            grid: commonGrid,
-            xAxis: {name: '评分'},
-            yAxis: {name: '追番人数'}
+            grid: commonGrid, xAxis: {name: '评分'}, yAxis: {name: '追番人数'}
         };
 
         // 番剧状态检测 - 播放量趋势（面积图）
         const playTrendOption = {
-            tooltip: commonTooltip, grid: commonGrid,
+            tooltip: commonTooltip,
+            grid: commonGrid,
             xAxis: {type: "category", boundaryGap: false, axisLabel: {show: false}, data: []},
             yAxis: {type: "value", name: "单集播放量"},
             series: [{name: "单集播放量", type: "line", areaStyle: {}, smooth: true, data: []}]
@@ -1247,7 +1219,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 番剧状态检测 - 观看时间分布（柱状图）
         const watchTimeOption = {
-            tooltip: commonTooltip, grid: commonGrid,
+            tooltip: commonTooltip,
+            grid: commonGrid,
             xAxis: {type: 'category', data: ['0-4点', '4-8点', '8-12点', '12-16点', '16-20点', '20-24点']},
             yAxis: {type: 'value', name: "总在线人数"},
             series: [{name: '观看分布', type: 'bar', barWidth: '60%', data: [0, 0, 0, 0, 0, 0]}]
@@ -1255,7 +1228,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 番剧概览 - 年度上新趋势（折线图）
         const yearlyTrendOption = {
-            tooltip: commonTooltip, grid: commonGrid,
+            tooltip: commonTooltip,
+            grid: commonGrid,
             xAxis: {type: 'category', data: []},
             yAxis: {type: 'value', name: '上新数量'},
             legend: {data: [], bottom: 0, type: 'scroll'},
@@ -1264,11 +1238,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 番剧概览 - 用户偏好差异（矩形树图）
         const preferenceDiffOption = {
-            tooltip: {trigger: 'item'},
-            series: [{
-                type: 'treemap', roam: false, nodeClick: false, breadcrumb: {show: false},
+            tooltip: {trigger: 'item'}, series: [{
+                type: 'treemap',
+                roam: false,
+                nodeClick: false,
+                breadcrumb: {show: false},
                 label: {show: true, position: 'inside', formatter: '{b}\n{c}'},
-                itemStyle: {gapWidth: 2}, data: []
+                itemStyle: {gapWidth: 2},
+                data: []
             }]
         };
 
@@ -1283,8 +1260,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 番剧概览 - 热门风格组合（矩形树图）
         const categoryTrendOption = {
-            tooltip: {trigger: 'item'},
-            series: [{type: 'treemap', data: []}]
+            tooltip: {trigger: 'item'}, series: [{type: 'treemap', data: []}]
         };
 
         // --- 批量执行初始化 ---
@@ -1296,7 +1272,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         initChartWithResizeObserver('chart-collection-ratio', collectionRatioOption);
         initChartWithResizeObserver('chart-category-trend', categoryTrendOption);
     }
-});
+
     /**
      * @function initializeRecommendationSection
      * @description Initialize the new recommendation section
@@ -1307,22 +1283,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         const recommendationGrid = document.getElementById('recommendationGrid');
         let isPreferenceMode2 = false;
         let currentSortBy2 = 'score';
-        
+
         // Initialize tooltip
         const tooltip2 = document.getElementById('preferencesTooltip2');
         if (preferencesBtn2 && tooltip2) {
             preferencesBtn2.addEventListener('mouseenter', () => {
-                tooltip2.innerHTML = userPreferences.length > 0 ?
-                    `<i class="fas fa-info-circle me-2"></i>根据您的偏好：${userPreferences.join(", ")}。` :
-                    `<i class="fas fa-exclamation-triangle me-2"></i>您尚未设置偏好，显示全部推荐。`;
+                tooltip2.innerHTML = userPreferences.length > 0 ? `<i class="fas fa-info-circle me-2"></i>根据您的偏好：${userPreferences.join(", ")}。` : `<i class="fas fa-exclamation-triangle me-2"></i>您尚未设置偏好，显示全部推荐。`;
                 tooltip2.style.display = 'block';
             });
-            
+
             preferencesBtn2.addEventListener('mouseleave', () => {
                 tooltip2.style.display = 'none';
             });
         }
-        
+
         // Preference button click
         if (preferencesBtn2) {
             preferencesBtn2.addEventListener('click', () => {
@@ -1331,7 +1305,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 updateRecommendationGrid(currentSortBy2, isPreferenceMode2);
             });
         }
-        
+
         // Sort buttons click
         if (sortButtons2) {
             sortButtons2.addEventListener('click', (e) => {
@@ -1348,15 +1322,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             });
         }
-        
+
         /**
          * Update recommendation grid
          */
         async function updateRecommendationGrid(sortBy, preferenceMode) {
             if (!recommendationGrid) return;
-            
+
             recommendationGrid.innerHTML = '<div class="d-flex justify-content-center align-items-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
-            
+
             try {
                 const params = new URLSearchParams({
                     sortBy: sortBy,
@@ -1365,21 +1339,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 const response = await fetch(`${API_BASE_URL}/api/rank_list?${params.toString()}`);
                 const animes = await response.json();
-                
+
                 if (!Array.isArray(animes) || animes.length === 0) {
                     recommendationGrid.innerHTML = `<div class="text-center py-5" style="grid-column: 1 / -1;">${preferenceMode && userPreferences.length > 0 ? '没有找到符合您偏好的番剧' : '暂无数据'}</div>`;
                     return;
                 }
-                
+
                 const formatLargeNumber = (num) => {
                     if (num >= 1e8) return (num / 1e8).toFixed(1) + '亿';
                     if (num >= 1e4) return (num / 1e4).toFixed(1) + '万';
                     return num.toLocaleString();
                 };
-                
+
                 recommendationGrid.innerHTML = animes.map((anime, index) => {
                     const proxyUrl = `${API_BASE_URL}/api/image_proxy?url=${encodeURIComponent(anime.cover)}&title=${encodeURIComponent(anime.title)}&season_id=${anime.season_id}`;
-                    
+
                     let displayValue;
                     let icon;
                     switch (sortBy) {
@@ -1396,15 +1370,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                             displayValue = `${parseFloat(anime.score || 0).toFixed(1)}分`;
                             break;
                     }
-                    
+
                     const animeStyles = anime.styles || [];
                     let tagsHtml;
-                    
+
                     if (preferenceMode && userPreferences.length > 0) {
                         const matchingTags = animeStyles.filter(style => userPreferences.includes(style));
                         const otherTags = animeStyles.filter(style => !userPreferences.includes(style));
                         const orderedTags = [...matchingTags, ...otherTags];
-                        
+
                         tagsHtml = orderedTags.slice(0, 3).map(tag => {
                             const badgeClass = matchingTags.includes(tag) ? 'badge bg-primary me-1' : 'badge bg-secondary me-1';
                             return `<span class="${badgeClass}">${tag}</span>`;
@@ -1412,9 +1386,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     } else {
                         tagsHtml = animeStyles.slice(0, 3).map(tag => `<span class="badge bg-secondary me-1">${tag}</span>`).join('');
                     }
-                    
+
                     const rankBadge = index < 3 ? `<div class="recommendation-rank-badge">Top ${index + 1}</div>` : '';
-                    
+
                     return `
                         <div class="recommendation-card">
                             <div class="recommendation-card-image-wrapper">
@@ -1436,10 +1410,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 recommendationGrid.innerHTML = '<div class="text-center py-5" style="grid-column: 1 / -1;">加载失败，请刷新重试</div>';
             }
         }
-        
+
         // Initial load
         await updateRecommendationGrid(currentSortBy2, isPreferenceMode2);
     }
-    
+
     // Initialize recommendation section
     initializeRecommendationSection();
+});
