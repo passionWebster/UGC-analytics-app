@@ -1,0 +1,252 @@
+[
+  {
+    "season_id": 1,
+    "title": "进击的巨人 最终季",
+    "cover": "https://via.placeholder.com/300x400/FB7299/FFFFFF?text=Anime1",
+    "score": 9.8,
+    "views": 125000000,
+    "favorites": 8500000,
+    "styles": ["战斗", "奇幻", "热血"],
+    "area": "日本"
+  },
+  {
+    "season_id": 2,
+    "title": "鬼灭之刃",
+    "cover": "https://via.placeholder.com/300x400/23ADE5/FFFFFF?text=Anime2",
+    "score": 9.7,
+    "views": 180000000,
+    "favorites": 9200000,
+    "styles": ["战斗", "热血", "冒险"],
+    "area": "日本"
+  },
+  {
+    "season_id": 3,
+    "title": "咒术回战",
+    "cover": "https://via.placeholder.com/300x400/FFCE56/000000?text=Anime3",
+    "score": 9.6,
+    "views": 95000000,
+    "favorites": 7800000,
+    "styles": ["战斗", "奇幻", "冒险"],
+    "area": "日本"
+  },
+  {
+    "season_id": 4,
+    "title": "间谍过家家",
+    "cover": "https://via.placeholder.com/300x400/722ED1/FFFFFF?text=Anime4",
+    "score": 9.5,
+    "views": 88000000,
+    "favorites": 7200000,
+    "styles": ["喜剧", "日常", "冒险"],
+    "area": "日本"
+  },
+  {
+    "season_id": 5,
+    "title": "葬送的芙莉莲",
+    "cover": "https://via.placeholder.com/300x400/FB7299/FFFFFF?text=Anime5",
+    "score": 9.8,
+    "views": 65000000,
+    "favorites": 6500000,
+    "styles": ["奇幻", "冒险", "治愈"],
+    "area": "日本"
+  },
+  {
+    "season_id": 6,
+    "title": "链锯人",
+    "cover": "https://via.placeholder.com/300x400/23ADE5/FFFFFF?text=Anime6",
+    "score": 9.4,
+    "views": 72000000,
+    "favorites": 6800000,
+    "styles": ["战斗", "热血", "奇幻"],
+    "area": "日本"
+  },
+  {
+    "season_id": 7,
+    "title": "我推的孩子",
+    "cover": "https://via.placeholder.com/300x400/FFCE56/000000?text=Anime7",
+    "score": 9.3,
+    "views": 58000000,
+    "favorites": 5900000,
+    "styles": ["剧情", "偶像", "悬疑"],
+    "area": "日本"
+  },
+  {
+    "season_id": 8,
+    "title": "紫罗兰永恒花园",
+    "cover": "https://via.placeholder.com/300x400/722ED1/FFFFFF?text=Anime8",
+    "score": 9.2,
+    "views": 42000000,
+    "favorites": 5200000,
+    "styles": ["治愈", "剧情", "感动"],
+    "area": "日本"
+  },
+  {
+    "season_id": 9,
+    "title": "约会大作战",
+    "cover": "https://via.placeholder.com/300x400/FB7299/FFFFFF?text=Anime9",
+    "score": 8.9,
+    "views": 38000000,
+    "favorites": 4800000,
+    "styles": ["恋爱", "后宫", "战斗"],
+    "area": "日本"
+  },
+  {
+    "season_id": 10,
+    "title": "Re:从零开始的异世界生活",
+    "cover": "https://via.placeholder.com/300x400/23ADE5/FFFFFF?text=Anime10",
+    "score": 9.1,
+    "views": 52000000,
+    "favorites": 6100000,
+    "styles": ["奇幻", "穿越", "冒险"],
+    "area": "日本"
+  },
+  {
+    "season_id": 11,
+    "title": "转生成蜘蛛又怎样",
+    "cover": "https://via.placeholder.com/300x400/FFCE56/000000?text=Anime11",
+    "score": 8.7,
+    "views": 35000000,
+    "favorites": 4200000,
+    "styles": ["奇幻", "穿越", "冒险"],
+    "area": "日本"
+  },
+  {
+    "season_id": 12,
+    "title": "无职转生",
+    "cover": "https://via.placeholder.com/300x400/722ED1/FFFFFF?text=Anime12",
+    "score": 9.0,
+    "views": 48000000,
+    "favorites": 5600000,
+    "styles": ["奇幻", "穿越", "成长"],
+    "area": "日本"
+  },
+  {
+    "season_id": 13,
+    "title": "国王排名",
+    "cover": "https://via.placeholder.com/300x400/FB7299/FFFFFF?text=Anime13",
+    "score": 8.8,
+    "views": 32000000,
+    "favorites": 4000000,
+    "styles": ["治愈", "奇幻", "成长"],
+    "area": "日本"
+  },
+  {
+    "season_id": 14,
+    "title": "辉夜大小姐想让我告白",
+    "cover": "https://via.placeholder.com/300x400/23ADE5/FFFFFF?text=Anime14",
+    "score": 8.9,
+    "views": 40000000,
+    "favorites": 4900000,
+    "styles": ["喜剧", "恋爱", "日常"],
+    "area": "日本"
+  },
+  {
+    "season_id": 15,
+    "title": "86-不存在的战区",
+    "cover": "https://via.placeholder.com/300x400/FFCE56/000000?text=Anime15",
+    "score": 8.6,
+    "views": 28000000,
+    "favorites": 3800000,
+    "styles": ["战斗", "机甲", "科幻"],
+    "area": "日本"
+  },
+  {
+    "season_id": 16,
+    "title": "天气之子",
+    "cover": "https://via.placeholder.com/300x400/722ED1/FFFFFF?text=Anime16",
+    "score": 8.7,
+    "views": 30000000,
+    "favorites": 3900000,
+    "styles": ["恋爱", "奇幻", "治愈"],
+    "area": "日本"
+  },
+  {
+    "season_id": 17,
+    "title": "冰菓",
+    "cover": "https://via.placeholder.com/300x400/FB7299/FFFFFF?text=Anime17",
+    "score": 8.5,
+    "views": 25000000,
+    "favorites": 3500000,
+    "styles": ["日常", "推理", "青春"],
+    "area": "日本"
+  },
+  {
+    "season_id": 18,
+    "title": "小林家的龙女仆",
+    "cover": "https://via.placeholder.com/300x400/23ADE5/FFFFFF?text=Anime18",
+    "score": 8.6,
+    "views": 27000000,
+    "favorites": 3700000,
+    "styles": ["喜剧", "日常", "奇幻"],
+    "area": "日本"
+  },
+  {
+    "season_id": 19,
+    "title": "工作细胞",
+    "cover": "https://via.placeholder.com/300x400/FFCE56/000000?text=Anime19",
+    "score": 8.4,
+    "views": 22000000,
+    "favorites": 3200000,
+    "styles": ["科普", "喜剧", "治愈"],
+    "area": "日本"
+  },
+  {
+    "season_id": 20,
+    "title": "五等分的花嫁",
+    "cover": "https://via.placeholder.com/300x400/722ED1/FFFFFF?text=Anime20",
+    "score": 8.5,
+    "views": 26000000,
+    "favorites": 3600000,
+    "styles": ["恋爱", "后宫", "喜剧"],
+    "area": "日本"
+  },
+  {
+    "season_id": 21,
+    "title": "鬼灭之刃 游郭篇",
+    "cover": "https://via.placeholder.com/300x400/FB7299/FFFFFF?text=Anime21",
+    "score": 9.5,
+    "views": 95000000,
+    "favorites": 8000000,
+    "styles": ["战斗", "热血", "冒险"],
+    "area": "日本"
+  },
+  {
+    "season_id": 22,
+    "title": "咒术回战 涩谷事变",
+    "cover": "https://via.placeholder.com/300x400/23ADE5/FFFFFF?text=Anime22",
+    "score": 9.4,
+    "views": 82000000,
+    "favorites": 7500000,
+    "styles": ["战斗", "奇幻", "冒险"],
+    "area": "日本"
+  },
+  {
+    "season_id": 23,
+    "title": "进击的巨人 第三季",
+    "cover": "https://via.placeholder.com/300x400/FFCE56/000000?text=Anime23",
+    "score": 9.6,
+    "views": 110000000,
+    "favorites": 8200000,
+    "styles": ["战斗", "奇幻", "热血"],
+    "area": "日本"
+  },
+  {
+    "season_id": 24,
+    "title": "东京喰种",
+    "cover": "https://via.placeholder.com/300x400/722ED1/FFFFFF?text=Anime24",
+    "score": 8.8,
+    "views": 45000000,
+    "favorites": 5300000,
+    "styles": ["战斗", "黑暗", "奇幻"],
+    "area": "日本"
+  },
+  {
+    "season_id": 25,
+    "title": "关于我转生变成史莱姆这档事",
+    "cover": "https://via.placeholder.com/300x400/FB7299/FFFFFF?text=Anime25",
+    "score": 8.9,
+    "views": 50000000,
+    "favorites": 5800000,
+    "styles": ["奇幻", "穿越", "冒险"],
+    "area": "日本"
+  }
+]
