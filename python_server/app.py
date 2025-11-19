@@ -466,7 +466,7 @@ class BilibiliAnalyticsApp:
         self.scheduler = APScheduler()
         self.scheduler.init_app(self.app)
         self.scraper = BilibiliBangumiScraper(cache_dir=CACHE_DIR)
-        self.data_manager = BangumiDataManager(pages_to_fetch=5, cache_dir=CACHE_DIR)
+        self.data_manager = BangumiDataManager(pages_to_fetch=8, cache_dir=CACHE_DIR)
         self.cache_lock = threading.Lock()
         self.initialize_data_files()
         self._register_routes()

@@ -582,7 +582,7 @@ def main():
              "  schedule   - 启动定时调度器，在每个月1号自动执行聚合任务。"
     )
     parser.add_argument(
-        "--pages", type=int, default=5, help="指定要抓取的页数，默认为5。"
+        "--pages", type=int, default=8, help="指定要抓取的页数，默认为5。"
     )
     args = parser.parse_args()
 

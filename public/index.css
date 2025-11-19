@@ -71,7 +71,6 @@ main > section {
     overflow: hidden;
     display: flex;
     flex-wrap: nowrap;
-    gap: 1rem;
     align-items: stretch;
 }
 
