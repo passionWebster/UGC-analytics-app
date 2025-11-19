@@ -340,15 +340,17 @@ def get_rank_list():
         sortBy (str): 排序依据，可选值为 'score', 'followers', 'views'。默认为 'score'。
         isPreferenceMode (str): 'true' 或 'false'，指示是否启用偏好筛选。默认为 'false'。
         preferences (str): 逗号分隔的用户偏好类型字符串，例如 '奇幻,战斗,搞笑'。
+        limit (int): 返回的番剧数量。默认为 10。
 
     Returns:
-        Response: 一个包含10个番剧对象的JSON响应列表。
+        Response: 一个包含指定数量番剧对象的JSON响应列表。
     """
     # 1. 获取查询参数
     sort_by = request.args.get('sortBy', 'score')
     is_preference_mode = request.args.get('isPreferenceMode', 'false').lower() == 'true'
     preferences_str = request.args.get('preferences', '')
     user_preferences = preferences_str.split(',') if preferences_str else []
+    limit = int(request.args.get('limit', '10'))
 
     # 2. 读取基础数据
     all_animes = _get_animes_from_rank_cache()
@@ -376,7 +378,7 @@ def get_rank_list():
     total_count = len(sorted_animes)
     animes_to_return = []
 
-    if total_count <= 10:
+    if total_count <= limit:
         animes_to_return = sorted_animes
     else:
         # 定义三个等级的范围
@@ -387,20 +389,22 @@ def get_rank_list():
         tier2 = sorted_animes[tier1_end:tier2_end]
         tier3 = sorted_animes[tier2_end:]
 
-        # 定义从每个等级抽取的数量
-        picks = {'tier1': 4, 'tier2': 4, 'tier3': 2}
+        # 根据limit动态调整从每个等级抽取的数量
+        tier1_count = max(1, int(limit * 0.4))
+        tier2_count = max(1, int(limit * 0.4))
+        tier3_count = max(1, limit - tier1_count - tier2_count)
 
         # 从每个等级安全地抽取番剧
-        tier1_picks = random.sample(tier1, min(len(tier1), picks['tier1']))
-        tier2_picks = random.sample(tier2, min(len(tier2), picks['tier2']))
-        tier3_picks = random.sample(tier3, min(len(tier3), picks['tier3']))
+        tier1_picks = random.sample(tier1, min(len(tier1), tier1_count))
+        tier2_picks = random.sample(tier2, min(len(tier2), tier2_count))
+        tier3_picks = random.sample(tier3, min(len(tier3), tier3_count))
 
         combined_picks = tier1_picks + tier2_picks + tier3_picks
 
-        # 如果数量不足10，从剩余的番剧中补充
-        if len(combined_picks) < 10:
+        # 如果数量不足limit，从剩余的番剧中补充
+        if len(combined_picks) < limit:
             remaining_animes = [anime for anime in sorted_animes if anime not in combined_picks]
-            needed = 10 - len(combined_picks)
+            needed = limit - len(combined_picks)
             combined_picks.extend(remaining_animes[:needed])
 
         # 按原始排名（即排序键）对最终选出的番剧再次排序
@@ -410,7 +414,7 @@ def get_rank_list():
                 float(x.get(sort_key, 0)) if str(x.get(sort_key, '0')).replace('.', '', 1).isdigit() else 0
             ),
             reverse=True
-        )[:10]
+        )[:limit]
 
     return jsonify(animes_to_return)
 
