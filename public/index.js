@@ -1354,7 +1354,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const params = new URLSearchParams({
                     sortBy: sortBy,
                     isPreferenceMode: preferenceMode,
-                    preferences: preferenceMode ? userPreferences.join(',') : ''
+                    preferences: preferenceMode ? userPreferences.join(',') : '',
+                    limit: '20'
                 });
                 const response = await fetch(`${API_BASE_URL}/api/rank_list?${params.toString()}`);
                 const animes = await response.json();
