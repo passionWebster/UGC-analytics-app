@@ -31,6 +31,13 @@ document.addEventListener("DOMContentLoaded", function () {
             window.location.href = "index.html";
         });
 
+    // 进入数据大屏
+    document
+        .getElementById("enter-dashboard")
+        .addEventListener("click", function () {
+            window.location.href = "dashboard.html";
+        });
+
     // 【新增】处理模态框关闭后的焦点管理，以解决 aria-hidden 警告
     const preferencesModalEl = document.getElementById('preferencesModal');
     const updatePreferencesBtn = document.getElementById('update-preferences');

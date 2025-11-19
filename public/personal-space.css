@@ -120,25 +120,49 @@ body {
 .enter-recommendation {
     flex: 1;
     min-width: 300px;
-    background: #f9f9f9;
-    border-radius: 10px;
-    padding: 25px;
+    background: linear-gradient(135deg, #ffffff, #f9f9f9);
+    border-radius: 12px;
+    padding: 30px;
     text-align: center;
     cursor: pointer;
-    transition: all 0.3s;
+    transition: all 0.4s ease;
     border: 2px solid transparent;
+    position: relative;
+    overflow: hidden;
+}
+
+.enter-recommendation::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(251, 114, 153, 0.1), transparent);
+    transition: left 0.5s;
+}
+
+.enter-recommendation:hover::before {
+    left: 100%;
 }
 
 .enter-recommendation:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 10px 25px rgba(251, 114, 153, 0.3);
     border-color: #fb7299;
+    background: linear-gradient(135deg, #fff5f8, #ffe8f0);
 }
 
 .enter-recommendation i {
     font-size: 50px;
     color: #fb7299;
     margin-bottom: 15px;
+    transition: all 0.3s ease;
+}
+
+.enter-recommendation:hover i {
+    transform: scale(1.2) rotateY(360deg);
+    color: #e0648a;
 }
 
 .enter-recommendation h3 {

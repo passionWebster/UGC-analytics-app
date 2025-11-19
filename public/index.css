@@ -22,6 +22,12 @@ body {
     height: -webkit-fill-available;
     display: flex;
     flex-direction: column;
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
 }
 
 main > section {
@@ -154,11 +160,27 @@ main > section {
 .nav-link {
     color: #666;
     font-weight: 500;
+    transition: all 0.3s ease;
+    position: relative;
+    padding: 8px 12px;
+}
+
+.nav-link:hover {
+    color: #fb7299;
+    transform: translateY(-2px);
 }
 
 .nav-link.active {
     color: #fb7299;
     border-bottom: 3px solid #fb7299;
+}
+
+.nav-link i {
+    transition: transform 0.3s ease;
+}
+
+.nav-link:hover i {
+    transform: scale(1.2);
 }
 
 /* 图表容器 */
@@ -201,6 +223,8 @@ main > section {
     align-items: center;
     padding: 12px 15px;
     border-bottom: 1px solid #f0f0f0;
+    transition: all 0.3s ease;
+    cursor: pointer;
 }
 
 .rank-item:last-child {
@@ -208,7 +232,10 @@ main > section {
 }
 
 .rank-item:hover {
-    background-color: #f9f9f9;
+    background-color: #fff5f8;
+    transform: translateX(5px);
+    border-left: 3px solid #fb7299;
+    padding-left: 12px;
 }
 
 .rank-num {
@@ -311,11 +338,17 @@ main > section {
     border-radius: 6px;
     padding: 10px 15px;
     border: 1px solid #ddd;
+    transition: all 0.3s ease;
+}
+
+.form-control:hover {
+    border-color: #fb7299;
 }
 
 .form-control:focus {
     border-color: #fb7299;
     box-shadow: 0 0 0 0.25rem rgba(251, 114, 153, 0.25);
+    transform: translateY(-2px);
 }
 .input-group {
     position: relative;
@@ -381,38 +414,6 @@ main > section {
     background: #e0e0e0;
 }
 
-/* Floating back button */
-.floating-back-button {
-    position: fixed;
-    right: 30px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #fb7299, #f14668);
-    color: white;
-    border: none;
-    box-shadow: 0 4px 12px rgba(251, 114, 153, 0.4);
-    cursor: pointer;
-    transition: all 0.3s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-    z-index: 1000;
-}
-
-.floating-back-button:hover {
-    background: linear-gradient(135deg, #e0648a, #d63a5a);
-    box-shadow: 0 6px 16px rgba(251, 114, 153, 0.6);
-    transform: translateY(-50%) scale(1.1);
-}
-
-.floating-back-button:active {
-    transform: translateY(-50%) scale(0.95);
-}
-
 /* 数据卡片样式 */
 .icon-box {
     width: 35px;
@@ -474,10 +475,14 @@ main > section {
     padding: 0.25rem 0.5rem;
     border-radius: 10px;
     position: relative;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(251, 114, 153, 0.3);
 }
 
 .btn-pink:hover {
     background-color: #e0648a;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(251, 114, 153, 0.5);
 }
 
 .preferences-tooltip {
@@ -1351,4 +1356,56 @@ main > section {
 
 .card {
     overflow: hidden;
+}
+
+/* Enhanced Button Styling */
+.btn {
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+}
+
+.btn:hover::before {
+    width: 300px;
+    height: 300px;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    border: none;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #0056b3, #004085);
+}
+
+.btn-secondary {
+    background: linear-gradient(135deg, #6c757d, #545b62);
+    border: none;
+}
+
+.btn-secondary:hover {
+    background: linear-gradient(135deg, #545b62, #3d4349);
 }
