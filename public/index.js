@@ -646,6 +646,55 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             return timeSlots;
         };
+        
+        const findPeakTimeSlot = (onlineHistory) => {
+            if (!onlineHistory || typeof onlineHistory !== 'object') return '暂无数据';
+            const slots = {
+                "00:00": '0-4点', "04:00": '4-8点', "08:00": '8-12点',
+                "12:00": '12-16点', "16:00": '16-20点', "20:00": '20-24点'
+            };
+            let maxValue = 0;
+            let peakSlot = '';
+            for (const [time, count] of Object.entries(onlineHistory)) {
+                if (count > maxValue) {
+                    maxValue = count;
+                    peakSlot = slots[time] || time;
+                }
+            }
+            return peakSlot || '暂无数据';
+        };
+        
+        const getPeakOnlineCount = (onlineHistory) => {
+            if (!onlineHistory || typeof onlineHistory !== 'object') return 0;
+            return Math.max(...Object.values(onlineHistory));
+        };
+        
+        const updateEpisodeDetailsTable = (episodes) => {
+            const detailsSection = document.getElementById('episode-details-section');
+            const tbody = document.getElementById('episode-details-tbody');
+            
+            if (!episodes || episodes.length === 0) {
+                detailsSection.style.display = 'none';
+                return;
+            }
+            
+            tbody.innerHTML = episodes.map((ep, index) => {
+                const peakTime = findPeakTimeSlot(ep.online_history);
+                const peakOnline = getPeakOnlineCount(ep.online_history);
+                
+                return `
+                    <tr>
+                        <td><span class="badge bg-primary">${index + 1}</span></td>
+                        <td>${ep.title}</td>
+                        <td>${formatNumber(ep.views || 0)}</td>
+                        <td><span class="badge bg-info">${peakTime}</span></td>
+                        <td>${formatNumber(peakOnline)}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            detailsSection.style.display = 'block';
+        };
 
         const performSearch = async () => {
             const keyword = elements.keywordInput.value.trim();
@@ -655,9 +704,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             elements.searchBtn.disabled = true;
             elements.searchBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> 搜索中...`;
-            elements.statusMessage.textContent = `正在为“${keyword}”请求数据...`;
+            elements.statusMessage.textContent = `正在为"${keyword}"请求数据...`;
             elements.favoritesCount.textContent = '--';
             elements.viewsCount.textContent = '--';
+            document.getElementById('episodes-count').textContent = '--';
+            document.getElementById('avg-views').textContent = '--';
+            document.getElementById('episode-details-section').style.display = 'none';
 
             try {
                 const response = await fetch(`${API_BASE_URL}/search`, {
@@ -671,21 +723,38 @@ document.addEventListener('DOMContentLoaded', async () => {
                     elements.statusMessage.className = 'form-text mt-2 text-danger';
                     currentAnimeData = null;
                 } else {
-                    // --- 成功的逻辑保持不变 ---
                     currentAnimeData = result.data;
+                    
+                    // Update basic stats
                     elements.favoritesCount.textContent = formatNumber(currentAnimeData.stats.favorites);
                     elements.viewsCount.textContent = formatNumber(currentAnimeData.stats.views);
 
                     if (Array.isArray(currentAnimeData.episodes) && currentAnimeData.episodes.length > 0) {
-                        const episodeLabels = currentAnimeData.episodes.map(ep => ep.title.replace(/第(\d+)话\s*/, '第$1话\n'));
-                        const episodeViews = currentAnimeData.episodes.map(ep => ep.views || 0);
+                        const episodes = currentAnimeData.episodes;
+                        const episodeCount = episodes.length;
+                        const totalViews = episodes.reduce((sum, ep) => sum + (ep.views || 0), 0);
+                        const avgViews = totalViews / episodeCount;
+                        
+                        // Update enhanced stats
+                        document.getElementById('episodes-count').textContent = episodeCount;
+                        document.getElementById('avg-views').textContent = formatNumber(Math.round(avgViews));
+                        
+                        // Update charts
+                        const episodeLabels = episodes.map(ep => ep.title.replace(/第(\d+)话\s*/, '第$1话
+'));
+                        const episodeViews = episodes.map(ep => ep.views || 0);
 
                         charts['play-trend'].setOption({
                             xAxis: {data: episodeLabels, axisLabel: {interval: 0, rotate: 30}},
                             series: [{name: '单集播放量', data: episodeViews}]
                         });
+                        
+                        // Update episode details table
+                        updateEpisodeDetailsTable(episodes);
                     } else {
                         charts['play-trend'].setOption({xAxis: {data: []}, series: [{data: []}]});
+                        document.getElementById('episodes-count').textContent = '0';
+                        document.getElementById('avg-views').textContent = '0';
                     }
 
                     // 默认显示所有剧集的总和
@@ -693,6 +762,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     charts['watch-time'].setOption({
                         series: [{data: totalOnlineHistory}]
                     });
+                    document.getElementById('watch-time-subtitle').textContent = '所有剧集总计';
 
                     elements.statusMessage.textContent = `成功获取数据。${result.status === 'cached' ? '(来自缓存)' : ''}`;
                     elements.statusMessage.className = 'form-text mt-2 text-success';
@@ -710,26 +780,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.searchBtn.addEventListener('click', performSearch);
         elements.keywordInput.addEventListener('keyup', (event) => event.key === 'Enter' && performSearch());
 
-        // --- 【核心新增功能】 ---
-        // 为“播放量趋势”图表添加点击事件监听器
+        // Chart click interaction
         charts['play-trend'].on('click', (params) => {
-            // 确保当前有番剧数据，并且点击的是一个数据点
             if (currentAnimeData && currentAnimeData.episodes && params.dataIndex >= 0) {
                 const clickedEpisode = currentAnimeData.episodes[params.dataIndex];
                 if (clickedEpisode) {
-                    // 使用 processOnlineHistory 处理单集数据
                     const singleEpisodeHistory = processOnlineHistory(clickedEpisode);
-
-                    // 更新“观看时间分布”图表
                     charts['watch-time'].setOption({
                         series: [{data: singleEpisodeHistory}]
                     });
+                    document.getElementById('watch-time-subtitle').textContent = `${clickedEpisode.title}`;
                     elements.statusMessage.textContent = `当前显示《${clickedEpisode.title}》的在线人数分布。`;
                     elements.statusMessage.className = 'form-text mt-2 text-info';
                 }
             }
         });
     }
+
 
     /**
      * @function initCommonControlButtons
@@ -1230,3 +1297,149 @@ document.addEventListener('DOMContentLoaded', async () => {
         initChartWithResizeObserver('chart-category-trend', categoryTrendOption);
     }
 });
+    /**
+     * @function initializeRecommendationSection
+     * @description Initialize the new recommendation section
+     */
+    async function initializeRecommendationSection() {
+        const preferencesBtn2 = document.getElementById('preferencesBtn2');
+        const sortButtons2 = document.getElementById('sortButtons2');
+        const recommendationGrid = document.getElementById('recommendationGrid');
+        let isPreferenceMode2 = false;
+        let currentSortBy2 = 'score';
+        
+        // Initialize tooltip
+        const tooltip2 = document.getElementById('preferencesTooltip2');
+        if (preferencesBtn2 && tooltip2) {
+            preferencesBtn2.addEventListener('mouseenter', () => {
+                tooltip2.innerHTML = userPreferences.length > 0 ?
+                    `<i class="fas fa-info-circle me-2"></i>根据您的偏好：${userPreferences.join(", ")}。` :
+                    `<i class="fas fa-exclamation-triangle me-2"></i>您尚未设置偏好，显示全部推荐。`;
+                tooltip2.style.display = 'block';
+            });
+            
+            preferencesBtn2.addEventListener('mouseleave', () => {
+                tooltip2.style.display = 'none';
+            });
+        }
+        
+        // Preference button click
+        if (preferencesBtn2) {
+            preferencesBtn2.addEventListener('click', () => {
+                isPreferenceMode2 = !isPreferenceMode2;
+                preferencesBtn2.classList.toggle('active', isPreferenceMode2);
+                updateRecommendationGrid(currentSortBy2, isPreferenceMode2);
+            });
+        }
+        
+        // Sort buttons click
+        if (sortButtons2) {
+            sortButtons2.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button && button.dataset.sort !== currentSortBy2) {
+                    sortButtons2.querySelectorAll('.btn').forEach(btn => {
+                        btn.classList.remove('btn-primary', 'active');
+                        btn.classList.add('btn-outline-primary');
+                    });
+                    button.classList.add('btn-primary', 'active');
+                    button.classList.remove('btn-outline-primary');
+                    currentSortBy2 = button.dataset.sort;
+                    updateRecommendationGrid(currentSortBy2, isPreferenceMode2);
+                }
+            });
+        }
+        
+        /**
+         * Update recommendation grid
+         */
+        async function updateRecommendationGrid(sortBy, preferenceMode) {
+            if (!recommendationGrid) return;
+            
+            recommendationGrid.innerHTML = '<div class="d-flex justify-content-center align-items-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+            
+            try {
+                const params = new URLSearchParams({
+                    sortBy: sortBy,
+                    isPreferenceMode: preferenceMode,
+                    preferences: preferenceMode ? userPreferences.join(',') : ''
+                });
+                const response = await fetch(`${API_BASE_URL}/api/rank_list?${params.toString()}`);
+                const animes = await response.json();
+                
+                if (!Array.isArray(animes) || animes.length === 0) {
+                    recommendationGrid.innerHTML = `<div class="text-center py-5" style="grid-column: 1 / -1;">${preferenceMode && userPreferences.length > 0 ? '没有找到符合您偏好的番剧' : '暂无数据'}</div>`;
+                    return;
+                }
+                
+                const formatLargeNumber = (num) => {
+                    if (num >= 1e8) return (num / 1e8).toFixed(1) + '亿';
+                    if (num >= 1e4) return (num / 1e4).toFixed(1) + '万';
+                    return num.toLocaleString();
+                };
+                
+                recommendationGrid.innerHTML = animes.map((anime, index) => {
+                    const proxyUrl = `${API_BASE_URL}/api/image_proxy?url=${encodeURIComponent(anime.cover)}&title=${encodeURIComponent(anime.title)}&season_id=${anime.season_id}`;
+                    
+                    let displayValue;
+                    let icon;
+                    switch (sortBy) {
+                        case 'views':
+                            icon = 'fa-play-circle';
+                            displayValue = formatLargeNumber(anime.views || 0);
+                            break;
+                        case 'followers':
+                            icon = 'fa-heart';
+                            displayValue = formatLargeNumber(anime.favorites || 0);
+                            break;
+                        default:
+                            icon = 'fa-star';
+                            displayValue = `${parseFloat(anime.score || 0).toFixed(1)}分`;
+                            break;
+                    }
+                    
+                    const animeStyles = anime.styles || [];
+                    let tagsHtml;
+                    
+                    if (preferenceMode && userPreferences.length > 0) {
+                        const matchingTags = animeStyles.filter(style => userPreferences.includes(style));
+                        const otherTags = animeStyles.filter(style => !userPreferences.includes(style));
+                        const orderedTags = [...matchingTags, ...otherTags];
+                        
+                        tagsHtml = orderedTags.slice(0, 3).map(tag => {
+                            const badgeClass = matchingTags.includes(tag) ? 'badge bg-primary me-1' : 'badge bg-secondary me-1';
+                            return `<span class="${badgeClass}">${tag}</span>`;
+                        }).join('');
+                    } else {
+                        tagsHtml = animeStyles.slice(0, 3).map(tag => `<span class="badge bg-secondary me-1">${tag}</span>`).join('');
+                    }
+                    
+                    const rankBadge = index < 3 ? `<div class="recommendation-rank-badge">Top ${index + 1}</div>` : '';
+                    
+                    return `
+                        <div class="recommendation-card">
+                            <div class="recommendation-card-image-wrapper">
+                                ${rankBadge}
+                                <img src="${proxyUrl}" alt="${anime.title}" class="recommendation-card-image">
+                            </div>
+                            <div class="recommendation-card-content">
+                                <div class="recommendation-card-title">${anime.title}</div>
+                                <div class="recommendation-card-stats">
+                                    <span><i class="fas ${icon}"></i>${displayValue}</span>
+                                </div>
+                                <div class="recommendation-card-tags">${tagsHtml}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('获取推荐数据失败:', error);
+                recommendationGrid.innerHTML = '<div class="text-center py-5" style="grid-column: 1 / -1;">加载失败，请刷新重试</div>';
+            }
+        }
+        
+        // Initial load
+        await updateRecommendationGrid(currentSortBy2, isPreferenceMode2);
+    }
+    
+    // Initialize recommendation section
+    initializeRecommendationSection();

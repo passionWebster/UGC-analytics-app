@@ -1,7 +1,7 @@
 {
-  "name": "bilibili-insights-hub",
+  "name": "bilibili-intelligence-analytics-platform",
   "version": "1.0.0",
-  "description": "",
+  "description": "Bilibili Intelligence Analytics Platform - Advanced data analytics and visualization platform for Bilibili anime content",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
