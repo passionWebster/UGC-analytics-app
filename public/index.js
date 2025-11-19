@@ -180,8 +180,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         navLinks.forEach(link => {
             link.addEventListener("click", function (e) {
-                e.preventDefault();
-                showSection(this.getAttribute("href").substring(1));
+                const href = this.getAttribute("href");
+                // Only handle hash links (internal navigation), allow external links to work normally
+                if (href && href.startsWith("#")) {
+                    e.preventDefault();
+                    showSection(href.substring(1));
+                }
             });
         });
 
@@ -740,8 +744,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         document.getElementById('avg-views').textContent = formatNumber(Math.round(avgViews));
                         
                         // Update charts
-                        const episodeLabels = episodes.map(ep => ep.title.replace(/第(\d+)话\s*/, '第$1话
-'));
+                        const episodeLabels = episodes.map(ep => ep.title.replace(/第(\d+)话\s*/, '第$1话 '));
                         const episodeViews = episodes.map(ep => ep.views || 0);
 
                         charts['play-trend'].setOption({
@@ -1296,7 +1299,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         initChartWithResizeObserver('chart-collection-ratio', collectionRatioOption);
         initChartWithResizeObserver('chart-category-trend', categoryTrendOption);
     }
-});
+
     /**
      * @function initializeRecommendationSection
      * @description Initialize the new recommendation section
@@ -1443,3 +1446,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Initialize recommendation section
     initializeRecommendationSection();
+});
