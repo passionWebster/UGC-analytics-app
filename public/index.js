@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let charts = {};
     let currentAnimeData = null;
+    let echartsInitRetryCount = 0; // Track echarts initialization retry attempts
 
     // 用于饼图下钻的状态变量
     let isTypeChartDrilledDown = false;
@@ -64,6 +65,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const element = document.getElementById(elementId);
         if (!element) {
             console.error(`图表容器 #${elementId} 未找到。`);
+            return null;
+        }
+
+        // Check if echarts is loaded
+        if (typeof echarts === 'undefined') {
+            console.error('ECharts library is not loaded.');
             return null;
         }
 
@@ -169,7 +176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // 为了最稳妥的体验，我们在这里保留一个延时，但时间可以缩短。
             setTimeout(() => {
                 const visibleChart = targetSection.querySelector('[id^="chart-"]');
-                if (visibleChart) {
+                if (visibleChart && typeof echarts !== 'undefined') {
                     const chartInstance = echarts.getInstanceByDom(visibleChart);
                     if (chartInstance) chartInstance.resize();
                 }
@@ -1140,7 +1147,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 // 找到该内容区内的图表容器
                 const chartElement = document.querySelector(`${targetPaneId} [id^="chart-"]`);
-                if (chartElement) {
+                if (chartElement && typeof echarts !== 'undefined') {
                     // 获取对应的 ECharts 实例并调用 resize
                     const chartInstance = echarts.getInstanceByDom(chartElement);
                     if (chartInstance) {
@@ -1156,6 +1163,18 @@ document.addEventListener('DOMContentLoaded', async () => {
      * @description 初始化页面上所有的 ECharts 实例。
      */
     function initializeCharts() {
+        // Check if echarts is loaded, if not, retry after a delay (max 50 attempts = 5 seconds)
+        if (typeof echarts === 'undefined') {
+            if (echartsInitRetryCount < 50) {
+                echartsInitRetryCount++;
+                console.warn(`ECharts not yet loaded, retrying in 100ms... (attempt ${echartsInitRetryCount}/50)`);
+                setTimeout(initializeCharts, 100);
+                return;
+            } else {
+                console.error('ECharts failed to load after 50 attempts. Charts will not be displayed.');
+                return;
+            }
+        }
 
         // 首页 - 类型分布（饼图）
         const typeDistributionOption = {
