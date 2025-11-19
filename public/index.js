@@ -646,6 +646,55 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             return timeSlots;
         };
+        
+        const findPeakTimeSlot = (onlineHistory) => {
+            if (!onlineHistory || typeof onlineHistory !== 'object') return '暂无数据';
+            const slots = {
+                "00:00": '0-4点', "04:00": '4-8点', "08:00": '8-12点',
+                "12:00": '12-16点', "16:00": '16-20点', "20:00": '20-24点'
+            };
+            let maxValue = 0;
+            let peakSlot = '';
+            for (const [time, count] of Object.entries(onlineHistory)) {
+                if (count > maxValue) {
+                    maxValue = count;
+                    peakSlot = slots[time] || time;
+                }
+            }
+            return peakSlot || '暂无数据';
+        };
+        
+        const getPeakOnlineCount = (onlineHistory) => {
+            if (!onlineHistory || typeof onlineHistory !== 'object') return 0;
+            return Math.max(...Object.values(onlineHistory));
+        };
+        
+        const updateEpisodeDetailsTable = (episodes) => {
+            const detailsSection = document.getElementById('episode-details-section');
+            const tbody = document.getElementById('episode-details-tbody');
+            
+            if (!episodes || episodes.length === 0) {
+                detailsSection.style.display = 'none';
+                return;
+            }
+            
+            tbody.innerHTML = episodes.map((ep, index) => {
+                const peakTime = findPeakTimeSlot(ep.online_history);
+                const peakOnline = getPeakOnlineCount(ep.online_history);
+                
+                return `
+                    <tr>
+                        <td><span class="badge bg-primary">${index + 1}</span></td>
+                        <td>${ep.title}</td>
+                        <td>${formatNumber(ep.views || 0)}</td>
+                        <td><span class="badge bg-info">${peakTime}</span></td>
+                        <td>${formatNumber(peakOnline)}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            detailsSection.style.display = 'block';
+        };
 
         const performSearch = async () => {
             const keyword = elements.keywordInput.value.trim();
@@ -655,9 +704,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             elements.searchBtn.disabled = true;
             elements.searchBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> 搜索中...`;
-            elements.statusMessage.textContent = `正在为“${keyword}”请求数据...`;
+            elements.statusMessage.textContent = `正在为"${keyword}"请求数据...`;
             elements.favoritesCount.textContent = '--';
             elements.viewsCount.textContent = '--';
+            document.getElementById('episodes-count').textContent = '--';
+            document.getElementById('avg-views').textContent = '--';
+            document.getElementById('episode-details-section').style.display = 'none';
 
             try {
                 const response = await fetch(`${API_BASE_URL}/search`, {
@@ -671,21 +723,38 @@ document.addEventListener('DOMContentLoaded', async () => {
                     elements.statusMessage.className = 'form-text mt-2 text-danger';
                     currentAnimeData = null;
                 } else {
-                    // --- 成功的逻辑保持不变 ---
                     currentAnimeData = result.data;
+                    
+                    // Update basic stats
                     elements.favoritesCount.textContent = formatNumber(currentAnimeData.stats.favorites);
                     elements.viewsCount.textContent = formatNumber(currentAnimeData.stats.views);
 
                     if (Array.isArray(currentAnimeData.episodes) && currentAnimeData.episodes.length > 0) {
-                        const episodeLabels = currentAnimeData.episodes.map(ep => ep.title.replace(/第(\d+)话\s*/, '第$1话\n'));
-                        const episodeViews = currentAnimeData.episodes.map(ep => ep.views || 0);
+                        const episodes = currentAnimeData.episodes;
+                        const episodeCount = episodes.length;
+                        const totalViews = episodes.reduce((sum, ep) => sum + (ep.views || 0), 0);
+                        const avgViews = totalViews / episodeCount;
+                        
+                        // Update enhanced stats
+                        document.getElementById('episodes-count').textContent = episodeCount;
+                        document.getElementById('avg-views').textContent = formatNumber(Math.round(avgViews));
+                        
+                        // Update charts
+                        const episodeLabels = episodes.map(ep => ep.title.replace(/第(\d+)话\s*/, '第$1话
+'));
+                        const episodeViews = episodes.map(ep => ep.views || 0);
 
                         charts['play-trend'].setOption({
                             xAxis: {data: episodeLabels, axisLabel: {interval: 0, rotate: 30}},
                             series: [{name: '单集播放量', data: episodeViews}]
                         });
+                        
+                        // Update episode details table
+                        updateEpisodeDetailsTable(episodes);
                     } else {
                         charts['play-trend'].setOption({xAxis: {data: []}, series: [{data: []}]});
+                        document.getElementById('episodes-count').textContent = '0';
+                        document.getElementById('avg-views').textContent = '0';
                     }
 
                     // 默认显示所有剧集的总和
@@ -693,6 +762,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     charts['watch-time'].setOption({
                         series: [{data: totalOnlineHistory}]
                     });
+                    document.getElementById('watch-time-subtitle').textContent = '所有剧集总计';
 
                     elements.statusMessage.textContent = `成功获取数据。${result.status === 'cached' ? '(来自缓存)' : ''}`;
                     elements.statusMessage.className = 'form-text mt-2 text-success';
@@ -710,26 +780,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.searchBtn.addEventListener('click', performSearch);
         elements.keywordInput.addEventListener('keyup', (event) => event.key === 'Enter' && performSearch());
 
-        // --- 【核心新增功能】 ---
-        // 为“播放量趋势”图表添加点击事件监听器
+        // Chart click interaction
         charts['play-trend'].on('click', (params) => {
-            // 确保当前有番剧数据，并且点击的是一个数据点
             if (currentAnimeData && currentAnimeData.episodes && params.dataIndex >= 0) {
                 const clickedEpisode = currentAnimeData.episodes[params.dataIndex];
                 if (clickedEpisode) {
-                    // 使用 processOnlineHistory 处理单集数据
                     const singleEpisodeHistory = processOnlineHistory(clickedEpisode);
-
-                    // 更新“观看时间分布”图表
                     charts['watch-time'].setOption({
                         series: [{data: singleEpisodeHistory}]
                     });
+                    document.getElementById('watch-time-subtitle').textContent = `${clickedEpisode.title}`;
                     elements.statusMessage.textContent = `当前显示《${clickedEpisode.title}》的在线人数分布。`;
                     elements.statusMessage.className = 'form-text mt-2 text-info';
                 }
             }
         });
     }
+
 
     /**
      * @function initCommonControlButtons
