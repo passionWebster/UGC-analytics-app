@@ -67,6 +67,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             return null;
         }
 
+        // Check if echarts is loaded
+        if (typeof echarts === 'undefined') {
+            console.error('ECharts library is not loaded.');
+            return null;
+        }
+
         // 销毁可能存在的旧实例
         const existingInstance = echarts.getInstanceByDom(element);
         if (existingInstance) {
@@ -169,7 +175,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // 为了最稳妥的体验，我们在这里保留一个延时，但时间可以缩短。
             setTimeout(() => {
                 const visibleChart = targetSection.querySelector('[id^="chart-"]');
-                if (visibleChart) {
+                if (visibleChart && typeof echarts !== 'undefined') {
                     const chartInstance = echarts.getInstanceByDom(visibleChart);
                     if (chartInstance) chartInstance.resize();
                 }
@@ -1140,7 +1146,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 // 找到该内容区内的图表容器
                 const chartElement = document.querySelector(`${targetPaneId} [id^="chart-"]`);
-                if (chartElement) {
+                if (chartElement && typeof echarts !== 'undefined') {
                     // 获取对应的 ECharts 实例并调用 resize
                     const chartInstance = echarts.getInstanceByDom(chartElement);
                     if (chartInstance) {
