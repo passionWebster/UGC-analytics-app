@@ -172,6 +172,39 @@
                         </div>
                     </div>
                 </div>
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <div class="card p-3">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="card-title mb-0">热门番剧排行</h5>
+                                <div class="d-flex align-items-center">
+                                    <div class="preference-status me-3">
+                                        <button class="btn btn-sm btn-pink" id="preferencesBtn">
+                                            <i class="fas fa-heart me-1"></i>
+                                            <span>根据偏好推荐</span>
+                                        </button>
+                                    </div>
+                                    <div class="btn-group btn-group-sm" id="sortButtons" role="group">
+                                        <button class="btn btn-primary active" data-sort="score" type="button">
+                                            <i class="fas fa-star me-1"></i>评分
+                                        </button>
+                                        <button class="btn btn-outline-primary" data-sort="views" type="button">
+                                            <i class="fas fa-play-circle me-1"></i>播放量
+                                        </button>
+                                        <button class="btn btn-outline-primary" data-sort="followers" type="button">
+                                            <i class="fas fa-heart me-1"></i>追番人数
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="rank-scroll-container">
+                                <div class="rank-list" id="rank-list-container">
+                                    <div class="text-center py-5">加载中...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div class="row">
                     <div class="col-md-6">
                         <div class="card p-3">
