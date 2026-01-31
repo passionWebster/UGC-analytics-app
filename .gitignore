@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Vue/Vite
+dist/
+.vite/
+.vite-inspect/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+
+# Logs
+logs/
+*.log
+*.pid
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Cache
+cache/
+*.cache
+.cache/
+
+# Old files (from v1.x)
+rank_cache.json
+cache.json
+rank_fetcher_*.json
+
+# Build outputs
+src/frontend/dist/

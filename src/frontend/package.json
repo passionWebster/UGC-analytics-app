@@ -1,0 +1,28 @@
+{
+  "name": "bilibili-analytics-frontend",
+  "version": "2.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Bilibili Analytics Platform - Vue 3 Frontend",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "vue-router": "^4.4.0",
+    "pinia": "^2.2.0",
+    "axios": "^1.7.9",
+    "echarts": "^5.5.0",
+    "element-plus": "^2.8.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/tsconfig": "^0.5.1",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.5",
+    "vue-tsc": "^2.1.10"
+  }
+}
