@@ -22,13 +22,13 @@ export interface AIServiceStatus {
 /**
  * 获取 AI 服务状态
  */
-export const getAIServiceStatus = async (): Promise<AIServiceStatus> => {
+export const checkAIServiceStatus = async (): Promise<AIServiceStatus> => {
   return apiClient.get('/aiservicestatus')
 }
 
 /**
  * 发送聊天消息
  */
-export const sendChatMessage = async (message: string): Promise<ChatResponse> => {
+export const chatWithAI = async (message: string): Promise<ChatResponse> => {
   return apiClient.post('/chat', { message })
 }

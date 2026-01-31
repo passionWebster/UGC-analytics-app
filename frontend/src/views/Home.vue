@@ -239,8 +239,8 @@ const loadData = async () => {
 // 加载排行榜
 const loadRankings = async () => {
   try {
-    const data = await getRankings(sortBy.value, 10)
-    rankings.value = data
+    const response = await getRankings(sortBy.value, 10)
+    rankings.value = response.list || []
   } catch (error) {
     console.error('加载排行榜失败:', error)
   }
