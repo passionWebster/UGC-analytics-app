@@ -665,9 +665,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const updateEpisodeDetailsTable = (episodes) => {
             const detailsSection = document.getElementById('episode-details-section');
             const tbody = document.getElementById('episode-details-tbody');
+            const toggleBtn = document.getElementById('toggle-episode-details-btn');
 
             if (!episodes || episodes.length === 0) {
-                detailsSection.style.display = 'none';
+                toggleBtn.style.display = 'none';
                 return;
             }
 
@@ -686,7 +687,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `;
             }).join('');
 
-            detailsSection.style.display = 'block';
+            // Show toggle button instead of directly showing the details section
+            toggleBtn.style.display = 'inline-block';
+            toggleBtn.innerHTML = '<i class="fas fa-list me-1"></i>剧集详情';
         };
 
         const performSearch = async () => {
@@ -702,7 +705,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             elements.viewsCount.textContent = '--';
             document.getElementById('episodes-count').textContent = '--';
             document.getElementById('avg-views').textContent = '--';
-            document.getElementById('episode-details-section').style.display = 'none';
+
+            // Hide episode details section and toggle button
+            const episodeDetailsSection = document.getElementById('episode-details-section');
+            const toggleBtn = document.getElementById('toggle-episode-details-btn');
+            const chartsRow = document.getElementById('charts-row');
+            episodeDetailsSection.classList.remove('show');
+            chartsRow.classList.remove('hidden');
+            toggleBtn.style.display = 'none';
+            isDetailsVisible = false;
 
             try {
                 const response = await fetch(`${API_BASE_URL}/search`, {
@@ -769,6 +780,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         elements.searchBtn.addEventListener('click', performSearch);
         elements.keywordInput.addEventListener('keyup', (event) => event.key === 'Enter' && performSearch());
+
+        // Toggle episode details button
+        const toggleEpisodeDetailsBtn = document.getElementById('toggle-episode-details-btn');
+        const chartsRow = document.getElementById('charts-row');
+        const episodeDetailsSection = document.getElementById('episode-details-section');
+        let isDetailsVisible = false;
+
+        toggleEpisodeDetailsBtn.addEventListener('click', () => {
+            isDetailsVisible = !isDetailsVisible;
+
+            if (isDetailsVisible) {
+                // Hide charts and show episode details
+                chartsRow.classList.add('hidden');
+                episodeDetailsSection.classList.add('show');
+                toggleEpisodeDetailsBtn.innerHTML = '<i class="fas fa-chart-bar me-1"></i>返回图表';
+            } else {
+                // Hide episode details and show charts
+                episodeDetailsSection.classList.remove('show');
+                chartsRow.classList.remove('hidden');
+                toggleEpisodeDetailsBtn.innerHTML = '<i class="fas fa-list me-1"></i>剧集详情';
+            }
+        });
 
         // Chart click interaction
         charts['play-trend'].on('click', (params) => {

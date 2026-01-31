@@ -22,16 +22,24 @@
             <nav class="navbar navbar-expand-lg">
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link active" href="#home">首页</a>
+                        <a class="nav-link active" href="#home">
+                            <i class="fas fa-home me-1"></i>首页
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#status">番剧状态检测</a>
+                        <a class="nav-link" href="#status">
+                            <i class="fas fa-search me-1"></i>番剧状态检测
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#overview">番剧概览</a>
+                        <a class="nav-link" href="#overview">
+                            <i class="fas fa-chart-pie me-1"></i>番剧概览
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#recommendation">番剧推荐</a>
+                        <a class="nav-link" href="#recommendation">
+                            <i class="fas fa-star me-1"></i>番剧推荐
+                        </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="data-screen.html" target="_blank">
@@ -94,17 +102,11 @@
     </div>
 
     <section id="home">
-        <div class="d-flex justify-content-between align-items-center">
-            <h2 class="section-title">数据总览</h2>
-            <button class="back-button d-none" id="backToHome">
-                <i class="fas fa-arrow-left me-2"></i>返回首页
-            </button>
-        </div>
         <div class="row home-row">
             <div class="col-md-12 fixed-height-container">
-                <div class="row mb-4">
-                    <div class="col-md-3 mb-4">
-                        <div class="card p-3 h-100">
+                <div class="row mb-3">
+                    <div class="col-md-3 mb-3">
+                        <div class="card p-2 h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h5 class="card-title mb-0">番剧总数</h5>
                                 <div class="icon-box bg-pink rounded-circle p-2">
@@ -137,8 +139,8 @@
                             </p>
                         </div>
                     </div>
-                    <div class="col-md-3 mb-4">
-                        <div class="card p-3 h-100">
+                    <div class="col-md-3 mb-3">
+                        <div class="card p-2 h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h5 class="card-title mb-0">追番人数</h5>
                                 <div class="icon-box bg-purple rounded-circle p-2">
@@ -154,8 +156,8 @@
                             </p>
                         </div>
                     </div>
-                    <div class="col-md-3 mb-4">
-                        <div class="card p-3 h-100">
+                    <div class="col-md-3 mb-3">
+                        <div class="card p-2 h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h5 class="card-title mb-0">收藏占比</h5>
                                 <div class="icon-box bg-yellow rounded-circle p-2">
@@ -173,8 +175,8 @@
                     </div>
                 </div>
                 <div class="row">
-                    <div class="col-md-4 mb-4">
-                        <div class="card p-3 h-100">
+                    <div class="col-md-4 mb-3">
+                        <div class="card p-2 h-100">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h5 class="card-title mb-0">热门番剧排行</h5>
                             </div>
@@ -206,8 +208,8 @@
                     </div>
                     <div class="col-md-8">
                         <div class="row h-100">
-                            <div class="col-md-6 mb-4">
-                                <div class="card p-3 h-100">
+                            <div class="col-md-6 mb-3">
+                                <div class="card p-2 h-100">
                                     <div class="d-flex justify-content-between align-items-center mb-3 chart-card-header">
                                         <h5 class="card-title mb-0">番剧类型分布</h5>
                                         <div class="d-flex align-items-center">
@@ -224,8 +226,8 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-6 mb-4">
-                                <div class="card p-3 h-100">
+                            <div class="col-md-6 mb-3">
+                                <div class="card p-2 h-100">
                                     <div class="d-flex justify-content-between align-items-center mb-3 chart-card-header">
                                         <h5 class="card-title mb-0">口碑热度分布</h5>
 
@@ -259,69 +261,68 @@
     </section>
 
     <section class="d-none" id="status">
-        <div class="d-flex justify-content-between align-items-center">
-            <h2 class="section-title">番剧状态检测</h2>
-            <button class="back-button" id="backToHome2">
-                <i class="fas fa-arrow-left me-2"></i>返回首页
-            </button>
-        </div>
-        <div class="row mb-4">
+        <div class="row mb-3">
             <div class="col-md-8 mx-auto">
                 <div class="input-group">
                     <label for="keyword-input"></label>
                     <input class="form-control form-control-lg" id="keyword-input" placeholder="输入番剧名搜索..."
                            type="text"/>
-                    <button class="btn btn-primary btn-lg" id="search-btn">搜索</button>
+                    <button class="btn btn-primary btn-lg" id="search-btn">
+                        <i class="fas fa-search me-1"></i>搜索
+                    </button>
+                    <button class="btn btn-secondary btn-lg" id="toggle-episode-details-btn" style="display: none;">
+                        <i class="fas fa-list me-1"></i>剧集详情
+                    </button>
                 </div>
                 <div class="form-text mt-2" id="status-message"></div>
             </div>
         </div>
-        
+
         <!-- Enhanced Stats Cards -->
-        <div class="row mb-4">
+        <div class="row mb-3">
             <div class="col-md-3 mb-3">
-                <div class="card text-center p-3 h-100 stat-card">
+                <div class="card text-center p-2 h-100 stat-card">
                     <div class="stat-icon bg-primary">
                         <i class="fas fa-heart"></i>
                     </div>
-                    <h6 class="card-title text-muted mt-2">追番人数</h6>
+                    <h6 class="card-title text-muted mt-2 mb-1">追番人数</h6>
                     <p class="display-6 mb-0 text-primary" id="favorites-count">--</p>
                 </div>
             </div>
             <div class="col-md-3 mb-3">
-                <div class="card text-center p-3 h-100 stat-card">
+                <div class="card text-center p-2 h-100 stat-card">
                     <div class="stat-icon bg-success">
                         <i class="fas fa-play-circle"></i>
                     </div>
-                    <h6 class="card-title text-muted mt-2">播放数量</h6>
+                    <h6 class="card-title text-muted mt-2 mb-1">播放数量</h6>
                     <p class="display-6 mb-0 text-success" id="views-count">--</p>
                 </div>
             </div>
             <div class="col-md-3 mb-3">
-                <div class="card text-center p-3 h-100 stat-card">
+                <div class="card text-center p-2 h-100 stat-card">
                     <div class="stat-icon bg-warning">
                         <i class="fas fa-film"></i>
                     </div>
-                    <h6 class="card-title text-muted mt-2">剧集数量</h6>
+                    <h6 class="card-title text-muted mt-2 mb-1">剧集数量</h6>
                     <p class="display-6 mb-0 text-warning" id="episodes-count">--</p>
                 </div>
             </div>
             <div class="col-md-3 mb-3">
-                <div class="card text-center p-3 h-100 stat-card">
+                <div class="card text-center p-2 h-100 stat-card">
                     <div class="stat-icon bg-info">
                         <i class="fas fa-chart-line"></i>
                     </div>
-                    <h6 class="card-title text-muted mt-2">平均播放</h6>
+                    <h6 class="card-title text-muted mt-2 mb-1">平均播放</h6>
                     <p class="display-6 mb-0 text-info" id="avg-views">--</p>
                 </div>
             </div>
         </div>
-        
+
         <!-- Charts Row -->
-        <div class="row graph-row mb-4">
+        <div class="row graph-row mb-3" id="charts-row">
             <div class="col-md-6">
-                <div class="card p-3">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="card p-2">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
                         <h5 class="card-title mb-0">播放量趋势</h5>
                         <small class="text-muted">点击柱子查看该集在线分布</small>
                     </div>
@@ -331,8 +332,8 @@
                 </div>
             </div>
             <div class="col-md-6">
-                <div class="card p-3">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="card p-2">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
                         <h5 class="card-title mb-0">观看时间分布</h5>
                         <small class="text-muted" id="watch-time-subtitle">所有剧集总计</small>
                     </div>
@@ -342,7 +343,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Episode Details Table -->
         <div class="row" id="episode-details-section" style="display: none;">
             <div class="col-md-12">
@@ -371,12 +372,6 @@
     </section>
 
     <section class="d-none" id="recommendation">
-        <div class="d-flex justify-content-between align-items-center">
-            <h2 class="section-title">番剧推荐</h2>
-            <button class="back-button" id="backToHome4">
-                <i class="fas fa-arrow-left me-2"></i>返回首页
-            </button>
-        </div>
         <div class="recommendation-content">
             <div class="recommendation-header">
                 <div class="preference-status">
@@ -408,13 +403,7 @@
     </section>
 
     <section class="d-none" id="overview">
-        <div class="d-flex justify-content-between align-items-center">
-            <h2 class="section-title">番剧概览</h2>
-            <button class="back-button" id="backToHome3">
-                <i class="fas fa-arrow-left me-2"></i>返回首页
-            </button>
-        </div>
-        <div class="mb-4">
+        <div class="mb-3">
             <ul class="nav nav-pills" id="overviewTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link active" data-bs-target="#yearly" data-bs-toggle="pill" id="yearly-tab"
