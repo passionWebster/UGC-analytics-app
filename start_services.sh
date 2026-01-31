@@ -21,19 +21,19 @@ fi
 # 启动后端服务 (FastAPI)
 echo ""
 echo "📦 启动后端服务..."
-cd "$(dirname "$0")/src/backend"
+cd "$(dirname "$0")/backend"
 
 # 检查并安装 Python 依赖
-if [ ! -d "../../venv" ]; then
+if [ ! -d "../venv" ]; then
     echo "  正在创建 Python 虚拟环境..."
-    python3 -m venv ../../venv
+    python3 -m venv ../venv
 fi
 
-source ../../venv/bin/activate
-pip install -q -r ../../requirements-new.txt
+source ../venv/bin/activate
+pip install -q -r requirements.txt
 
 # 后台启动 FastAPI
-nohup uvicorn main:app --host 0.0.0.0 --port 8000 > ../../logs/backend.log 2>&1 &
+nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > ../logs/backend.log 2>&1 &
 BACKEND_PID=$!
 echo "  ✅ 后端服务已启动 (PID: $BACKEND_PID)"
 echo "  📖 API 文档: http://localhost:8000/api/docs"
@@ -50,13 +50,13 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # 后台启动 Vite
-nohup npm run dev > ../../logs/frontend.log 2>&1 &
+nohup npm run dev > ../logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo "  ✅ 前端服务已启动 (PID: $FRONTEND_PID)"
 echo "  🌐 前端地址: http://localhost:5173"
 
 # 保存 PID
-cd ../..
+cd ..
 mkdir -p logs
 echo $BACKEND_PID > logs/backend.pid
 echo $FRONTEND_PID > logs/frontend.pid
