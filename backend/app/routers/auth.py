@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
 from ..database import get_session
-from ..models import UserCreate, UserLogin, UserResponse, PreferenceUpdate
-from ..services.auth_service import AuthService
+from ..schemas import UserCreate, UserLogin, UserResponse, PreferenceUpdate
+from ..auth import AuthService
 
 
 router = APIRouter(prefix="/api", tags=["认证"])

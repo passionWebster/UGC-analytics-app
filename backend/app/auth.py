@@ -1,4 +1,4 @@
-# services/auth_service.py
+# auth.py
 """
 用户认证服务
 处理用户登录、注册、token 生成等认证相关逻辑
@@ -9,8 +9,9 @@ from jose import JWTError, jwt
 from sqlmodel import Session, select
 from fastapi import HTTPException, status
 
-from ..models import User, UserCreate, UserLogin, UserResponse
-from ..config import settings
+from .models import User
+from .schemas import UserCreate, UserLogin, UserResponse
+from .config import settings
 
 
 class AuthService:
