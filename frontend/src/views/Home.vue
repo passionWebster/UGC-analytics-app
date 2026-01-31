@@ -259,6 +259,8 @@ const initTypeDistChart = () => {
     series: [{
       type: 'pie',
       radius: '60%',
+      // TODO: 替换为真实的番剧类型分布数据
+      // 应该调用 getStyleDistribution() API 获取实际数据
       data: [
         { value: 335, name: '热血' },
         { value: 310, name: '日常' },
@@ -305,6 +307,8 @@ const updateReputationChart = () => {
     yAxis: {
       type: 'value'
     },
+    // TODO: 替换为真实的口碑热度数据
+    // 应该调用 getReleaseTrend() API 获取实际趋势数据
     series: selectedAreas.value.map(area => ({
       name: area,
       type: 'line',

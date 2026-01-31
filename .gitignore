@@ -62,3 +62,4 @@ rank_fetcher_*.json
 
 # Build outputs
 src/frontend/dist/
+frontend/tsconfig.tsbuildinfo

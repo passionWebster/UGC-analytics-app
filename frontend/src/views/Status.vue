@@ -278,6 +278,8 @@ const renderWatchTimeChart = () => {
 
   watchTimeInstance = echarts.init(watchTimeChart.value)
 
+  // TODO: 替换为真实的观看时间分布数据
+  // 应该从番剧详情 API 获取实际的24小时观看分布数据
   // 模拟观看时间分布数据（0-23小时）
   const hours = Array.from({ length: 24 }, (_, i) => `${i}:00`)
   const watchData = Array.from({ length: 24 }, (_, i) => {
