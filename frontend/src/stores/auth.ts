@@ -16,6 +16,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   // 计算属性
   const hasPreferences = computed(() => preferences.value.length > 0)
+  const user = computed(() => ({
+    username: username.value,
+    email: email.value
+  }))
 
   // 初始化：从 localStorage 恢复状态
   const initAuth = () => {
@@ -139,6 +143,7 @@ export const useAuthStore = defineStore('auth', () => {
     
     // 计算属性
     hasPreferences,
+    user,
     
     // 方法
     initAuth,

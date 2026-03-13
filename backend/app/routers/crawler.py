@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlmodel import Session
 
 from ..database import get_session
-from ..services.crawler import BilibiliBangumiCrawler
+from ..scraper import BilibiliBangumiCrawler
 
 
 router = APIRouter(prefix="/api/crawler", tags=["爬虫"])

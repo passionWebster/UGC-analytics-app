@@ -1,4 +1,4 @@
-# services/analytics_service.py
+# crud.py
 """
 数据分析服务
 提供各种数据查询和分析功能
@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from sqlmodel import Session, select, func, and_
 from sqlalchemy import desc
 
-from ..models import Anime, DailyStats, Ranking
+from .models import Anime, DailyStats, Ranking
 
 
 class AnalyticsService:

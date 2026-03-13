@@ -10,7 +10,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/dashboard'
+      redirect: '/home'
     },
     {
       path: '/login',
@@ -21,6 +21,30 @@ const router = createRouter({
       path: '/genre-selection',
       name: 'GenreSelection',
       component: () => import('@/views/GenreSelection.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/home',
+      name: 'Home',
+      component: () => import('@/views/Home.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/status',
+      name: 'Status',
+      component: () => import('@/views/Status.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/overview',
+      name: 'Overview',
+      component: () => import('@/views/Overview.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/recommendation',
+      name: 'Recommendation',
+      component: () => import('@/views/Recommendation.vue'),
       meta: { requiresAuth: true }
     },
     {
@@ -52,7 +76,7 @@ router.beforeEach((to, from, next) => {
   if (to.meta.requiresAuth && !authStore.isLoggedIn) {
     next('/login')
   } else if (to.path === '/login' && authStore.isLoggedIn) {
-    next('/dashboard')
+    next('/home')
   } else {
     next()
   }

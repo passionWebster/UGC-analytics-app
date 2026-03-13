@@ -1,4 +1,4 @@
-# services/crawler.py
+# scraper.py
 """
 B站数据爬虫服务 - 重构版
 将原 scraper.py 和 data_manager.py 的功能整合，数据直接写入 SQLite 数据库
@@ -12,9 +12,9 @@ import requests
 from sqlmodel import Session, select
 from tqdm import tqdm
 
-from ..models import Anime, DailyStats, EpisodeStats, CrawlLog
-from ..database import get_session
-from ..config import settings
+from .models import Anime, DailyStats, EpisodeStats, CrawlLog
+from .database import get_session
+from .config import settings
 
 
 class BilibiliBangumiCrawler:

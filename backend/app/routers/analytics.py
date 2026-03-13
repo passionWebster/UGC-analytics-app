@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
 from ..database import get_session
-from ..services.analytics_service import AnalyticsService
+from ..crud import AnalyticsService
 
 
 router = APIRouter(prefix="/api/analytics", tags=["数据分析"])
