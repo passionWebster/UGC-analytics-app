@@ -72,7 +72,7 @@ const handleSubmit = async () => {
 
   if (result.success) {
     ElMessage.success('偏好设置已保存')
-    router.push('/dashboard')
+    router.push('/home')
   } else {
     ElMessage.error('保存失败，请重试')
   }

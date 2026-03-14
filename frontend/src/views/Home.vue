@@ -9,7 +9,7 @@
           </div>
           <div class="metric-content">
             <h5>番剧总数</h5>
-            <p class="metric-value">{{ overview.totalAnime || '加载中...' }}</p>
+            <p class="metric-value">{{ isLoading ? '加载中...' : overview.totalAnime }}</p>
             <p class="metric-growth" :class="getGrowthClass(overview.animeGrowth)">
               {{ formatGrowth(overview.animeGrowth) }} 较上月增长
             </p>
@@ -24,7 +24,7 @@
           </div>
           <div class="metric-content">
             <h5>总播放量</h5>
-            <p class="metric-value">{{ formatNumber(overview.totalViews) || '加载中...' }}</p>
+            <p class="metric-value">{{ isLoading ? '加载中...' : (formatNumber(overview.totalViews) || '0') }}</p>
             <p class="metric-growth" :class="getGrowthClass(overview.viewsGrowth)">
               {{ formatGrowth(overview.viewsGrowth) }} 较上月增长
             </p>
@@ -39,7 +39,7 @@
           </div>
           <div class="metric-content">
             <h5>追番人数</h5>
-            <p class="metric-value">{{ formatNumber(overview.totalFollowers) || '加载中...' }}</p>
+            <p class="metric-value">{{ isLoading ? '加载中...' : (formatNumber(overview.totalFollowers) || '0') }}</p>
             <p class="metric-growth" :class="getGrowthClass(overview.followersGrowth)">
               {{ formatGrowth(overview.followersGrowth) }} 较上月增长
             </p>
@@ -54,7 +54,7 @@
           </div>
           <div class="metric-content">
             <h5>收藏占比</h5>
-            <p class="metric-value">{{ overview.averageRating || '加载中...' }}</p>
+            <p class="metric-value">{{ isLoading ? '加载中...' : overview.averageRating }}</p>
             <p class="metric-growth">
               {{ overview.ratingChange || '0.0' }} 较上月变化
             </p>
@@ -100,8 +100,11 @@
             </div>
           </div>
           <div class="rank-list">
-            <div v-if="rankings.length === 0" class="text-center py-5">
+            <div v-if="isLoading" class="text-center py-5">
               <i class="fas fa-spinner fa-spin"></i> 加载中...
+            </div>
+            <div v-else-if="rankings.length === 0" class="text-center py-5 text-muted">
+              暂无排行榜数据
             </div>
             <div 
               v-for="(anime, index) in rankings" 
@@ -177,6 +180,7 @@ const router = useRouter()
 
 // 使用 Pinia 数据分析 Store
 const analyticsStore = useAnalyticsStore()
+const isLoading = ref(true)
 
 // 从 Store 中映射概览数据
 const storeOverview = computed(() => analyticsStore.overview)
@@ -260,8 +264,10 @@ const showPreferences = (): void => {
 
 // 加载概览数据
 const loadData = async (): Promise<void> => {
+  isLoading.value = true
   await analyticsStore.fetchOverview()
   await loadRankings()
+  isLoading.value = false
 }
 
 // 加载排行榜
