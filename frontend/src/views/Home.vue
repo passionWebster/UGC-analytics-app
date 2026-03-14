@@ -167,7 +167,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { useAnalyticsStore } from '@/stores/analytics'
@@ -175,7 +175,7 @@ import type { AnimeData } from '@/api/analytics'
 
 const router = useRouter()
 
-// 使用 Pinia 数据分析 Store（与 Dashboard.vue 保持一致的成功数据获取逻辑）
+// 使用 Pinia 数据分析 Store
 const analyticsStore = useAnalyticsStore()
 
 // 从 Store 中映射概览数据
@@ -202,15 +202,25 @@ const rankings = ref<AnimeData[]>([])
 const sortBy = ref<'views' | 'favorites' | 'rating'>('rating')
 const selectedAreas = ref<string[]>(['国内', '日本', '美国'])
 
-// ECharts 实例引用
+// ECharts DOM 引用
 const typeDistChart = ref<HTMLElement>()
 const reputationChart = ref<HTMLElement>()
 let typeChartInstance: echarts.ECharts | null = null
 let reputationChartInstance: echarts.ECharts | null = null
 
-// 发布趋势缓存（供 updateReputationChart 在地区切换时复用）
-const trendMonths = ref<string[]>([])
-const trendCounts = ref<number[]>([])
+// ResizeObserver 实例，用于自动响应容器尺寸变化
+let typeChartResizeObserver: ResizeObserver | null = null
+let reputationChartResizeObserver: ResizeObserver | null = null
+
+// 口碑热度散点图的原始番剧数据缓存（供地区切换时复用）
+const animeListForScatter = ref<AnimeData[]>([])
+
+// 地区颜色映射（与遗留代码保持一致）
+const areaColorMap: Record<string, string> = {
+  '国内': '#FB7299',
+  '日本': '#23ADE5',
+  '美国': '#FFCE56',
+}
 
 // 格式化数字
 const formatNumber = (num: number | undefined): string => {
@@ -232,7 +242,7 @@ const getGrowthClass = (growth: number | undefined): string => {
   return growth > 0 ? 'positive' : 'negative'
 }
 
-// 切换地区
+// 切换地区筛选
 const toggleArea = (area: string): void => {
   const index = selectedAreas.value.indexOf(area)
   if (index > -1) {
@@ -243,126 +253,191 @@ const toggleArea = (area: string): void => {
   updateReputationChart()
 }
 
-// 显示偏好设置
+// 跳转偏好设置页
 const showPreferences = (): void => {
   router.push('/genre-selection')
 }
 
-// 加载概览数据（通过 Store，与 Dashboard.vue 一致）
+// 加载概览数据
 const loadData = async (): Promise<void> => {
   await analyticsStore.fetchOverview()
   await loadRankings()
 }
 
-// 加载排行榜（通过 Store，与 Dashboard.vue 一致）
+// 加载排行榜
 const loadRankings = async (): Promise<void> => {
   rankings.value = await analyticsStore.fetchRankings(sortBy.value, 10)
 }
 
-// 初始化类型分布图表（使用 Store 获取真实风格分布数据）
+/**
+ * 使用 ResizeObserver 初始化 ECharts 图表，使其自动适应容器尺寸变化。
+ * @param el - 图表容器 DOM 元素
+ * @param option - ECharts 配置项
+ * @returns [图表实例, ResizeObserver 实例]
+ */
+const initChartWithResizeObserver = (
+  el: HTMLElement,
+  option: echarts.EChartsOption
+): [echarts.ECharts, ResizeObserver] => {
+  // 销毁已有实例，防止重复初始化
+  const existing = echarts.getInstanceByDom(el)
+  if (existing) existing.dispose()
+
+  const chart = echarts.init(el)
+  chart.setOption(option)
+
+  const observer = new ResizeObserver(() => chart.resize())
+  observer.observe(el)
+
+  return [chart, observer]
+}
+
+// 初始化类型分布饼图
 const initTypeDistChart = async (): Promise<void> => {
   if (!typeDistChart.value) return
 
-  typeChartInstance = echarts.init(typeDistChart.value)
-
-  // 通过 Store 获取真实的风格分布数据
+  // 获取真实的风格分布数据
   const styleData = await analyticsStore.fetchStyleDistribution()
   const chartData = Object.entries(styleData).map(([name, value]) => ({ name, value }))
 
   const option: echarts.EChartsOption = {
     tooltip: {
-      trigger: 'item'
+      trigger: 'item',
+      formatter: '{b}: {c} ({d}%)'
+    },
+    legend: {
+      orient: 'vertical',
+      left: '5%',
+      top: 'center',
+      type: 'scroll'
     },
     series: [{
+      name: '类型分布',
       type: 'pie',
-      radius: '60%',
+      // 环形饼图，更美观
+      radius: ['35%', '60%'],
+      center: ['60%', '50%'],
+      avoidLabelOverlap: false,
+      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
+      label: { show: false, position: 'center' },
+      emphasis: {
+        label: { show: true, fontSize: 16, fontWeight: 'bold' },
+        itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.5)' }
+      },
+      labelLine: { show: false },
       data: chartData.length > 0 ? chartData : [
         { value: 335, name: '热血' },
         { value: 310, name: '日常' },
         { value: 234, name: '恋爱' },
         { value: 135, name: '科幻' },
         { value: 154, name: '奇幻' }
-      ],
-      emphasis: {
-        itemStyle: {
-          shadowBlur: 10,
-          shadowOffsetX: 0,
-          shadowColor: 'rgba(0, 0, 0, 0.5)'
-        }
-      }
+      ]
     }]
   }
 
-  typeChartInstance.setOption(option)
+  ;[typeChartInstance, typeChartResizeObserver] = initChartWithResizeObserver(typeDistChart.value, option)
 }
 
-// 初始化口碑热度图表（使用 Store 获取真实发布趋势数据）
+// 初始化口碑热度散点图（评分 vs 追番人数，按地区着色）
 const initReputationChart = async (): Promise<void> => {
   if (!reputationChart.value) return
 
-  reputationChartInstance = echarts.init(reputationChart.value)
+  // 获取较多番剧数据，供散点图使用
+  const list = await analyticsStore.fetchRankings('rating', 100)
+  animeListForScatter.value = list
 
-  // 通过 Store 获取真实的发布趋势数据
-  const rawData = await analyticsStore.fetchReleaseTrend()
-  trendMonths.value = Object.keys(rawData)
-  trendCounts.value = Object.values(rawData)
+  // 初始化空图表实例
+  const initOption: echarts.EChartsOption = {
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    xAxis: { type: 'value', name: '评分', splitLine: { lineStyle: { type: 'dashed' } }, min: 0 },
+    yAxis: { type: 'value', name: '追番人数', splitLine: { lineStyle: { type: 'dashed' } } }
+  }
+
+  ;[reputationChartInstance, reputationChartResizeObserver] = initChartWithResizeObserver(
+    reputationChart.value,
+    initOption
+  )
 
   updateReputationChart()
 }
 
-// 更新口碑热度图表
+// 更新口碑热度散点图（根据选中地区重新渲染）
 const updateReputationChart = (): void => {
   if (!reputationChartInstance) return
 
-  const xData: string[] = trendMonths.value.length > 0
-    ? trendMonths.value
-    : ['1月', '2月', '3月', '4月', '5月', '6月']
+  // 按选中地区分组，每个地区为一个 series
+  const seriesMap: Record<string, [number, number, string][]> = {}
+  selectedAreas.value.forEach(area => { seriesMap[area] = [] })
 
-  const baseData: number[] = trendCounts.value
+  animeListForScatter.value.forEach(anime => {
+    if (!selectedAreas.value.includes(anime.area)) return
+    // 评分或追番人数无效时跳过（对数轴不能绘制 ≤0 的值）
+    if (anime.rating === null || anime.favorites <= 0) return
+    seriesMap[anime.area]?.push([anime.rating, anime.favorites, anime.title])
+  })
+
+  const series: echarts.SeriesOption[] = selectedAreas.value.map(area => ({
+    name: area,
+    type: 'scatter',
+    symbolSize: 10,
+    itemStyle: { color: areaColorMap[area] ?? '#aaaaaa' },
+    data: seriesMap[area] ?? [],
+    emphasis: {
+      focus: 'series',
+      label: {
+        show: true,
+        formatter: (params: any) => params.value[2],
+        position: 'top'
+      }
+    }
+  }))
 
   const option: echarts.EChartsOption = {
     tooltip: {
-      trigger: 'axis'
+      trigger: 'item',
+      formatter: (params: any) => {
+        const [rating, favorites, title] = params.value as [number, number, string]
+        return `${params.marker}<b>${title}</b><br/>地区：<b>${params.seriesName}</b><br/>评分：<b>${rating}</b><br/>追番：<b>${formatNumber(favorites)}</b>`
+      }
     },
-    legend: {
-      data: selectedAreas.value
-    },
+    legend: { data: selectedAreas.value, bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '12%', containLabel: true },
     xAxis: {
-      type: 'category',
-      data: xData
+      type: 'value',
+      name: '评分',
+      splitLine: { lineStyle: { type: 'dashed' } },
+      min: 0
     },
     yAxis: {
-      type: 'value'
+      type: 'log',
+      name: '追番人数',
+      splitLine: { lineStyle: { type: 'dashed' } },
+      min: 1
     },
-    series: selectedAreas.value.map((area, idx) => ({
-      name: area,
-      type: 'line',
-      // 若有真实数据则按偏移量切片，否则使用随机占位数据
-      data: baseData.length > 0
-        ? baseData.map(v => Math.round(v * (0.6 + idx * 0.2)))
-        : Array.from({ length: xData.length }, () => Math.floor(Math.random() * 100))
-    }))
+    series
   }
 
-  reputationChartInstance.setOption(option)
+  reputationChartInstance.setOption(option, true)
 }
 
-// 监听排序变化
+// 监听排序变化，重新加载排行榜
 watch(sortBy, () => {
   loadRankings()
 })
 
-// 初始化
+// 组件挂载时初始化
 onMounted(async () => {
   await loadData()
   await initTypeDistChart()
   await initReputationChart()
+})
 
-  // 响应式调整图表大小
-  window.addEventListener('resize', () => {
-    typeChartInstance?.resize()
-    reputationChartInstance?.resize()
-  })
+// 组件卸载时清理 ECharts 实例和 ResizeObserver，防止内存泄漏
+onUnmounted(() => {
+  typeChartResizeObserver?.disconnect()
+  reputationChartResizeObserver?.disconnect()
+  typeChartInstance?.dispose()
+  reputationChartInstance?.dispose()
 })
 </script>
 

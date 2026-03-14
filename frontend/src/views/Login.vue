@@ -118,7 +118,10 @@ const loginForm = reactive({
 
 const loginRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 6, message: '密码长度不能少于 6 个字符', trigger: 'blur' }
+  ]
 }
 
 // 注册表单
@@ -173,9 +176,9 @@ const handleLogin = async () => {
     
     if (result.success) {
       ElMessage.success('登录成功')
-      // 检查是否有偏好设置
+      // 根据是否有偏好设置决定跳转目标
       if (result.hasPreferences) {
-        router.push('/dashboard')
+        router.push('/home')
       } else {
         router.push('/genre-selection')
       }
