@@ -30,9 +30,9 @@
         </div>
       </div>
 
-      <!-- 推荐网格 -->
+      <!-- 推荐网格：响应式 CSS Grid，最小列宽 250px -->
       <div v-loading="loading" class="recommendation-grid">
-        <div v-if="recommendations.length === 0 && !loading" class="text-center py-5">
+        <div v-if="recommendations.length === 0 && !loading" class="empty-tip">
           暂无推荐数据
         </div>
         
@@ -69,50 +69,78 @@
         </div>
       </div>
 
-      <!-- 加载更多按钮 -->
-      <div v-if="hasMore && recommendations.length > 0" class="load-more-container">
+      <!-- 加载更多按钮（备用操作，与无限滚动并存） -->
+      <div v-if="hasMore && !loading" class="load-more-container">
         <button class="btn btn-outline-primary" @click="loadMore">
           <i class="fas fa-plus-circle me-1"></i>加载更多
         </button>
       </div>
+
+      <!-- 无限滚动哨兵：当此元素进入视口时自动触发 loadMore -->
+      <div ref="sentinel" class="scroll-sentinel"></div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { getRankings, type AnimeData } from '@/api/analytics'
+import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 
-// 路由
+// 路由与认证 Store
 const router = useRouter()
+const authStore = useAuthStore()
 
-// 状态管理
+// 分页参数：每次展示的步长
+const PAGE_SIZE = 12
+// 单次从服务器拉取的最大条数（客户端分页的数据池大小）
+const BATCH_SIZE = 100
+// 触发无限滚动的提前量（距底部多少像素时开始加载）
+const SCROLL_TRIGGER_MARGIN = '100px'
+
+// 状态
 const loading = ref(false)
-const recommendations = ref<AnimeData[]>([])
+const allAnimes = ref<AnimeData[]>([])         // 全量数据缓存（一次性从服务器拉取）
+const visibleCount = ref<number>(PAGE_SIZE)    // 当前可见数量（客户端分页）
 const currentSort = ref('score')
-const showPreferencesTooltip = ref(false)
-const hasMore = ref(true)
-const currentPage = ref<number>(1)
-const pageSize: number = 12
+const showPreferencesTooltip = ref(false)      // 是否启用偏好过滤 & 是否显示提示气泡
+const sentinel = ref<HTMLElement | null>(null) // 无限滚动哨兵元素
 
-// 排序选项
+// IntersectionObserver 实例（组件级变量，不需要响应式）
+let scrollObserver: IntersectionObserver | null = null
+
+// 计算属性：当前可见的番剧列表（对全量缓存做切片）
+const recommendations = computed<AnimeData[]>(() =>
+  allAnimes.value.slice(0, visibleCount.value)
+)
+
+// 计算属性：是否仍有更多数据可以展示
+const hasMore = computed<boolean>(() =>
+  visibleCount.value < allAnimes.value.length
+)
+
+// 排序选项配置
 const sortOptions = [
   { value: 'score', label: '评分', icon: 'fas fa-star' },
   { value: 'views', label: '播放量', icon: 'fas fa-play-circle' },
   { value: 'followers', label: '追番人数', icon: 'fas fa-heart' }
 ]
 
-// 偏好状态文本
-const preferenceStatus = computed(() => {
-  return showPreferencesTooltip.value ? '已启用偏好推荐' : '根据偏好推荐'
+// 偏好按钮文本：根据启用状态动态显示
+const preferenceStatus = computed<string>(() =>
+  showPreferencesTooltip.value ? '已启用偏好推荐' : '根据偏好推荐'
+)
+
+// 偏好提示内容：展示用户的偏好标签
+const preferencesText = computed<string>(() => {
+  const genres = authStore.preferences.join('、')
+  return genres
+    ? `已根据您的偏好（${genres}）筛选推荐`
+    : '根据您的观看历史和偏好，为您推荐相似的番剧'
 })
 
-const preferencesText = computed(() => {
-  return '根据您的观看历史和偏好，为您推荐相似的番剧'
-})
-
-// 格式化数字
+// 格式化大数字：亿 / 万 / 原始值
 const formatNumber = (num: number | undefined): string => {
   if (!num) return '0'
   if (num >= 100000000) return (num / 100000000).toFixed(1) + '亿'
@@ -120,59 +148,92 @@ const formatNumber = (num: number | undefined): string => {
   return num.toString()
 }
 
-// 切换偏好设置
+// 切换偏好推荐开关，同时重新加载数据
 const togglePreferences = () => {
   showPreferencesTooltip.value = !showPreferencesTooltip.value
   loadRecommendations()
 }
 
-// 处理排序变化
+// 处理排序方式变化
 const handleSortChange = (sortValue: string) => {
   if (currentSort.value === sortValue) return
   currentSort.value = sortValue
-  currentPage.value = 1
-  recommendations.value = []
   loadRecommendations()
 }
 
-// 加载推荐数据
+// 加载推荐数据：一次性拉取最多 100 条到本地缓存，再通过客户端分页逐步展示
 const loadRecommendations = async () => {
   try {
     loading.value = true
-    
-    // 转换排序字段
+    visibleCount.value = PAGE_SIZE // 重置到第一页
+
+    // 映射前端排序字段到后端参数
     let sortBy = currentSort.value
     if (sortBy === 'followers') sortBy = 'favorites'
     if (sortBy === 'score') sortBy = 'rating'
-    
-    const response = await getRankings(sortBy, pageSize * currentPage.value)
-    
-    if (response.list) {
-      recommendations.value = response.list
-      hasMore.value = response.list.length >= pageSize * currentPage.value
-    }
+
+    // 启用偏好推荐时，将用户偏好标签传入过滤参数
+    const stylesFilter =
+      showPreferencesTooltip.value && authStore.preferences.length > 0
+        ? authStore.preferences.join(',')
+        : undefined
+
+    const response = await getRankings(sortBy, BATCH_SIZE, undefined, stylesFilter)
+    allAnimes.value = response.list || []
   } catch (error) {
     console.error('加载推荐失败:', error)
   } finally {
     loading.value = false
+    // 数据更新后重新触发 IntersectionObserver，自动填满初始视口
+    await nextTick()
+    triggerSentinelCheck()
   }
 }
 
-// 加载更多
+// 加载更多：仅增加本地可见数量，无需额外网络请求
 const loadMore = () => {
-  currentPage.value++
-  loadRecommendations()
+  visibleCount.value = Math.min(
+    visibleCount.value + PAGE_SIZE,
+    allAnimes.value.length
+  )
+}
+
+// 初始化 IntersectionObserver：当哨兵元素进入视口时自动调用 loadMore
+const initScrollObserver = () => {
+  if (scrollObserver) scrollObserver.disconnect()
+  scrollObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries[0].isIntersecting && hasMore.value && !loading.value) {
+        loadMore()
+      }
+    },
+    { rootMargin: SCROLL_TRIGGER_MARGIN, threshold: 0 }
+  )
+  if (sentinel.value) scrollObserver.observe(sentinel.value)
+}
+
+// 重新触发哨兵的可见性检测（排序/偏好切换后重置数据时使用）
+const triggerSentinelCheck = () => {
+  if (scrollObserver && sentinel.value) {
+    scrollObserver.unobserve(sentinel.value)
+    scrollObserver.observe(sentinel.value)
+  }
 }
 
 // 点击番剧卡片
 const handleAnimeClick = (anime: AnimeData) => {
-  // 可以跳转到详情页或触发其他操作
   console.log('点击番剧:', anime.title)
-  // router.push(`/anime/${anime.season_id}`)
 }
 
-onMounted(() => {
-  loadRecommendations()
+onMounted(async () => {
+  await loadRecommendations()
+  await nextTick()
+  initScrollObserver()
+})
+
+onUnmounted(() => {
+  // 组件卸载时释放观察器，防止内存泄漏
+  scrollObserver?.disconnect()
 })
 </script>
 
@@ -402,6 +463,22 @@ onMounted(() => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* 空状态提示 */
+.empty-tip {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 0;
+  color: #999;
+  font-size: 16px;
+}
+
+/* 无限滚动哨兵元素（不可见占位符，供 IntersectionObserver 检测） */
+.scroll-sentinel {
+  height: 1px;
+  width: 100%;
+  margin-top: 20px;
 }
 
 @media (max-width: 768px) {
