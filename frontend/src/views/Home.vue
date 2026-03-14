@@ -24,7 +24,7 @@
           </div>
           <div class="metric-content">
             <h5>总播放量</h5>
-            <p class="metric-value">{{ isLoading ? '加载中...' : (formatNumber(overview.totalViews) || '0') }}</p>
+            <p class="metric-value">{{ isLoading ? '加载中...' : formatNumber(overview.totalViews) }}</p>
             <p class="metric-growth" :class="getGrowthClass(overview.viewsGrowth)">
               {{ formatGrowth(overview.viewsGrowth) }} 较上月增长
             </p>
@@ -39,7 +39,7 @@
           </div>
           <div class="metric-content">
             <h5>追番人数</h5>
-            <p class="metric-value">{{ isLoading ? '加载中...' : (formatNumber(overview.totalFollowers) || '0') }}</p>
+            <p class="metric-value">{{ isLoading ? '加载中...' : formatNumber(overview.totalFollowers) }}</p>
             <p class="metric-growth" :class="getGrowthClass(overview.followersGrowth)">
               {{ formatGrowth(overview.followersGrowth) }} 较上月增长
             </p>
