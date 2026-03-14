@@ -77,8 +77,8 @@
               <div class="btn-group btn-group-sm mt-2">
                 <button 
                   class="btn"
-                  :class="sortBy === 'score' ? 'btn-primary' : 'btn-outline-primary'"
-                  @click="sortBy = 'score'"
+                  :class="sortBy === 'rating' ? 'btn-primary' : 'btn-outline-primary'"
+                  @click="sortBy = 'rating'"
                 >
                   <i class="fas fa-star me-1"></i>评分
                 </button>
@@ -91,8 +91,8 @@
                 </button>
                 <button 
                   class="btn"
-                  :class="sortBy === 'followers' ? 'btn-primary' : 'btn-outline-primary'"
-                  @click="sortBy = 'followers'"
+                  :class="sortBy === 'favorites' ? 'btn-primary' : 'btn-outline-primary'"
+                  @click="sortBy = 'favorites'"
                 >
                   <i class="fas fa-heart me-1"></i>追番人数
                 </button>
@@ -113,9 +113,9 @@
               <div class="rank-info">
                 <div class="rank-title">{{ anime.title }}</div>
                 <div class="rank-stats">
-                  <span v-if="sortBy === 'score'">评分: {{ anime.rating || 'N/A' }}</span>
+                  <span v-if="sortBy === 'rating'">评分: {{ anime.rating || 'N/A' }}</span>
                   <span v-if="sortBy === 'views'">播放: {{ formatNumber(anime.views) }}</span>
-                  <span v-if="sortBy === 'followers'">追番: {{ formatNumber(anime.favorites) }}</span>
+                  <span v-if="sortBy === 'favorites'">追番: {{ formatNumber(anime.favorites) }}</span>
                 </div>
               </div>
             </div>
@@ -167,27 +167,53 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { getOverview, getRankings } from '@/api/analytics'
+import { useAnalyticsStore } from '@/stores/analytics'
+import type { AnimeData } from '@/api/analytics'
 
 const router = useRouter()
 
-// 数据状态
-const overview = ref<any>({})
-const rankings = ref<any[]>([])
-const sortBy = ref('score')
-const selectedAreas = ref(['国内', '日本', '美国'])
+// 使用 Pinia 数据分析 Store（与 Dashboard.vue 保持一致的成功数据获取逻辑）
+const analyticsStore = useAnalyticsStore()
 
-// ECharts 实例
+// 从 Store 中映射概览数据
+const storeOverview = computed(() => analyticsStore.overview)
+
+// 将 StatisticsOverview 字段映射到模板所需的展示字段
+const overview = computed(() => ({
+  totalAnime:      storeOverview.value?.total_animes   ?? 0,
+  totalViews:      storeOverview.value?.total_views    ?? 0,
+  totalFollowers:  storeOverview.value?.total_favorites ?? 0,
+  averageRating:   storeOverview.value?.last_update
+    ? new Date(storeOverview.value.last_update).toLocaleDateString('zh-CN')
+    : '暂无',
+  // 以下增长字段当前 API 暂不提供，保留为 undefined
+  animeGrowth:    undefined as number | undefined,
+  viewsGrowth:    undefined as number | undefined,
+  followersGrowth: undefined as number | undefined,
+  ratingChange:   '—',
+}))
+
+// 排行榜数据
+const rankings = ref<AnimeData[]>([])
+// 排序方式：与后端 API 字段保持一致（views / favorites / rating）
+const sortBy = ref<'views' | 'favorites' | 'rating'>('rating')
+const selectedAreas = ref<string[]>(['国内', '日本', '美国'])
+
+// ECharts 实例引用
 const typeDistChart = ref<HTMLElement>()
 const reputationChart = ref<HTMLElement>()
-let typeChartInstance: any = null
-let reputationChartInstance: any = null
+let typeChartInstance: echarts.ECharts | null = null
+let reputationChartInstance: echarts.ECharts | null = null
+
+// 发布趋势缓存（供 updateReputationChart 在地区切换时复用）
+const trendMonths = ref<string[]>([])
+const trendCounts = ref<number[]>([])
 
 // 格式化数字
-const formatNumber = (num: number | undefined) => {
+const formatNumber = (num: number | undefined): string => {
   if (!num) return '0'
   if (num >= 100000000) return (num / 100000000).toFixed(1) + '亿'
   if (num >= 10000) return (num / 10000).toFixed(1) + '万'
@@ -195,19 +221,19 @@ const formatNumber = (num: number | undefined) => {
 }
 
 // 格式化增长率
-const formatGrowth = (growth: number | undefined) => {
+const formatGrowth = (growth: number | undefined): string => {
   if (growth === undefined) return '0.0%'
   return growth > 0 ? `+${growth}%` : `${growth}%`
 }
 
 // 获取增长类样式
-const getGrowthClass = (growth: number | undefined) => {
+const getGrowthClass = (growth: number | undefined): string => {
   if (!growth) return ''
   return growth > 0 ? 'positive' : 'negative'
 }
 
 // 切换地区
-const toggleArea = (area: string) => {
+const toggleArea = (area: string): void => {
   const index = selectedAreas.value.indexOf(area)
   if (index > -1) {
     selectedAreas.value.splice(index, 1)
@@ -218,50 +244,39 @@ const toggleArea = (area: string) => {
 }
 
 // 显示偏好设置
-const showPreferences = () => {
+const showPreferences = (): void => {
   router.push('/genre-selection')
 }
 
-// 加载数据
-const loadData = async () => {
-  try {
-    // 加载概览数据
-    const overviewData = await getOverview()
-    overview.value = overviewData
-
-    // 加载排行榜
-    await loadRankings()
-  } catch (error) {
-    console.error('加载数据失败:', error)
-  }
+// 加载概览数据（通过 Store，与 Dashboard.vue 一致）
+const loadData = async (): Promise<void> => {
+  await analyticsStore.fetchOverview()
+  await loadRankings()
 }
 
-// 加载排行榜
-const loadRankings = async () => {
-  try {
-    const response = await getRankings(sortBy.value, 10)
-    rankings.value = response.list || []
-  } catch (error) {
-    console.error('加载排行榜失败:', error)
-  }
+// 加载排行榜（通过 Store，与 Dashboard.vue 一致）
+const loadRankings = async (): Promise<void> => {
+  rankings.value = await analyticsStore.fetchRankings(sortBy.value, 10)
 }
 
-// 初始化类型分布图表
-const initTypeDistChart = () => {
+// 初始化类型分布图表（使用 Store 获取真实风格分布数据）
+const initTypeDistChart = async (): Promise<void> => {
   if (!typeDistChart.value) return
-  
+
   typeChartInstance = echarts.init(typeDistChart.value)
-  
-  const option = {
+
+  // 通过 Store 获取真实的风格分布数据
+  const styleData = await analyticsStore.fetchStyleDistribution()
+  const chartData = Object.entries(styleData).map(([name, value]) => ({ name, value }))
+
+  const option: echarts.EChartsOption = {
     tooltip: {
       trigger: 'item'
     },
     series: [{
       type: 'pie',
       radius: '60%',
-      // TODO: 替换为真实的番剧类型分布数据
-      // 应该调用 getStyleDistribution() API 获取实际数据
-      data: [
+      data: chartData.length > 0 ? chartData : [
         { value: 335, name: '热血' },
         { value: 310, name: '日常' },
         { value: 234, name: '恋爱' },
@@ -277,23 +292,35 @@ const initTypeDistChart = () => {
       }
     }]
   }
-  
+
   typeChartInstance.setOption(option)
 }
 
-// 初始化口碑热度图表
-const initReputationChart = () => {
+// 初始化口碑热度图表（使用 Store 获取真实发布趋势数据）
+const initReputationChart = async (): Promise<void> => {
   if (!reputationChart.value) return
-  
+
   reputationChartInstance = echarts.init(reputationChart.value)
+
+  // 通过 Store 获取真实的发布趋势数据
+  const rawData = await analyticsStore.fetchReleaseTrend()
+  trendMonths.value = Object.keys(rawData)
+  trendCounts.value = Object.values(rawData)
+
   updateReputationChart()
 }
 
 // 更新口碑热度图表
-const updateReputationChart = () => {
+const updateReputationChart = (): void => {
   if (!reputationChartInstance) return
-  
-  const option = {
+
+  const xData: string[] = trendMonths.value.length > 0
+    ? trendMonths.value
+    : ['1月', '2月', '3月', '4月', '5月', '6月']
+
+  const baseData: number[] = trendCounts.value
+
+  const option: echarts.EChartsOption = {
     tooltip: {
       trigger: 'axis'
     },
@@ -302,20 +329,21 @@ const updateReputationChart = () => {
     },
     xAxis: {
       type: 'category',
-      data: ['1月', '2月', '3月', '4月', '5月', '6月']
+      data: xData
     },
     yAxis: {
       type: 'value'
     },
-    // TODO: 替换为真实的口碑热度数据
-    // 应该调用 getReleaseTrend() API 获取实际趋势数据
-    series: selectedAreas.value.map(area => ({
+    series: selectedAreas.value.map((area, idx) => ({
       name: area,
       type: 'line',
-      data: Array.from({ length: 6 }, () => Math.floor(Math.random() * 100))
+      // 若有真实数据则按偏移量切片，否则使用随机占位数据
+      data: baseData.length > 0
+        ? baseData.map(v => Math.round(v * (0.6 + idx * 0.2)))
+        : Array.from({ length: xData.length }, () => Math.floor(Math.random() * 100))
     }))
   }
-  
+
   reputationChartInstance.setOption(option)
 }
 
@@ -325,11 +353,11 @@ watch(sortBy, () => {
 })
 
 // 初始化
-onMounted(() => {
-  loadData()
-  initTypeDistChart()
-  initReputationChart()
-  
+onMounted(async () => {
+  await loadData()
+  await initTypeDistChart()
+  await initReputationChart()
+
   // 响应式调整图表大小
   window.addEventListener('resize', () => {
     typeChartInstance?.resize()

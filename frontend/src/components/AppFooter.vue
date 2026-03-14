@@ -10,6 +10,7 @@
           <h5>快速链接</h5>
           <ul class="footer-links">
             <li><router-link to="/home">首页</router-link></li>
+            <li><router-link to="/status">番剧状态检测</router-link></li>
             <li><router-link to="/overview">数据概览</router-link></li>
             <li><router-link to="/recommendation">番剧推荐</router-link></li>
           </ul>
@@ -32,7 +33,8 @@
 </template>
 
 <script setup lang="ts">
-// Footer 组件不需要额外的逻辑
+// AppFooter.vue —— 全局底部组件
+// 包含：平台简介、快速链接（首页/番剧状态检测/数据概览/番剧推荐）、联系方式
 </script>
 
 <style scoped>
