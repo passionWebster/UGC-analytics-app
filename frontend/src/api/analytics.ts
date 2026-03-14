@@ -61,11 +61,13 @@ export const getRankings = async (
   sortBy: string = 'views',
   limit: number = 10,
   area?: string,
-  styles?: string
+  styles?: string,
+  season?: string
 ): Promise<AnimeListResponse> => {
   const params: any = { sort_by: sortBy, limit }
   if (area) params.area = area
   if (styles) params.styles = styles
+  if (season) params.season = season
   return apiClient.get('/analytics/rankings', { params })
 }
 
@@ -86,13 +88,28 @@ export const getAnimeHistory = async (seasonId: number, days: number = 30): Prom
 /**
  * 获取风格分布统计
  */
-export const getStyleDistribution = async (): Promise<{ success: boolean; data: Record<string, number> }> => {
-  return apiClient.get('/analytics/statistics/styles')
+export const getStyleDistribution = async (area?: string): Promise<{ success: boolean; data: Record<string, number> }> => {
+  const params: any = {}
+  if (area) params.area = area
+  return apiClient.get('/analytics/statistics/styles', { params })
 }
 
 /**
  * 获取发布趋势
  */
-export const getReleaseTrend = async (): Promise<{ success: boolean; data: Record<string, number> }> => {
-  return apiClient.get('/analytics/statistics/trends')
+export const getReleaseTrend = async (area?: string): Promise<{ success: boolean; data: Record<string, number> }> => {
+  const params: any = {}
+  if (area) params.area = area
+  return apiClient.get('/analytics/statistics/trends', { params })
+}
+
+/**
+ * 获取番剧剧集数据
+ */
+export const getAnimeEpisodes = async (seasonId: number): Promise<{
+  success: boolean
+  total: number
+  data: Array<{ title: string; views: number; peakTime: string | null; peakOnline: number | null }>
+}> => {
+  return apiClient.get(`/analytics/animes/${seasonId}/episodes`)
 }

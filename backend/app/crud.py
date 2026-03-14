@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from sqlmodel import Session, select, func, and_
 from sqlalchemy import desc
 
-from .models import Anime, DailyStats, Ranking
+from .models import Anime, DailyStats, EpisodeStats, Ranking
 
 
 class AnalyticsService:
@@ -136,35 +136,45 @@ class AnalyticsService:
         return result
     
     def get_top_animes(
-        self, 
+        self,
         sort_by: str = "views",  # "views", "favorites", "rating"
         limit: int = 10,
         area: Optional[str] = None,
-        styles: Optional[List[str]] = None
+        styles: Optional[List[str]] = None,
+        season: Optional[str] = None,  # "spring"(4月), "summer"(7月), "autumn"(10月), "winter"(1月)
     ) -> List[Dict]:
         """
         获取排行榜
-        
+
         Args:
             sort_by: 排序字段
             limit: 返回数量
             area: 地区筛选
             styles: 风格筛选
-            
+            season: 季节筛选（spring/summer/autumn/winter），对应番剧 release_date 月份
+
         Returns:
             排行榜列表
         """
+        # 季节 → 季度首月映射
+        SEASON_MONTH_MAP = {
+            'spring': '04',
+            'summer': '07',
+            'autumn': '10',
+            'winter': '01',
+        }
+
         # 构建基础查询
         query = select(Anime)
-        
+
         # 地区筛选
         if area:
             query = query.where(Anime.area == area)
-        
+
         # 获取所有符合条件的番剧
         animes = self.session.exec(query).all()
         
-        # 获取最新统计并应用风格筛选
+        # 获取最新统计并应用风格/季节筛选
         result = []
         for anime in animes:
             # 风格筛选
@@ -172,6 +182,12 @@ class AnalyticsService:
                 import json
                 anime_styles = json.loads(anime.styles) if anime.styles else []
                 if not any(style in anime_styles for style in styles):
+                    continue
+
+            # 季节筛选：release_date 格式为 "YYYY-MM"，仅保留对应季度首月
+            if season and season in SEASON_MONTH_MAP:
+                month_suffix = SEASON_MONTH_MAP[season]
+                if not (anime.release_date and anime.release_date.endswith(f'-{month_suffix}')):
                     continue
             
             latest_stats = self.session.exec(
@@ -286,14 +302,20 @@ class AnalyticsService:
             for stat in stats
         ]
     
-    def get_style_distribution(self) -> Dict[str, int]:
+    def get_style_distribution(self, area: Optional[str] = None) -> Dict[str, int]:
         """
         获取风格分布统计
-        
+
+        Args:
+            area: 地区筛选（如 "国内"、"日本"、"美国"），None 表示全部
+
         Returns:
             风格分布字典
         """
-        animes = self.session.exec(select(Anime)).all()
+        query = select(Anime)
+        if area:
+            query = query.where(Anime.area == area)
+        animes = self.session.exec(query).all()
         
         style_count = {}
         import json
@@ -305,14 +327,20 @@ class AnalyticsService:
         
         return style_count
     
-    def get_release_trend(self) -> Dict[str, int]:
+    def get_release_trend(self, area: Optional[str] = None) -> Dict[str, int]:
         """
         获取发布趋势统计
-        
+
+        Args:
+            area: 地区筛选（如 "国内"、"日本"、"美国"），None 表示全部
+
         Returns:
             按季度统计的发布数量
         """
-        animes = self.session.exec(select(Anime)).all()
+        query = select(Anime)
+        if area:
+            query = query.where(Anime.area == area)
+        animes = self.session.exec(query).all()
         
         release_count = {}
         for anime in animes:
@@ -320,3 +348,54 @@ class AnalyticsService:
                 release_count[anime.release_date] = release_count.get(anime.release_date, 0) + 1
         
         return dict(sorted(release_count.items()))
+
+    def get_anime_episodes(self, season_id: int) -> List[Dict]:
+        """
+        获取番剧的剧集统计数据
+
+        优先从 EpisodeStats 表中返回真实数据；若为空，则以 DailyStats 历史记录
+        作为代理，模拟剧集数据供图表展示。
+
+        Args:
+            season_id: 番剧 ID
+
+        Returns:
+            剧集数据列表，每项包含 title、views、peak_time、peak_online 字段
+        """
+        # 优先返回真实剧集数据
+        episodes = self.session.exec(
+            select(EpisodeStats)
+            .where(EpisodeStats.season_id == season_id)
+            .order_by(EpisodeStats.id)
+        ).all()
+
+        if episodes:
+            return [
+                {
+                    'title': ep.episode_title,
+                    'views': ep.views or 0,
+                    'peakTime': None,
+                    'peakOnline': ep.online_viewers,
+                }
+                for ep in episodes
+            ]
+
+        # 回退：使用最近 90 天的每日统计作为剧集代理数据
+        stats = self.session.exec(
+            select(DailyStats)
+            .where(DailyStats.season_id == season_id)
+            .order_by(DailyStats.date)
+        ).all()
+
+        if not stats:
+            return []
+
+        return [
+            {
+                'title': f'第{i + 1}集',
+                'views': stat.views,
+                'peakTime': stat.date.strftime('%H:%M') if stat.date else None,
+                'peakOnline': stat.online_viewers,
+            }
+            for i, stat in enumerate(stats)
+        ]

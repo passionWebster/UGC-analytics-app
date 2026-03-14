@@ -139,12 +139,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
 import { getReleaseTrend, getStyleDistribution, getRankings } from '@/api/analytics'
 
-// 标签页配置
+// ─── 标签页配置 ──────────────────────────────────────────────────────────────
 const tabs = [
   { id: 'yearly', label: '历年数量变化' },
   { id: 'genre', label: '偏好差异' },
@@ -152,25 +152,32 @@ const tabs = [
   { id: 'category', label: '热门风格组合' }
 ]
 
-// 状态管理
+// ─── 状态管理 ────────────────────────────────────────────────────────────────
 const activeTab = ref('yearly')
 const yearlyView = ref('all')
 const selectedArea = ref('全部')
 const selectedSeason = ref('all')
 const ratingView = ref('all')
 
-// 图表实例
+// ─── 图表 DOM 引用 ───────────────────────────────────────────────────────────
 const yearlyTrendChart = ref<HTMLElement>()
 const preferenceDiffChart = ref<HTMLElement>()
 const collectionRatioChart = ref<HTMLElement>()
 const categoryTrendChart = ref<HTMLElement>()
 
+// ─── 图表实例 ────────────────────────────────────────────────────────────────
 let yearlyInstance: ECharts | null = null
 let preferenceInstance: ECharts | null = null
 let ratingInstance: ECharts | null = null
 let categoryInstance: ECharts | null = null
 
-// 选项配置
+// ─── ResizeObserver 实例 ─────────────────────────────────────────────────────
+let yearlyResizeObserver: ResizeObserver | null = null
+let preferenceResizeObserver: ResizeObserver | null = null
+let ratingResizeObserver: ResizeObserver | null = null
+let categoryResizeObserver: ResizeObserver | null = null
+
+// ─── 选项配置 ────────────────────────────────────────────────────────────────
 const yearlyOptions = [
   { value: 'all', label: '全部地区' },
   { value: 'china', label: '国产' },
@@ -186,59 +193,91 @@ const ratingOptions = [
   { value: 'top20', label: 'Top 20' }
 ]
 
-// 切换标签页
-const switchTab = (tabId: string) => {
-  activeTab.value = tabId
-  
-  // 延迟渲染以确保DOM已更新
-  setTimeout(() => {
-    switch (tabId) {
-      case 'yearly':
-        renderYearlyChart()
-        break
-      case 'genre':
-        renderPreferenceChart()
-        break
-      case 'rating':
-        renderRatingChart()
-        break
-      case 'category':
-        renderCategoryChart()
-        break
-    }
-  }, 100)
+// ─── 工具函数 ────────────────────────────────────────────────────────────────
+/** 格式化数字（亿 / 万） */
+const formatNumber = (num: number): string => {
+  if (num >= 100000000) return (num / 100000000).toFixed(1) + '亿'
+  if (num >= 10000) return (num / 10000).toFixed(1) + '万'
+  return num.toString()
 }
 
-// 渲染历年趋势图
+/**
+ * 将前端 yearlyView 值映射为后端可识别的 area 字符串。
+ * 'all' → undefined（不过滤），'china' → '国内'，'japan' → '日本'，'us' → '美国'
+ */
+const yearlyViewToArea = (view: string): string | undefined => {
+  const MAP: Record<string, string> = { china: '国内', japan: '日本', us: '美国' }
+  return MAP[view]
+}
+
+/**
+ * 将前端 selectedArea 值映射为后端 area 字符串。
+ * '全部' / '中国' → '国内'（数据库存储为"国内"），其余直接传递。
+ */
+const selectedAreaToParam = (area: string): string | undefined => {
+  if (area === '全部') return undefined
+  if (area === '中国') return '国内'
+  return area
+}
+
+/**
+ * 初始化或获取图表实例，并绑定 ResizeObserver。
+ * 若实例已存在，直接返回（复用实例、避免闪烁）。
+ */
+const getOrCreateInstance = (
+  el: HTMLElement,
+  currentInstance: ECharts | null,
+  currentObserver: ResizeObserver | null
+): [ECharts, ResizeObserver] => {
+  if (currentInstance && !currentInstance.isDisposed()) {
+    return [currentInstance, currentObserver!]
+  }
+  const chart = echarts.init(el)
+  const observer = new ResizeObserver(() => chart.resize())
+  observer.observe(el)
+  return [chart, observer]
+}
+
+// ─── 切换标签页 ──────────────────────────────────────────────────────────────
+const switchTab = (tabId: string) => {
+  activeTab.value = tabId
+  // 等待 v-show 更新 DOM 后再渲染/刷新图表
+  nextTick(() => {
+    switch (tabId) {
+      case 'yearly':    renderYearlyChart();     break
+      case 'genre':     renderPreferenceChart(); break
+      case 'rating':    renderRatingChart();     break
+      case 'category':  renderCategoryChart();   break
+    }
+  })
+}
+
+// ─── 历年数量变化图（折线图） ────────────────────────────────────────────────
 const renderYearlyChart = async () => {
   if (!yearlyTrendChart.value) return
 
-  if (yearlyInstance) {
-    yearlyInstance.dispose()
-  }
-
-  yearlyInstance = echarts.init(yearlyTrendChart.value)
+  ;[yearlyInstance, yearlyResizeObserver] = getOrCreateInstance(
+    yearlyTrendChart.value, yearlyInstance, yearlyResizeObserver
+  )
 
   try {
-    const response = await getReleaseTrend()
+    // 将视图选项映射为地区参数传递给 API
+    const area = yearlyViewToArea(yearlyView.value)
+    const response = await getReleaseTrend(area)
     const data = response.data || {}
-    
-    const years = Object.keys(data).sort()
-    const counts = years.map(year => data[year])
 
-    const option = {
+    const labels = Object.keys(data).sort()
+    const counts = labels.map((k) => data[k])
+
+    const option: echarts.EChartsOption = {
       tooltip: {
         trigger: 'axis',
-        formatter: (params: any) => {
-          return `${params[0].name}年<br/>上新数量: ${params[0].value} 部`
-        }
+        formatter: (params: any) => `${params[0].name}<br/>上新数量: ${params[0].value} 部`
       },
       xAxis: {
         type: 'category',
-        data: years,
-        axisLabel: {
-          rotate: 45
-        }
+        data: labels,
+        axisLabel: { rotate: 45 }
       },
       yAxis: {
         type: 'value',
@@ -256,62 +295,51 @@ const renderYearlyChart = async () => {
               { offset: 1, color: 'rgba(88, 160, 253, 0.1)' }
             ])
           },
-          lineStyle: {
-            color: '#58a0fd',
-            width: 3
-          },
-          itemStyle: {
-            color: '#58a0fd'
-          }
+          lineStyle: { color: '#58a0fd', width: 3 },
+          itemStyle: { color: '#58a0fd' }
         }
       ],
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '15%',
-        containLabel: true
-      }
+      grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true }
     }
 
-    yearlyInstance.setOption(option)
+    // 使用 setOption 更新而非 dispose/reinit，保留动画过渡
+    yearlyInstance.setOption(option, true)
   } catch (error) {
     console.error('加载历年趋势失败:', error)
   }
 }
 
-// 渲染偏好差异图
+// ─── 偏好差异图（横向柱状图） ────────────────────────────────────────────────
 const renderPreferenceChart = async () => {
   if (!preferenceDiffChart.value) return
 
-  if (preferenceInstance) {
-    preferenceInstance.dispose()
-  }
-
-  preferenceInstance = echarts.init(preferenceDiffChart.value)
+  ;[preferenceInstance, preferenceResizeObserver] = getOrCreateInstance(
+    preferenceDiffChart.value, preferenceInstance, preferenceResizeObserver
+  )
 
   try {
-    const response = await getStyleDistribution()
+    // 将地区选项映射为 API area 参数
+    const area = selectedAreaToParam(selectedArea.value)
+    const response = await getStyleDistribution(area)
     const data = response.data || {}
-    
-    const styles = Object.keys(data)
-    const values = Object.values(data)
 
-    const option = {
+    // 按数量降序排列，最多展示前 20 个风格
+    const sorted = Object.entries(data)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+    const styles = sorted.map(([name]) => name)
+    const values = sorted.map(([, v]) => v)
+
+    const option: echarts.EChartsOption = {
       tooltip: {
         trigger: 'axis',
-        axisPointer: {
-          type: 'shadow'
-        }
+        axisPointer: { type: 'shadow' }
       },
-      xAxis: {
-        type: 'value'
-      },
+      xAxis: { type: 'value' },
       yAxis: {
         type: 'category',
         data: styles,
-        axisLabel: {
-          interval: 0
-        }
+        axisLabel: { interval: 0 }
       },
       series: [
         {
@@ -324,84 +352,62 @@ const renderPreferenceChart = async () => {
               { offset: 1, color: '#188df0' }
             ])
           },
-          label: {
-            show: true,
-            position: 'right'
-          }
+          label: { show: true, position: 'right' }
         }
       ],
-      grid: {
-        left: '15%',
-        right: '10%',
-        bottom: '3%',
-        top: '3%',
-        containLabel: true
-      }
+      grid: { left: '15%', right: '10%', bottom: '3%', top: '3%', containLabel: true }
     }
 
-    preferenceInstance.setOption(option)
+    preferenceInstance.setOption(option, true)
   } catch (error) {
     console.error('加载偏好差异失败:', error)
   }
 }
 
-// 渲染口碑热度图
+// ─── 口碑热度排行图（柱线混合图） ───────────────────────────────────────────
 const renderRatingChart = async () => {
   if (!collectionRatioChart.value) return
 
-  if (ratingInstance) {
-    ratingInstance.dispose()
-  }
-
-  ratingInstance = echarts.init(collectionRatioChart.value)
+  ;[ratingInstance, ratingResizeObserver] = getOrCreateInstance(
+    collectionRatioChart.value, ratingInstance, ratingResizeObserver
+  )
 
   try {
-    let limit = 20
-    if (ratingView.value === 'top10') limit = 10
-    if (ratingView.value === 'top20') limit = 20
+    const limit = ratingView.value === 'top10' ? 10 : 20
+    // 将季节选项作为 season 参数传递，'all' 时不过滤
+    const season = selectedSeason.value !== 'all' ? selectedSeason.value : undefined
 
-    const response = await getRankings('rating', limit)
+    const response = await getRankings('rating', limit, undefined, undefined, season)
     const animes = response.list || []
-    
+
     const names = animes.map((anime: any) => anime.title)
     const ratings = animes.map((anime: any) => anime.rating || 0)
-    const views = animes.map((anime: any) => anime.views)
+    const views = animes.map((anime: any) => anime.views || 0)
 
-    const option = {
+    const option: echarts.EChartsOption = {
       tooltip: {
         trigger: 'axis',
         formatter: (params: any) => {
           const anime = animes[params[0].dataIndex]
-          return `${anime.title}<br/>评分: ${anime.rating?.toFixed(1)}<br/>播放量: ${formatNumber(anime.views)}`
+          return `${anime.title}<br/>评分: ${anime.rating?.toFixed(1)}<br/>播放量: ${formatNumber(anime.views || 0)}`
         }
       },
-      legend: {
-        data: ['评分', '热度指数']
-      },
+      legend: { data: ['评分', '热度指数'] },
       xAxis: {
         type: 'category',
         data: names,
         axisLabel: {
           rotate: 45,
           interval: 0,
-          formatter: (value: string) => {
-            return value.length > 8 ? value.substring(0, 8) + '...' : value
-          }
+          formatter: (value: string) => (value.length > 8 ? value.substring(0, 8) + '…' : value)
         }
       },
       yAxis: [
-        {
-          type: 'value',
-          name: '评分',
-          min: 0,
-          max: 10
-        },
+        { type: 'value', name: '评分', min: 0, max: 10 },
         {
           type: 'value',
           name: '热度',
-          axisLabel: {
-            formatter: (value: number) => formatNumber(value)
-          }
+          axisLabel: { formatter: (value: number) => formatNumber(value) }
         }
       ],
       series: [
@@ -409,9 +415,7 @@ const renderRatingChart = async () => {
           name: '评分',
           type: 'bar',
           data: ratings,
-          itemStyle: {
-            color: '#f5a623'
-          }
+          itemStyle: { color: '#f5a623' }
         },
         {
           name: '热度指数',
@@ -419,68 +423,47 @@ const renderRatingChart = async () => {
           yAxisIndex: 1,
           data: views,
           smooth: true,
-          lineStyle: {
-            color: '#58a0fd',
-            width: 2
-          },
-          itemStyle: {
-            color: '#58a0fd'
-          }
+          lineStyle: { color: '#58a0fd', width: 2 },
+          itemStyle: { color: '#58a0fd' }
         }
       ],
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '20%',
-        containLabel: true
-      }
+      grid: { left: '3%', right: '4%', bottom: '20%', containLabel: true }
     }
 
-    ratingInstance.setOption(option)
+    ratingInstance.setOption(option, true)
   } catch (error) {
     console.error('加载口碑热度失败:', error)
   }
 }
 
-// 渲染风格组合图
+// ─── 热门风格组合树图 ────────────────────────────────────────────────────────
 const renderCategoryChart = async () => {
   if (!categoryTrendChart.value) return
 
-  if (categoryInstance) {
-    categoryInstance.dispose()
-  }
-
-  categoryInstance = echarts.init(categoryTrendChart.value)
+  ;[categoryInstance, categoryResizeObserver] = getOrCreateInstance(
+    categoryTrendChart.value, categoryInstance, categoryResizeObserver
+  )
 
   try {
+    // 风格组合图不区分地区，展示全局数据
     const response = await getStyleDistribution()
     const data = response.data || {}
-    
-    // 将风格数据转换为树图数据
-    const treeData = Object.entries(data).map(([name, value]) => ({
-      name,
-      value
-    }))
 
-    const option = {
+    const treeData = Object.entries(data)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value]) => ({ name, value }))
+
+    const option: echarts.EChartsOption = {
       tooltip: {
-        formatter: (info: any) => {
-          return `${info.name}<br/>数量: ${info.value} 部`
-        }
+        formatter: (info: any) => `${info.name}<br/>数量: ${info.value} 部`
       },
       series: [
         {
           type: 'treemap',
           data: treeData,
           leafDepth: 1,
-          label: {
-            show: true,
-            formatter: '{b}\n{c}'
-          },
-          upperLabel: {
-            show: true,
-            height: 30
-          },
+          label: { show: true, formatter: '{b}\n{c}' },
+          upperLabel: { show: true, height: 30 },
           itemStyle: {
             borderColor: '#fff',
             borderWidth: 2,
@@ -488,53 +471,35 @@ const renderCategoryChart = async () => {
           },
           levels: [
             {
-              itemStyle: {
-                borderColor: '#555',
-                borderWidth: 4,
-                gapWidth: 4
-              }
+              itemStyle: { borderColor: '#555', borderWidth: 4, gapWidth: 4 }
             },
             {
               colorSaturation: [0.35, 0.5],
-              itemStyle: {
-                borderWidth: 5,
-                gapWidth: 1,
-                borderColorSaturation: 0.6
-              }
+              itemStyle: { borderWidth: 5, gapWidth: 1, borderColorSaturation: 0.6 }
             }
           ]
         }
       ]
     }
 
-    categoryInstance.setOption(option)
+    categoryInstance.setOption(option, true)
   } catch (error) {
     console.error('加载风格组合失败:', error)
   }
 }
 
-// 格式化数字
-const formatNumber = (num: number): string => {
-  if (num >= 100000000) return (num / 100000000).toFixed(1) + '亿'
-  if (num >= 10000) return (num / 10000).toFixed(1) + '万'
-  return num.toString()
-}
-
-// 响应式调整
-const handleResize = () => {
-  yearlyInstance?.resize()
-  preferenceInstance?.resize()
-  ratingInstance?.resize()
-  categoryInstance?.resize()
-}
-
+// ─── 生命周期 ────────────────────────────────────────────────────────────────
 onMounted(() => {
-  window.addEventListener('resize', handleResize)
+  // 挂载后渲染默认标签页图表
   renderYearlyChart()
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
+  // 断开所有 ResizeObserver 并销毁图表实例，防止内存泄漏
+  yearlyResizeObserver?.disconnect()
+  preferenceResizeObserver?.disconnect()
+  ratingResizeObserver?.disconnect()
+  categoryResizeObserver?.disconnect()
   yearlyInstance?.dispose()
   preferenceInstance?.dispose()
   ratingInstance?.dispose()

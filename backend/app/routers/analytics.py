@@ -95,35 +95,38 @@ def get_rankings(
     limit: int = Query(10, description="返回数量"),
     area: Optional[str] = Query(None, description="地区筛选"),
     styles: Optional[str] = Query(None, description="风格筛选，逗号分隔"),
+    season: Optional[str] = Query(None, description="季节筛选: spring, summer, autumn, winter"),
     session: Session = Depends(get_session)
 ):
     """
     获取排行榜
-    
+
     Args:
         sort_by: 排序字段
         limit: 返回数量
         area: 地区筛选
         styles: 风格筛选
+        season: 季节筛选（spring/summer/autumn/winter）
         session: 数据库会话
-        
+
     Returns:
         排行榜数据
     """
     analytics_service = AnalyticsService(session)
-    
+
     # 解析风格列表
     style_list = None
     if styles:
         style_list = [s.strip() for s in styles.split(',')]
-    
+
     rankings = analytics_service.get_top_animes(
         sort_by=sort_by,
         limit=limit,
         area=area,
-        styles=style_list
+        styles=style_list,
+        season=season,
     )
-    
+
     return {
         "success": True,
         "total": len(rankings),
@@ -178,19 +181,23 @@ def get_anime_history(
 
 
 @router.get("/statistics/styles", response_model=dict)
-def get_style_distribution(session: Session = Depends(get_session)):
+def get_style_distribution(
+    area: Optional[str] = Query(None, description="地区筛选（如 国内、日本、美国）"),
+    session: Session = Depends(get_session)
+):
     """
     获取风格分布统计
-    
+
     Args:
+        area: 地区筛选，None 表示全部
         session: 数据库会话
-        
+
     Returns:
         风格分布数据
     """
     analytics_service = AnalyticsService(session)
-    distribution = analytics_service.get_style_distribution()
-    
+    distribution = analytics_service.get_style_distribution(area=area)
+
     return {
         "success": True,
         "data": distribution
@@ -198,20 +205,48 @@ def get_style_distribution(session: Session = Depends(get_session)):
 
 
 @router.get("/statistics/trends", response_model=dict)
-def get_release_trend(session: Session = Depends(get_session)):
+def get_release_trend(
+    area: Optional[str] = Query(None, description="地区筛选（如 国内、日本、美国）"),
+    session: Session = Depends(get_session)
+):
     """
     获取发布趋势统计
-    
+
     Args:
+        area: 地区筛选，None 表示全部
         session: 数据库会话
-        
+
     Returns:
         发布趋势数据
     """
     analytics_service = AnalyticsService(session)
-    trend = analytics_service.get_release_trend()
-    
+    trend = analytics_service.get_release_trend(area=area)
+
     return {
         "success": True,
         "data": trend
+    }
+
+
+@router.get("/animes/{season_id}/episodes", response_model=dict)
+def get_anime_episodes(season_id: int, session: Session = Depends(get_session)):
+    """
+    获取番剧剧集数据
+
+    优先返回 EpisodeStats 表中的真实数据；若无数据，则以每日统计记录作为代理。
+
+    Args:
+        season_id: 番剧 ID
+        session: 数据库会话
+
+    Returns:
+        剧集列表，每项包含 title、views、peakTime、peakOnline 字段
+    """
+    analytics_service = AnalyticsService(session)
+    episodes = analytics_service.get_anime_episodes(season_id)
+
+    return {
+        "success": True,
+        "total": len(episodes),
+        "data": episodes
     }
