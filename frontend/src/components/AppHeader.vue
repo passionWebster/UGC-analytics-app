@@ -51,15 +51,6 @@
                 <i class="fas fa-star me-1"></i>番剧推荐
               </router-link>
             </li>
-            <li class="nav-item">
-              <router-link 
-                class="nav-link" 
-                to="/data-screen"
-                active-class="active"
-              >
-                <i class="fas fa-tv me-1"></i>数据大屏
-              </router-link>
-            </li>
           </ul>
         </nav>
 
@@ -79,6 +70,8 @@
 </template>
 
 <script setup lang="ts">
+// AppHeader.vue —— 全局顶部导航栏组件
+// 包含：Logo、平台标题、导航菜单（首页/番剧状态检测/番剧概览/番剧推荐）、用户信息、退出登录按钮
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -86,23 +79,23 @@ import { useAuthStore } from '@/stores/auth'
 const router = useRouter()
 const authStore = useAuthStore()
 
-// 计算用户名首字母
+// 计算用户名首字母（用于头像显示）
 const userInitial = computed(() => {
   const name = authStore.user?.username || '用户'
   return name.charAt(0).toUpperCase()
 })
 
-// 用户名
+// 当前登录用户名
 const username = computed(() => {
   return authStore.user?.username || '用户'
 })
 
-// 跳转到个人资料
+// 跳转到个人资料页
 const goToProfile = () => {
   router.push('/personal-space')
 }
 
-// 退出登录
+// 退出登录并跳转到登录页
 const handleLogout = () => {
   authStore.logout()
   router.push('/login')

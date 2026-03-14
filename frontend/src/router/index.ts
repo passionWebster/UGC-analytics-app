@@ -48,12 +48,6 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
-      path: '/dashboard',
-      name: 'Dashboard',
-      component: () => import('@/views/Dashboard.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
       path: '/personal-space',
       name: 'PersonalSpace',
       component: () => import('@/views/PersonalSpace.vue'),
