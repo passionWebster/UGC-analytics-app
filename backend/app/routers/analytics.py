@@ -260,3 +260,103 @@ def get_anime_episodes(season_id: int, session: Session = Depends(get_session)):
         "total": len(episodes),
         "data": episodes
     }
+
+
+@router.get("/charts/reputation-popularity", response_model=dict)
+def get_reputation_popularity_chart(
+    areas: Optional[str] = Query(None, description="地区筛选，逗号分隔（如 国内,日本）"),
+    session: Session = Depends(get_session)
+):
+    """
+    获取口碑与热度散点图数据
+
+    Args:
+        areas: 地区列表，逗号分隔，None 表示全部
+        session: 数据库会话
+
+    Returns:
+        散点图数据列表，每项包含 title、rating、favorites、views、area 字段
+    """
+    analytics_service = AnalyticsService(session)
+    area_list = [a.strip() for a in areas.split(',')] if areas else None
+    data = analytics_service.get_reputation_popularity_chart(areas=area_list)
+
+    return {
+        "success": True,
+        "total": len(data),
+        "data": data
+    }
+
+
+@router.get("/charts/preference-difference", response_model=dict)
+def get_preference_difference_chart(
+    region: str = Query("国内", description="地区名称（如 国内、日本、美国）"),
+    session: Session = Depends(get_session)
+):
+    """
+    获取地区偏好差异图数据
+
+    Args:
+        region: 地区名称，默认 "国内"
+        session: 数据库会话
+
+    Returns:
+        偏好指数列表，每项包含 style、preferenceIndex、regionCount、globalCount 字段
+    """
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_preference_difference_chart(region=region)
+
+    return {
+        "success": True,
+        "total": len(data),
+        "data": data
+    }
+
+
+@router.get("/charts/reputation-heat-index", response_model=dict)
+def get_reputation_heat_index_chart(
+    season: Optional[str] = Query(None, description="季节筛选: spring, summer, autumn, winter"),
+    category: Optional[str] = Query(None, description="风格/类型筛选"),
+    session: Session = Depends(get_session)
+):
+    """
+    获取口碑热度指数图数据
+
+    Args:
+        season: 季节筛选（spring/summer/autumn/winter）
+        category: 风格/类型筛选
+        session: 数据库会话
+
+    Returns:
+        前 15 名番剧列表，每项包含 title、qualityScore、rating、favorites、views 字段
+    """
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_reputation_heat_index_chart(season=season, category=category)
+
+    return {
+        "success": True,
+        "total": len(data),
+        "data": data
+    }
+
+
+@router.get("/charts/popular-style-combination", response_model=dict)
+def get_popular_style_combination_chart(session: Session = Depends(get_session)):
+    """
+    获取热门风格组合图数据
+
+    Args:
+        session: 数据库会话
+
+    Returns:
+        前 20 个风格组合列表，每项包含 combination、totalFavorites、animeCount、
+        avgFavorites、representativeAnimes 字段
+    """
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_popular_style_combination_chart()
+
+    return {
+        "success": True,
+        "total": len(data),
+        "data": data
+    }
