@@ -908,6 +908,7 @@ class AnalyticsService:
         query = (
             select(Ranking)
             .where(Ranking.season_id == season_id)
+            .where(Ranking.ranking_type == "views")
             .order_by(Ranking.date)
         )
         if start_date:
