@@ -209,23 +209,36 @@ class BilibiliBangumiCrawler:
         self.session.commit()
         
         try:
-            # 1. 获取国产番剧
+            # 1. 底库构建：获取国产番剧和常规番剧基础信息
             print("\n📊 正在获取国产番剧数据...")
             domestic_animes = self._fetch_domestic_animes()
             
-            # 2. 获取常规番剧
             print("\n📊 正在获取常规番剧数据...")
             regular_animes = self._fetch_regular_animes()
             
-            # 3. 合并数据
             all_animes = {**domestic_animes, **regular_animes}
-            print(f"\n✅ 共获取 {len(all_animes)} 部番剧")
+            print(f"\n✅ 底库构建完成，共获取 {len(all_animes)} 部番剧")
             
-            # 4. 存储到数据库
+            # 2. 补充地区信息：按地区再次请求，更新底库中非国产番剧的地区字段
+            print("\n🌍 正在补充地区信息...")
+            all_animes = self._enrich_area(all_animes)
+            
+            # 3. 补充风格信息：遍历风格ID，将匹配的风格追加到底库
+            print("\n🎨 正在补充风格信息（常规番剧）...")
+            all_animes = self._enrich_regular_styles(all_animes)
+            
+            print("\n🎨 正在补充风格信息（国产番剧）...")
+            all_animes = self._enrich_domestic_styles(all_animes)
+            
+            # 4. 补充播放量和追番量：使用 order=2/3 重新请求，覆盖底库数据
+            print("\n📈 正在补充播放量和追番量数据...")
+            all_animes = self._enrich_views_and_favorites(all_animes)
+            
+            # 5. 入库存储
             print("\n💾 正在保存到数据库...")
             self._save_animes_to_db(all_animes)
             
-            # 5. 更新爬虫日志
+            # 更新爬虫日志
             crawl_log.status = "success"
             crawl_log.items_count = len(all_animes)
             crawl_log.completed_at = datetime.now()
@@ -270,12 +283,13 @@ class BilibiliBangumiCrawler:
                 elif parsed_year and parsed_month:
                     release_date = f"{parsed_year}-{parsed_month:02d}"
                 
+                score_raw = item.get('score') if item.get('score') is not None else item.get('rating')
                 animes[season_id] = {
                     'season_id': season_id,
                     'title': item.get('title', ''),
                     'cover': item.get('cover', ''),
                     'area': '国内',
-                    'rating': item.get('rating', 0) / 2 if item.get('rating') else None,  # B站评分转为10分制
+                    'rating': float(score_raw) if score_raw else None,
                     'styles': [],
                     'release_date': release_date,
                     'views': 0,
@@ -309,12 +323,13 @@ class BilibiliBangumiCrawler:
                     if not season_id or season_id in animes:
                         continue
                     
+                    score_raw = item.get('score') if item.get('score') is not None else item.get('rating')
                     animes[season_id] = {
                         'season_id': season_id,
                         'title': item.get('title', ''),
                         'cover': item.get('cover', ''),
                         'area': '其他',
-                        'rating': item.get('rating', 0) / 2 if item.get('rating') else None,
+                        'rating': float(score_raw) if score_raw else None,
                         'styles': [],
                         'release_date': f"{year}-{month:02d}",
                         'views': self._convert_order_to_int(item.get('order', '0')),
@@ -323,6 +338,137 @@ class BilibiliBangumiCrawler:
         
         return animes
     
+    def _fetch_regular_by_area(self, area: int) -> List[Dict[str, Any]]:
+        """获取指定地区的常规番剧列表 (area=2 日本, area=3 美国)"""
+        print(f"  获取地区 {area} 常规番剧...")
+        params = {
+            'st': 1, 'order': 2, 'season_version': -1,
+            'spoken_language_type': -1, 'area': area, 'is_finish': -1,
+            'copyright': -1, 'season_status': -1, 'season_month': -1,
+            'year': '-1', 'style_id': -1, 'sort': 0,
+            'season_type': 1, 'type': 1
+        }
+        return self._fetch_api_data(params)
+
+    def _fetch_regular_by_style(self, style_id: int) -> List[Dict[str, Any]]:
+        """获取指定风格的常规番剧列表"""
+        params = {
+            'st': 1, 'order': 2, 'season_version': -1,
+            'spoken_language_type': -1, 'area': -1, 'is_finish': -1,
+            'copyright': -1, 'season_status': -1, 'season_month': -1,
+            'year': '-1', 'style_id': style_id, 'sort': 0,
+            'season_type': 1, 'type': 1
+        }
+        return self._fetch_api_data(params)
+
+    def _fetch_domestic_by_style(self, style_id: int) -> List[Dict[str, Any]]:
+        """获取指定风格的国产番剧列表"""
+        params = {
+            'season_version': -1, 'is_finish': -1, 'copyright': -1, 'season_status': -1,
+            'year': '-1', 'style_id': style_id, 'order': 2, 'st': 4, 'sort': 0,
+            'season_type': 4, 'type': 1
+        }
+        return self._fetch_api_data(params)
+
+    def _fetch_regular_ranking(self, order: int) -> List[Dict[str, Any]]:
+        """获取常规番剧全量排名数据 (order=2 播放量, order=3 追番量)"""
+        params = {
+            'st': 1, 'order': order, 'season_version': -1,
+            'spoken_language_type': -1, 'area': -1, 'is_finish': -1,
+            'copyright': -1, 'season_status': -1, 'season_month': -1,
+            'year': '-1', 'style_id': -1, 'sort': 0,
+            'season_type': 1, 'type': 1
+        }
+        return self._fetch_api_data(params)
+
+    def _fetch_domestic_ranking(self, order: int) -> List[Dict[str, Any]]:
+        """获取国产番剧全量排名数据 (order=2 播放量, order=3 追番量)"""
+        params = {
+            'season_version': -1, 'is_finish': -1, 'copyright': -1, 'season_status': -1,
+            'year': '-1', 'style_id': -1, 'order': order, 'st': 4, 'sort': 0,
+            'season_type': 4, 'type': 1
+        }
+        return self._fetch_api_data(params)
+
+    def _enrich_area(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
+        """
+        补充地区信息：对非国产番剧，通过 area=2(日本) 和 area=3(美国) 的 API 请求更新地区字段
+        """
+        japan_items = self._fetch_regular_by_area(area=2)
+        usa_items = self._fetch_regular_by_area(area=3)
+
+        japan_ids = {item.get('season_id') for item in japan_items if item.get('season_id')}
+        usa_ids = {item.get('season_id') for item in usa_items if item.get('season_id')}
+
+        for season_id, item in all_animes.items():
+            if item['area'] == '国内':
+                continue
+            if season_id in japan_ids:
+                item['area'] = '日本'
+            elif season_id in usa_ids:
+                item['area'] = '美国'
+
+        print(f"  ✅ 地区标记完成：日本 {len(japan_ids)} 部，美国 {len(usa_ids)} 部")
+        return all_animes
+
+    def _enrich_regular_styles(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
+        """
+        补充常规番剧风格信息：遍历 REGULAR_API_STYLE_IDS，将返回的番剧追加对应风格
+        """
+        for style_id in self.REGULAR_API_STYLE_IDS:
+            style_name = self.STYLE_MAP.get(style_id)
+            if not style_name:
+                continue
+            style_items = self._fetch_regular_by_style(style_id)
+            for item in style_items:
+                season_id = item.get('season_id')
+                if season_id in all_animes and style_name not in all_animes[season_id]['styles']:
+                    all_animes[season_id]['styles'].append(style_name)
+
+        return all_animes
+
+    def _enrich_domestic_styles(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
+        """
+        补充国产番剧风格信息：遍历 DOMESTIC_API_STYLE_IDS，将返回的番剧追加对应风格
+        """
+        for style_id in self.DOMESTIC_API_STYLE_IDS:
+            style_name = self.STYLE_MAP.get(style_id)
+            if not style_name:
+                continue
+            style_items = self._fetch_domestic_by_style(style_id)
+            for item in style_items:
+                season_id = item.get('season_id')
+                if season_id in all_animes and style_name not in all_animes[season_id]['styles']:
+                    all_animes[season_id]['styles'].append(style_name)
+
+        return all_animes
+
+    def _enrich_views_and_favorites(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
+        """
+        补充播放量和追番量：使用 order=2(播放量) 和 order=3(追番量) 重新请求，覆盖底库数据
+        """
+        print("  获取播放量数据 (order=2)...")
+        views_items = self._fetch_regular_ranking(2) + self._fetch_domestic_ranking(2)
+
+        print("  获取追番量数据 (order=3)...")
+        favorites_items = self._fetch_regular_ranking(3) + self._fetch_domestic_ranking(3)
+
+        views_map = {
+            item['season_id']: self._convert_order_to_int(item.get('order', '0'))
+            for item in views_items if item.get('season_id')
+        }
+        favorites_map = {
+            item['season_id']: self._convert_order_to_int(item.get('order', '0'))
+            for item in favorites_items if item.get('season_id')
+        }
+
+        for season_id, item in all_animes.items():
+            item['views'] = views_map.get(season_id, item.get('views', 0))
+            item['favorites'] = favorites_map.get(season_id, 0)
+
+        print(f"  ✅ 播放量/追番量补充完成")
+        return all_animes
+
     def _save_animes_to_db(self, animes: Dict[int, Dict]):
         """
         将番剧数据保存到数据库
