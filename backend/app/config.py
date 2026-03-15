@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     
     # AI 服务配置
     doubao_api_url: str = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
-    doubao_api_key: Optional[str] = None
+    doubao_api_key: str = os.getenv('doubao_api_key')
     doubao_model: str = "doubao-seed-1-6-250615"
     
     class Config:

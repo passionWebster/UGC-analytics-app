@@ -586,7 +586,7 @@ class BilibiliBangumiCrawler:
 
                 # 获取完整统计数据（播放量、弹幕、评论、收藏、投币、分享、点赞）
                 stat = self.get_episode_stat_details(bvid)
-                time.sleep(0.2)
+                time.sleep(settings.bilibili_request_delay)
 
                 existing_ep = self.session.exec(
                     select(EpisodeStats).where(EpisodeStats.bvid == bvid)
@@ -627,7 +627,7 @@ class BilibiliBangumiCrawler:
         """
         url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
         try:
-            response = self.http_session.get(url, timeout=5)
+            response = self.http_session.get(url, timeout=settings.bilibili_request_timeout)
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 0:
@@ -672,7 +672,7 @@ class BilibiliBangumiCrawler:
         url = "https://api.bilibili.com/x/player/online/total"
         params = {'bvid': bvid, 'cid': str(cid)}
         try:
-            response = self.http_session.get(url, params=params, timeout=5)
+            response = self.http_session.get(url, params=params, timeout=settings.bilibili_request_timeout)
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 0 and 'data' in data:
@@ -777,7 +777,7 @@ class BilibiliBangumiCrawler:
 
             # 使用统一辅助方法获取完整单集统计
             stat = self.get_episode_stat_details(bvid)
-            time.sleep(0.2)
+            time.sleep(settings.bilibili_request_delay)
 
             existing_ep = self.session.exec(
                 select(EpisodeStats).where(EpisodeStats.bvid == bvid)
@@ -845,7 +845,7 @@ def create_crawler(session: Session = None) -> BilibiliBangumiCrawler:
     创建爬虫实例的工厂函数
     """
     if session is None:
-        from ..database import engine
+        from .database import engine
         session = Session(engine)
     
     return BilibiliBangumiCrawler(session)
