@@ -554,7 +554,7 @@ class BilibiliBangumiCrawler:
 
     def fetch_and_save_episodes(self, season_id: int) -> bool:
         """
-        通过 B站 API 抓取指定番剧的分集信息并存入数据库
+        通过 B站 API 抓取指定番剧的分集信息并存入数据库，包含完整互动统计数据
 
         Args:
             season_id: 番剧 season_id
@@ -584,19 +584,25 @@ class BilibiliBangumiCrawler:
                     or f'第{episode.get("index", "")}集'
                 )
 
+                # 获取完整统计数据（播放量、弹幕、评论、收藏、投币、分享、点赞）
+                stat = self.get_episode_stat_details(bvid)
+                time.sleep(0.2)
+
                 existing_ep = self.session.exec(
                     select(EpisodeStats).where(EpisodeStats.bvid == bvid)
                 ).first()
 
-                if not existing_ep:
+                if existing_ep:
+                    self._apply_stat_to_episode(existing_ep, stat, ep_title)
+                else:
                     new_ep = EpisodeStats(
                         season_id=season_id,
                         episode_title=ep_title,
                         bvid=bvid,
                         cid=cid,
-                        views=None,
                         online_viewers=None,
                     )
+                    self._apply_stat_to_episode(new_ep, stat, ep_title)
                     self.session.add(new_ep)
                     saved_count += 1
 
@@ -607,6 +613,48 @@ class BilibiliBangumiCrawler:
             print(f"❌ 写入分集数据失败: {e}")
             self.session.rollback()
             return False
+
+    def get_episode_stat_details(self, bvid: str) -> dict:
+        """
+        通过 B站 视频详情 API 获取单集完整统计数据
+
+        Args:
+            bvid: 视频 BV 号
+
+        Returns:
+            包含 view/danmaku/reply/favorite/coin/share/like 等字段的 stat 字典；
+            请求失败或数据结构异常时返回空字典
+        """
+        url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
+        try:
+            response = self.http_session.get(url, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 0:
+                return data.get('data', {}).get('stat', {})
+        except Exception as e:
+            print(f"❌ 获取单集统计详情失败 bvid={bvid}: {e}")
+        return {}
+
+    @staticmethod
+    def _apply_stat_to_episode(ep: "EpisodeStats", stat: dict, ep_title: str) -> None:
+        """
+        将 stat 字典中的互动指标写入 EpisodeStats 对象
+
+        Args:
+            ep: 目标 EpisodeStats 实例
+            stat: get_episode_stat_details 返回的统计字典
+            ep_title: 集标题
+        """
+        ep.episode_title = ep_title
+        ep.views = stat.get('view')
+        ep.danmaku = stat.get('danmaku')
+        ep.reply = stat.get('reply')
+        ep.favorite = stat.get('favorite')
+        ep.coin = stat.get('coin')
+        ep.share = stat.get('share')
+        ep.like = stat.get('like')
+        ep.updated_at = datetime.now()
 
     def get_online_viewers(self, bvid: str, cid: str) -> Optional[int]:
         """
@@ -662,7 +710,7 @@ class BilibiliBangumiCrawler:
 
     def fetch_and_save_anime_with_episodes(self, keyword: str) -> Optional[int]:
         """
-        通过关键词搜索番剧，抓取详情后将 Anime 信息和所有分集写入数据库
+        通过关键词搜索番剧，抓取详情后将 Anime 信息和所有分集（含完整统计）写入数据库
 
         Args:
             keyword: 搜索关键词
@@ -688,7 +736,6 @@ class BilibiliBangumiCrawler:
         ).first()
 
         if not existing_anime:
-            stat = details.get('stat', {})
             new_anime = Anime(
                 season_id=season_id,
                 title=details.get('title', keyword),
@@ -701,9 +748,10 @@ class BilibiliBangumiCrawler:
             self.session.add(new_anime)
             self.session.flush()
 
-            # 添加每日统计快照
-            views = stat.get('views', 0) or 0
-            favorites = stat.get('favorites', 0) or 0
+            # 添加每日统计快照（使用番剧级别的整体统计）
+            anime_stat = details.get('stat', {})
+            views = anime_stat.get('views', 0) or 0
+            favorites = anime_stat.get('favorites', 0) or 0
             daily_stat = DailyStats(
                 season_id=season_id,
                 date=datetime.now(),
@@ -715,7 +763,7 @@ class BilibiliBangumiCrawler:
         else:
             print(f"  ℹ️  番剧已存在: {existing_anime.title} (season_id={season_id})")
 
-        # 写入/更新 EpisodeStats
+        # 写入/更新 EpisodeStats（含完整互动统计）
         episodes = details.get('episodes', [])
         print(f"  -> 正在写入 {len(episodes)} 集数据到 EpisodeStats...")
         saved_count = 0
@@ -725,43 +773,29 @@ class BilibiliBangumiCrawler:
             if not bvid or not cid:
                 continue
 
+            ep_title = episode.get('long_title') or episode.get('title') or f'第{episode.get("index", "")}集'
+
+            # 使用统一辅助方法获取完整单集统计
+            stat = self.get_episode_stat_details(bvid)
+            time.sleep(0.2)
+
             existing_ep = self.session.exec(
                 select(EpisodeStats).where(EpisodeStats.bvid == bvid)
             ).first()
 
-            ep_title = episode.get('long_title') or episode.get('title') or f'第{episode.get("index", "")}集'
-
-            # 获取单集播放量
-            try:
-                view_resp = self.http_session.get(
-                    f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}",
-                    timeout=5
-                )
-                view_data = view_resp.json()
-                ep_views = (
-                    view_data.get('data', {}).get('stat', {}).get('view')
-                    if view_data.get('code') == 0 else None
-                )
-            except Exception:
-                ep_views = None
-
             if existing_ep:
-                existing_ep.episode_title = ep_title
-                existing_ep.views = ep_views
-                existing_ep.updated_at = datetime.now()
+                self._apply_stat_to_episode(existing_ep, stat, ep_title)
             else:
                 new_ep = EpisodeStats(
                     season_id=season_id,
                     episode_title=ep_title,
                     bvid=bvid,
                     cid=cid,
-                    views=ep_views,
                     online_viewers=None,
                 )
+                self._apply_stat_to_episode(new_ep, stat, ep_title)
                 self.session.add(new_ep)
                 saved_count += 1
-
-            time.sleep(0.2)
 
         self.session.commit()
         print(f"  ✅ 已写入 {saved_count} 条新剧集记录 (season_id={season_id})")
