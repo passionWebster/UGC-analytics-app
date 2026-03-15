@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 
-from .database import init_database
+from .database import init_database, engine
 from .config import settings
 from .routers import auth, analytics, ai, crawler
 
@@ -38,6 +38,15 @@ app.include_router(ai.router)
 app.include_router(crawler.router)
 
 
+def _run_update_online_viewers():
+    """在独立的数据库会话中刷新所有剧集在线人数"""
+    from sqlmodel import Session
+    from .scraper import BilibiliBangumiCrawler
+    with Session(engine) as session:
+        crawler_instance = BilibiliBangumiCrawler(session)
+        crawler_instance.update_online_viewers_for_all_episodes()
+
+
 @app.on_event("startup")
 async def startup_event():
     """应用启动事件"""
@@ -47,11 +56,35 @@ async def startup_event():
     
     # 初始化数据库
     init_database()
+
+    # 启动定时任务：每 4 小时刷新一次所有剧集在线人数
+    from apscheduler.schedulers.background import BackgroundScheduler
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(
+        _run_update_online_viewers,
+        trigger='interval',
+        hours=4,
+        id='update_online_viewers_job',
+        replace_existing=True,
+    )
+    scheduler.start()
+    # 将 scheduler 挂载到 app.state，以便 shutdown 时停止
+    app.state.scheduler = scheduler
+    print("⏰ 定时任务已启动：每 4 小时刷新剧集在线人数")
     
     print(f"✅ 服务器启动成功")
     print(f"📖 API 文档: http://{settings.host}:{settings.port}/api/docs")
     print(f"📖 ReDoc 文档: http://{settings.host}:{settings.port}/api/redoc")
     print("=" * 60)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭事件"""
+    scheduler = getattr(app.state, "scheduler", None)
+    if scheduler and scheduler.running:
+        scheduler.shutdown(wait=False)
+        print("⏰ 定时任务已停止")
 
 
 @app.get("/")

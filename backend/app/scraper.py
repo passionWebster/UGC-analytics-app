@@ -551,7 +551,188 @@ class BilibiliBangumiCrawler:
             print(f"❌ 获取番剧详情失败: {e}")
         
         return None
-    
+
+    def get_online_viewers(self, bvid: str, cid: str) -> Optional[int]:
+        """
+        获取指定单集的当前在线观看人数
+
+        Args:
+            bvid: 视频 BV 号
+            cid: 弹幕 CID
+
+        Returns:
+            当前在线人数，失败时返回 None
+        """
+        if not bvid or not cid:
+            return None
+        url = "https://api.bilibili.com/x/player/online/total"
+        params = {'bvid': bvid, 'cid': str(cid)}
+        try:
+            response = self.http_session.get(url, params=params, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 0 and 'data' in data:
+                return self._convert_order_to_int(str(data['data'].get('total', 0)))
+        except Exception as e:
+            print(f"❌ 获取在线人数失败 bvid={bvid}: {e}")
+        return None
+
+    def search_bangumi_on_bilibili(self, keyword: str) -> Optional[int]:
+        """
+        通过关键词在 B站 搜索番剧，返回最匹配的 season_id
+
+        Args:
+            keyword: 搜索关键词
+
+        Returns:
+            season_id 或 None
+        """
+        url = "https://api.bilibili.com/x/web-interface/search/type"
+        params = {'keyword': keyword, 'search_type': 'media_bangumi'}
+        try:
+            response = self.http_session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 0 and 'data' in data:
+                results = data['data'].get('result', [])
+                if results:
+                    # 取第一个结果的 season_id
+                    season_id = results[0].get('season_id')
+                    if season_id:
+                        return int(season_id)
+        except Exception as e:
+            print(f"❌ B站搜索失败 keyword={keyword}: {e}")
+        return None
+
+    def fetch_and_save_anime_with_episodes(self, keyword: str) -> Optional[int]:
+        """
+        通过关键词搜索番剧，抓取详情后将 Anime 信息和所有分集写入数据库
+
+        Args:
+            keyword: 搜索关键词
+
+        Returns:
+            成功时返回 season_id，失败时返回 None
+        """
+        print(f"🔍 正在搜索番剧: {keyword}")
+        season_id = self.search_bangumi_on_bilibili(keyword)
+        if not season_id:
+            print(f"❌ 未能通过 B站 API 找到番剧: {keyword}")
+            return None
+
+        print(f"  -> 找到 season_id={season_id}，正在获取详情...")
+        details = self.get_anime_details(season_id)
+        if not details:
+            print(f"❌ 获取番剧详情失败: season_id={season_id}")
+            return None
+
+        # 保存或更新 Anime 基础信息
+        existing_anime = self.session.exec(
+            select(Anime).where(Anime.season_id == season_id)
+        ).first()
+
+        if not existing_anime:
+            stat = details.get('stat', {})
+            new_anime = Anime(
+                season_id=season_id,
+                title=details.get('title', keyword),
+                cover=details.get('cover'),
+                area='其他',
+                rating=None,
+                styles=json.dumps([], ensure_ascii=False),
+                release_date=None,
+            )
+            self.session.add(new_anime)
+            self.session.flush()
+
+            # 添加每日统计快照
+            views = stat.get('views', 0) or 0
+            favorites = stat.get('favorites', 0) or 0
+            daily_stat = DailyStats(
+                season_id=season_id,
+                date=datetime.now(),
+                views=views,
+                favorites=favorites,
+            )
+            self.session.add(daily_stat)
+            print(f"  ✅ 已新增番剧: {details.get('title')} (season_id={season_id})")
+        else:
+            print(f"  ℹ️  番剧已存在: {existing_anime.title} (season_id={season_id})")
+
+        # 写入/更新 EpisodeStats
+        episodes = details.get('episodes', [])
+        print(f"  -> 正在写入 {len(episodes)} 集数据到 EpisodeStats...")
+        saved_count = 0
+        for episode in episodes:
+            bvid = episode.get('bvid', '')
+            cid = str(episode.get('cid', ''))
+            if not bvid or not cid:
+                continue
+
+            existing_ep = self.session.exec(
+                select(EpisodeStats).where(EpisodeStats.bvid == bvid)
+            ).first()
+
+            ep_title = episode.get('long_title') or episode.get('title') or f'第{episode.get("index", "")}集'
+
+            # 获取单集播放量
+            try:
+                view_resp = self.http_session.get(
+                    f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}",
+                    timeout=5
+                )
+                view_data = view_resp.json()
+                ep_views = (
+                    view_data.get('data', {}).get('stat', {}).get('view')
+                    if view_data.get('code') == 0 else None
+                )
+            except Exception:
+                ep_views = None
+
+            if existing_ep:
+                existing_ep.episode_title = ep_title
+                existing_ep.views = ep_views
+                existing_ep.updated_at = datetime.now()
+            else:
+                new_ep = EpisodeStats(
+                    season_id=season_id,
+                    episode_title=ep_title,
+                    bvid=bvid,
+                    cid=cid,
+                    views=ep_views,
+                    online_viewers=None,
+                )
+                self.session.add(new_ep)
+                saved_count += 1
+
+            time.sleep(0.2)
+
+        self.session.commit()
+        print(f"  ✅ 已写入 {saved_count} 条新剧集记录 (season_id={season_id})")
+        return season_id
+
+    def update_online_viewers_for_all_episodes(self):
+        """
+        遍历 EpisodeStats 表中所有记录，通过 B站 API 刷新在线观看人数
+        """
+        print("🔄 [定时任务] 开始刷新所有剧集在线人数...")
+        episodes = self.session.exec(select(EpisodeStats)).all()
+        if not episodes:
+            print("  ℹ️  EpisodeStats 表为空，跳过更新")
+            return
+
+        updated = 0
+        for ep in episodes:
+            online = self.get_online_viewers(ep.bvid, ep.cid)
+            if online is not None:
+                ep.online_viewers = online
+                ep.updated_at = datetime.now()
+                updated += 1
+            time.sleep(0.2)
+
+        self.session.commit()
+        print(f"  ✅ 在线人数刷新完成，共更新 {updated}/{len(episodes)} 条记录")
+
     def search_anime_by_title(self, title: str) -> Optional[int]:
         """
         通过标题搜索番剧，返回 season_id

@@ -70,18 +70,28 @@ def search_animes(
     session: Session = Depends(get_session)
 ):
     """
-    搜索番剧
-    
+    搜索番剧。若本地数据库中无匹配结果，则实时调用 B站 API 抓取并写入数据库。
+
     Args:
         keyword: 搜索关键词
         session: 数据库会话
-        
+
     Returns:
         搜索结果列表
     """
+    from ..scraper import BilibiliBangumiCrawler
+
     analytics_service = AnalyticsService(session)
     results = analytics_service.search_anime_by_title(keyword)
-    
+
+    if not results:
+        # 本地未命中，触发实时抓取
+        crawler = BilibiliBangumiCrawler(session)
+        season_id = crawler.fetch_and_save_anime_with_episodes(keyword)
+        if season_id:
+            # 抓取成功后重新查询数据库
+            results = analytics_service.search_anime_by_title(keyword)
+
     return {
         "success": True,
         "total": len(results),
