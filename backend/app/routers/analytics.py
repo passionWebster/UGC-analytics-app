@@ -4,6 +4,7 @@
 """
 import os
 import re
+from datetime import datetime
 from typing import List, Optional
 from urllib.parse import urlparse
 import httpx
@@ -13,6 +14,13 @@ from sqlmodel import Session
 
 from ..database import get_session
 from ..crud import AnalyticsService
+from ..schemas import (
+    EpisodeBehaviorAnalysisResponse,
+    LifecycleGrowthResponse,
+    CompetitiveLandscapeResponse,
+    SeasonalGenreTrendsResponse,
+    PersonalizedRecommendationsResponse,
+)
 
 
 router = APIRouter(prefix="/api/analytics", tags=["数据分析"])
@@ -445,4 +453,214 @@ def get_popular_style_combination_chart(session: Session = Depends(get_session))
         "success": True,
         "total": len(data),
         "data": data
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. 单集受众行为分析端点
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get(
+    "/animes/{season_id}/episode-behavior",
+    response_model=dict,
+    summary="单集受众行为分析",
+)
+def get_episode_behavior_analysis(
+    season_id: int,
+    session: Session = Depends(get_session),
+):
+    """
+    单集受众行为分析：留存率、硬核指数与弹幕评论密度。
+
+    - **留存率**：以第1集播放量为基准，计算第3集及最终集的观众留存百分比。
+    - **硬核指数**：逐集计算投币率（coin/views）和点赞率（like/views），
+      高投币率表明内容质量高，低值则可能为标题党。
+    - **共鸣密度**：逐集计算弹幕率（danmaku/views）和评论率（reply/views），
+      反映观众互动活跃程度。
+
+    Args:
+        season_id: 番剧 season_id
+        session: 数据库会话
+
+    Returns:
+        留存率、各集互动指标及全剧平均指标
+    """
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_episode_behavior_analysis(season_id)
+
+    if data is None:
+        raise HTTPException(status_code=404, detail="该番剧暂无分集数据")
+
+    return {
+        "success": True,
+        "data": data,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. 生命周期与增长分析端点
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get(
+    "/animes/{season_id}/lifecycle",
+    response_model=dict,
+    summary="生命周期与增长分析",
+)
+def get_lifecycle_growth_analysis(
+    season_id: int,
+    window_days: int = Query(30, description="滑动窗口天数（预留扩展参数）"),
+    session: Session = Depends(get_session),
+):
+    """
+    生命周期与增长分析：黑马指数（一/二阶导数）与长尾效应。
+
+    - **黑马指数**：计算每日播放量和追番数的一阶导数（日增量）与
+      二阶导数（增速加速度），峰值日增可作为黑马爆发力参考。
+    - **长尾效应**：统计首播后 30 天和 90 天的日均播放量，
+      评估番剧的持续影响力与生命周期。
+
+    Args:
+        season_id: 番剧 season_id
+        window_days: 滑动窗口天数（预留参数）
+        session: 数据库会话
+
+    Returns:
+        逐日增长数据、长尾效应及峰值增长信息
+    """
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_lifecycle_growth_analysis(season_id, window_days)
+
+    if data is None:
+        raise HTTPException(status_code=404, detail="番剧不存在")
+
+    return {
+        "success": True,
+        "data": data,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. 竞争态势分析端点
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get(
+    "/animes/{season_id}/competitive",
+    response_model=dict,
+    summary="竞争态势分析",
+)
+def get_competitive_landscape_analysis(
+    season_id: int,
+    start_date: Optional[str] = Query(None, description="统计开始日期，格式 YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="统计结束日期，格式 YYYY-MM-DD"),
+    session: Session = Depends(get_session),
+):
+    """
+    竞争态势分析：霸榜指数与排名波动率。
+
+    - **霸榜指数**：统计指定时间范围内番剧进入排行榜前3名和前10名的天数占比，
+      反映该番剧在竞争环境中的统治力。
+    - **排名波动率**：计算排名位置的标准差，数值越小说明排名越稳定。
+
+    Args:
+        season_id: 番剧 season_id
+        start_date: 统计开始日期（可选）
+        end_date: 统计结束日期（可选）
+        session: 数据库会话
+
+    Returns:
+        上榜天数、霸榜比例、平均排名及波动率
+    """
+    parsed_start = None
+    parsed_end = None
+    try:
+        if start_date:
+            parsed_start = datetime.strptime(start_date, "%Y-%m-%d")
+        if end_date:
+            parsed_end = datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="日期格式错误，请使用 YYYY-MM-DD")
+
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_competitive_landscape_analysis(
+        season_id, parsed_start, parsed_end
+    )
+
+    return {
+        "success": True,
+        "data": data,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. 题材季节性规律分析端点
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get(
+    "/seasonal-genre-trends",
+    response_model=dict,
+    summary="题材季节性规律分析",
+)
+def get_seasonal_genre_trends(session: Session = Depends(get_session)):
+    """
+    题材季节性规律分析：跨维度分析发布季节、题材风格与播放量的关联。
+
+    将番剧 release_date 的月份映射为四季（spring=04月, summer=07月,
+    autumn=10月, winter=01月），结合 styles 和最新播放量，计算各季节
+    每种题材的平均播放量，识别不同季节表现最佳的题材类型。
+
+    Args:
+        session: 数据库会话
+
+    Returns:
+        各季节题材数据列表及每季最佳题材映射
+    """
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_seasonal_genre_trends()
+
+    return {
+        "success": True,
+        "total": len(data.get("trends", [])),
+        "data": data,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. 用户个性化推荐端点
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get(
+    "/users/{username}/recommendations",
+    response_model=dict,
+    summary="用户个性化番剧推荐",
+)
+def get_personalized_recommendations(
+    username: str,
+    session: Session = Depends(get_session),
+):
+    """
+    用户个性化推荐：基于双向匹配度算法为用户生成番剧推荐列表。
+
+    算法说明：
+    - **有偏好**：以用户偏好风格与番剧风格的 Jaccard 相似度为基础（权重80%），
+      叠加全局热门风格组合奖励分（权重20%），计算0~100的匹配度。
+    - **无偏好**：按播放量和追番数的归一化热度排序。
+    返回匹配度最高的前50部番剧。
+
+    Args:
+        username: 用户名
+        session: 数据库会话
+
+    Returns:
+        用户偏好风格及排序后的推荐番剧列表（含匹配度分数）
+    """
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_personalized_recommendations(username)
+
+    if data is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    return {
+        "success": True,
+        "total": len(data.get("recommendations", [])),
+        "data": data,
     }

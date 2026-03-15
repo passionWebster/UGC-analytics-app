@@ -689,3 +689,455 @@ class AnalyticsService:
 
         result.sort(key=lambda x: x['avgFavorites'], reverse=True)
         return result[:20]
+
+    # ─────────────────────────────────────────────────────────────
+    # 1. 单集受众行为分析（Episode-Level Audience Behavior Analysis）
+    # ─────────────────────────────────────────────────────────────
+
+    def get_episode_behavior_analysis(self, season_id: int) -> Optional[Dict]:
+        """
+        单集受众行为分析：留存率、硬核指数与弹幕评论密度。
+
+        留存率以第1集播放量为基准，比较第3集和最终集的播放量占比，
+        用以衡量观众粘性。硬核指数（coin_rate / like_rate）反映内容质量，
+        弹幕评论密度（danmaku_rate / reply_rate）衡量受众共鸣程度。
+
+        Args:
+            season_id: 番剧 season_id
+
+        Returns:
+            包含留存率、各集互动指数及全剧平均指标的字典；无数据时返回 None
+        """
+        episodes = self.session.exec(
+            select(EpisodeStats)
+            .where(EpisodeStats.season_id == season_id)
+            .order_by(EpisodeStats.id)
+        ).all()
+
+        if not episodes:
+            return None
+
+        total = len(episodes)
+
+        # 留存率计算
+        ep1_views = episodes[0].views or 0
+        ep3_views = episodes[2].views if total >= 3 and episodes[2].views is not None else None
+        final_views = (
+            episodes[-1].views
+            if total > 1 and episodes[-1].views is not None
+            else None
+        )
+
+        def _retention(base: int, target: Optional[int]) -> Optional[float]:
+            """计算留存率百分比"""
+            if target is None or base == 0:
+                return None
+            return round(target / base * 100, 2)
+
+        # 各集指标
+        engagement_list = []
+        for ep in episodes:
+            v = ep.views or 0
+            engagement_list.append({
+                'episode_title': ep.episode_title,
+                'views': v,
+                'coin_rate': round(ep.coin / v, 6) if v and ep.coin is not None else None,
+                'like_rate': round(ep.like / v, 6) if v and ep.like is not None else None,
+                'danmaku_rate': round(ep.danmaku / v, 6) if v and ep.danmaku is not None else None,
+                'reply_rate': round(ep.reply / v, 6) if v and ep.reply is not None else None,
+            })
+
+        def _safe_avg(values: List[Optional[float]]) -> Optional[float]:
+            """过滤 None 后求平均"""
+            filtered = [x for x in values if x is not None]
+            return round(sum(filtered) / len(filtered), 6) if filtered else None
+
+        return {
+            'season_id': season_id,
+            'total_episodes': total,
+            'retention': {
+                'episode_1_views': ep1_views,
+                'episode_3_views': ep3_views,
+                'final_episode_views': final_views,
+                'retention_ep1_to_ep3': _retention(ep1_views, ep3_views),
+                'retention_ep1_to_final': _retention(ep1_views, final_views),
+            },
+            'engagement_by_episode': engagement_list,
+            'avg_coin_rate': _safe_avg([e['coin_rate'] for e in engagement_list]),
+            'avg_like_rate': _safe_avg([e['like_rate'] for e in engagement_list]),
+            'avg_danmaku_rate': _safe_avg([e['danmaku_rate'] for e in engagement_list]),
+            'avg_reply_rate': _safe_avg([e['reply_rate'] for e in engagement_list]),
+        }
+
+    # ─────────────────────────────────────────────────────────────
+    # 2. 生命周期与增长分析（Lifecycle and Growth Analysis）
+    # ─────────────────────────────────────────────────────────────
+
+    def get_lifecycle_growth_analysis(
+        self,
+        season_id: int,
+        window_days: int = 30,
+    ) -> Optional[Dict]:
+        """
+        生命周期与增长分析：黑马指数（一/二阶导数）与长尾效应。
+
+        一阶导数（日增量）反映短期爆发力，二阶导数（增速变化）刻画动量变化。
+        长尾效应通过统计首播后 30/90 天的日均播放量来衡量持续影响力。
+
+        Args:
+            season_id: 番剧 season_id
+            window_days: 用于计算黑马指数的滑动窗口天数（暂未使用，预留扩展）
+
+        Returns:
+            包含逐日增长数据、长尾效应和峰值信息的字典；番剧不存在时返回 None
+        """
+        anime = self.session.exec(
+            select(Anime).where(Anime.season_id == season_id)
+        ).first()
+
+        if not anime:
+            return None
+
+        stats = self.session.exec(
+            select(DailyStats)
+            .where(DailyStats.season_id == season_id)
+            .order_by(DailyStats.date)
+        ).all()
+
+        if not stats:
+            return {
+                'season_id': season_id,
+                'growth_data': [],
+                'long_tail': {'avg_daily_views_30d': None, 'avg_daily_views_90d': None},
+                'peak_daily_growth': None,
+                'peak_date': None,
+            }
+
+        views_list = [s.views for s in stats]
+        favorites_list = [s.favorites for s in stats]
+
+        growth_data = []
+        for i, stat in enumerate(stats):
+            # 一阶导数
+            views_growth = views_list[i] - views_list[i - 1] if i > 0 else None
+            favorites_growth = favorites_list[i] - favorites_list[i - 1] if i > 0 else None
+
+            # 二阶导数
+            if i > 1:
+                views_accel = (
+                    (views_list[i] - views_list[i - 1])
+                    - (views_list[i - 1] - views_list[i - 2])
+                )
+                favorites_accel = (
+                    (favorites_list[i] - favorites_list[i - 1])
+                    - (favorites_list[i - 1] - favorites_list[i - 2])
+                )
+            else:
+                views_accel = None
+                favorites_accel = None
+
+            growth_data.append({
+                'date': stat.date.isoformat(),
+                'views': stat.views,
+                'favorites': stat.favorites,
+                'views_growth': views_growth,
+                'views_acceleration': views_accel,
+                'favorites_growth': favorites_growth,
+                'favorites_acceleration': favorites_accel,
+            })
+
+        # 峰值日增（黑马指数参考值）
+        growths = [(g['views_growth'], g['date']) for g in growth_data if g['views_growth'] is not None]
+        if growths:
+            peak_daily_growth, peak_date = max(growths, key=lambda x: x[0])
+        else:
+            peak_daily_growth, peak_date = None, None
+
+        # 长尾效应：以首条记录日期作为发布基准
+        first_date = stats[0].date
+        date_30d = first_date + timedelta(days=30)
+        date_90d = first_date + timedelta(days=90)
+
+        stats_after_30d = [s for s in stats if s.date >= date_30d]
+        stats_after_90d = [s for s in stats if s.date >= date_90d]
+
+        avg_30d = (
+            round(sum(s.views for s in stats_after_30d) / len(stats_after_30d), 2)
+            if stats_after_30d else None
+        )
+        avg_90d = (
+            round(sum(s.views for s in stats_after_90d) / len(stats_after_90d), 2)
+            if stats_after_90d else None
+        )
+
+        return {
+            'season_id': season_id,
+            'growth_data': growth_data,
+            'long_tail': {
+                'avg_daily_views_30d': avg_30d,
+                'avg_daily_views_90d': avg_90d,
+            },
+            'peak_daily_growth': peak_daily_growth,
+            'peak_date': peak_date,
+        }
+
+    # ─────────────────────────────────────────────────────────────
+    # 3. 竞争态势分析（Competitive Landscape Analysis）
+    # ─────────────────────────────────────────────────────────────
+
+    def get_competitive_landscape_analysis(
+        self,
+        season_id: int,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> Dict:
+        """
+        竞争态势分析：霸榜指数与排名波动率。
+
+        霸榜指数（dominance_top3 / dominance_top10）统计番剧在指定时间窗口内
+        进入前3名和前10名的天数占比；排名波动率（标准差）反映排名稳定性。
+
+        Args:
+            season_id: 番剧 season_id
+            start_date: 统计开始日期（可选，默认不限）
+            end_date: 统计结束日期（可选，默认不限）
+
+        Returns:
+            包含上榜天数、霸榜比例和波动率的字典
+        """
+        query = (
+            select(Ranking)
+            .where(Ranking.season_id == season_id)
+            .order_by(Ranking.date)
+        )
+        if start_date:
+            query = query.where(Ranking.date >= start_date)
+        if end_date:
+            query = query.where(Ranking.date <= end_date)
+
+        rankings = self.session.exec(query).all()
+
+        if not rankings:
+            return {
+                'season_id': season_id,
+                'total_ranking_days': 0,
+                'top3_days': 0,
+                'top10_days': 0,
+                'dominance_top3': None,
+                'dominance_top10': None,
+                'avg_rank': None,
+                'rank_volatility': None,
+            }
+
+        positions = [r.rank_position for r in rankings]
+        total = len(positions)
+        top3_days = sum(1 for p in positions if p <= 3)
+        top10_days = sum(1 for p in positions if p <= 10)
+        avg_rank = sum(positions) / total
+
+        # 总体标准差（衡量排名波动率）
+        variance = sum((p - avg_rank) ** 2 for p in positions) / total
+        std_dev = math.sqrt(variance)
+
+        return {
+            'season_id': season_id,
+            'total_ranking_days': total,
+            'top3_days': top3_days,
+            'top10_days': top10_days,
+            'dominance_top3': round(top3_days / total * 100, 2),
+            'dominance_top10': round(top10_days / total * 100, 2),
+            'avg_rank': round(avg_rank, 2),
+            'rank_volatility': round(std_dev, 2),
+        }
+
+    # ─────────────────────────────────────────────────────────────
+    # 4. 题材季节性规律分析（Seasonal Genre Trends）
+    # ─────────────────────────────────────────────────────────────
+
+    def get_seasonal_genre_trends(self) -> Dict:
+        """
+        题材季节性规律分析：交叉分析番剧发布季节、题材风格与播放量。
+
+        根据 release_date 月份映射季节（spring=04月, summer=07月,
+        autumn=10月, winter=01月），统计各季节每种题材的番剧数量、
+        总播放量及平均播放量，并给出每个季节表现最佳的题材。
+
+        Returns:
+            包含各季节题材数据列表和每季最佳题材映射的字典
+        """
+        MONTH_TO_SEASON = {
+            '01': 'winter',
+            '04': 'spring',
+            '07': 'summer',
+            '10': 'autumn',
+        }
+
+        animes = self.session.exec(select(Anime)).all()
+
+        # season -> genre -> [views]
+        trend_data: Dict[str, Dict[str, List[int]]] = {}
+
+        for anime in animes:
+            if not anime.release_date or anime.release_date in ('敬请期待', '更早'):
+                continue
+
+            parts = anime.release_date.split('-')
+            if len(parts) != 2:
+                continue
+
+            season = MONTH_TO_SEASON.get(parts[1])
+            if not season:
+                continue
+
+            if not anime.styles:
+                continue
+            styles = json.loads(anime.styles)
+
+            latest_stats = self.session.exec(
+                select(DailyStats)
+                .where(DailyStats.season_id == anime.season_id)
+                .order_by(desc(DailyStats.date))
+                .limit(1)
+            ).first()
+            views = latest_stats.views if latest_stats else 0
+
+            for style in styles:
+                trend_data.setdefault(season, {}).setdefault(style, []).append(views)
+
+        trends = []
+        best_genre_by_season: Dict[str, str] = {}
+
+        for season, genre_data in trend_data.items():
+            best_genre = None
+            best_avg_views = -1.0
+
+            for genre, views_list in genre_data.items():
+                anime_count = len(views_list)
+                total_views = sum(views_list)
+                avg_views = total_views / anime_count
+
+                trends.append({
+                    'season': season,
+                    'genre': genre,
+                    'anime_count': anime_count,
+                    'avg_views': round(avg_views, 2),
+                    'total_views': total_views,
+                })
+
+                if avg_views > best_avg_views:
+                    best_avg_views = avg_views
+                    best_genre = genre
+
+            if best_genre:
+                best_genre_by_season[season] = best_genre
+
+        return {
+            'trends': trends,
+            'best_genre_by_season': best_genre_by_season,
+        }
+
+    # ─────────────────────────────────────────────────────────────
+    # 5. 用户个性化推荐（User Personalization System）
+    # ─────────────────────────────────────────────────────────────
+
+    def get_personalized_recommendations(self, username: str) -> Optional[Dict]:
+        """
+        用户个性化推荐：基于双向匹配度算法为用户生成番剧推荐列表。
+
+        匹配度算法说明：
+        - 若用户有偏好风格：采用 Jaccard 相似度（交集/并集）作为基础分（权重80%），
+          并叠加全局热门风格组合的奖励分（权重20%），最终映射到0~100分。
+        - 若用户无偏好：基于播放量和追番数的归一化热度分排序。
+        返回匹配度最高的前50部番剧。
+
+        Args:
+            username: 用户名
+
+        Returns:
+            包含用户偏好和推荐列表的字典；用户不存在时返回 None
+        """
+        from .models import User
+
+        user = self.session.exec(
+            select(User).where(User.username == username)
+        ).first()
+
+        if not user:
+            return None
+
+        user_prefs = json.loads(user.preferences) if user.preferences else []
+        user_prefs_set = set(user_prefs)
+
+        animes = self.session.exec(select(Anime)).all()
+
+        # 统计全局热门风格两两组合（用于奖励分计算）
+        global_combo_counts: Dict[str, int] = {}
+        for anime in animes:
+            if not anime.styles:
+                continue
+            styles = json.loads(anime.styles)
+            for s1, s2 in combinations(sorted(styles), 2):
+                key = f"{s1}+{s2}"
+                global_combo_counts[key] = global_combo_counts.get(key, 0) + 1
+
+        # 全局最大组合出现次数（用于归一化）
+        max_combo_count = max(global_combo_counts.values(), default=1)
+
+        recommendations = []
+
+        for anime in animes:
+            latest_stats = self.session.exec(
+                select(DailyStats)
+                .where(DailyStats.season_id == anime.season_id)
+                .order_by(desc(DailyStats.date))
+                .limit(1)
+            ).first()
+            views = latest_stats.views if latest_stats else 0
+            favorites = latest_stats.favorites if latest_stats else 0
+
+            anime_styles = set(json.loads(anime.styles)) if anime.styles else set()
+
+            if not user_prefs_set:
+                # 无偏好时：纯热度分（播放量+追番数各占50%，上限100分）
+                match_score = min(
+                    100.0,
+                    (favorites / 1_000_000 * 50) + (views / 10_000_000 * 50)
+                )
+            else:
+                # Jaccard 相似度（基础分，权重80）
+                intersection = len(user_prefs_set & anime_styles)
+                union = len(user_prefs_set | anime_styles)
+                jaccard = intersection / union if union else 0.0
+
+                # 用户偏好风格组合在全局中的热度奖励（归一化到0~1，再乘以权重20）
+                raw_combo_bonus = 0.0
+                user_style_list = sorted(user_prefs_set)
+                for s1, s2 in combinations(user_style_list, 2):
+                    key = f"{s1}+{s2}"
+                    if key in global_combo_counts:
+                        raw_combo_bonus += global_combo_counts[key] / max_combo_count
+                # 整体奖励分上限为1.0，确保权重分配不超过文档所述的20%
+                combo_bonus = min(1.0, raw_combo_bonus)
+
+                match_score = min(100.0, jaccard * 80.0 + combo_bonus * 20.0)
+
+            recommendations.append({
+                'season_id': anime.season_id,
+                'title': anime.title,
+                'cover': anime.cover,
+                'area': anime.area,
+                'rating': anime.rating,
+                'styles': sorted(anime_styles),
+                'match_score': round(match_score, 2),
+                'views': views,
+                'favorites': favorites,
+            })
+
+        # 按匹配度降序，相同匹配度时以追番数降序作为次级排序
+        recommendations.sort(key=lambda x: (x['match_score'], x['favorites']), reverse=True)
+
+        return {
+            'username': username,
+            'preferences': user_prefs,
+            'recommendations': recommendations[:50],
+        }
