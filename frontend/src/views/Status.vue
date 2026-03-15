@@ -200,7 +200,7 @@ const watchTimeSubtitle = ref('所有剧集总计')
 /** 当前选中的剧集索引，-1 表示全局汇总 */
 const selectedEpisodeIndex = ref(-1)
 
-// 深度分析数据（失败时保持 null，静默降级）
+// 深度分析数据：请求失败时保持为 null，在界面上做降级展示；错误日志仍由全局 axios 拦截器统一处理
 const behaviorData = ref<EpisodeBehaviorAnalysis | null>(null)
 const lifecycleData = ref<LifecycleGrowthData | null>(null)
 const competitiveData = ref<CompetitiveLandscapeData | null>(null)
