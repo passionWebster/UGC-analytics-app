@@ -216,8 +216,54 @@ class AnalyticsService:
             result.sort(key=lambda x: x['favorites'], reverse=True)
         elif sort_by == "rating":
             result.sort(key=lambda x: x['rating'] or 0, reverse=True)
-        
-        return result[:limit]
+
+        sorted_animes = result
+
+        # 分层随机抽样算法（Tiered Random Sampling）
+        if len(sorted_animes) <= limit:
+            return sorted_animes
+
+        total = len(sorted_animes)
+
+        # 划分三个梯队
+        tier1_size = max(5, math.ceil(total * 0.10))
+        tier2_size = max(15, math.ceil(total * 0.20))
+
+        tier1 = sorted_animes[:tier1_size]
+        tier2 = sorted_animes[tier1_size:tier1_size + tier2_size]
+        tier3 = sorted_animes[tier1_size + tier2_size:]
+
+        # 各梯队抽取数量
+        n1 = math.ceil(limit * 0.40)
+        n2 = math.ceil(limit * 0.40)
+        n3 = limit - n1 - n2
+
+        # 从各梯队随机抽样（不超过各梯队大小）
+        sample1 = random.sample(tier1, min(n1, len(tier1)))
+        sample2 = random.sample(tier2, min(n2, len(tier2)))
+        sample3 = random.sample(tier3, min(n3, len(tier3))) if tier3 else []
+
+        selected = sample1 + sample2 + sample3
+
+        # 若总数不足 limit，从未被选中的剩余数据中顺序补充
+        if len(selected) < limit:
+            selected_ids = {a['season_id'] for a in selected}
+            for anime in sorted_animes:
+                if len(selected) >= limit:
+                    break
+                if anime['season_id'] not in selected_ids:
+                    selected.append(anime)
+                    selected_ids.add(anime['season_id'])
+
+        # 按 sort_by 字段再次降序排序后返回
+        if sort_by == "views":
+            selected.sort(key=lambda x: x['views'], reverse=True)
+        elif sort_by == "favorites":
+            selected.sort(key=lambda x: x['favorites'], reverse=True)
+        elif sort_by == "rating":
+            selected.sort(key=lambda x: x['rating'] or 0, reverse=True)
+
+        return selected[:limit]
     
     def get_statistics_overview(self) -> Dict[str, Any]:
         """
