@@ -11,6 +11,7 @@ import os
 from .database import init_database, engine
 from .config import settings
 from .routers import auth, analytics, ai, crawler
+from .scheduler import create_scheduler
 
 
 # 创建 FastAPI 应用实例
@@ -34,6 +35,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(auth.router)
 app.include_router(analytics.router)
+app.include_router(analytics.proxy_router)
 app.include_router(ai.router)
 app.include_router(crawler.router)
 
@@ -57,20 +59,12 @@ async def startup_event():
     # 初始化数据库
     init_database()
 
-    # 启动定时任务：每 4 小时刷新一次所有剧集在线人数
-    from apscheduler.schedulers.background import BackgroundScheduler
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(
-        _run_update_online_viewers,
-        trigger='interval',
-        hours=4,
-        id='update_online_viewers_job',
-        replace_existing=True,
-    )
+    # 启动定时任务调度器（AsyncIOScheduler）
+    scheduler = create_scheduler()
     scheduler.start()
     # 将 scheduler 挂载到 app.state，以便 shutdown 时停止
     app.state.scheduler = scheduler
-    print("⏰ 定时任务已启动：每 4 小时刷新剧集在线人数")
+    print("⏰ 定时任务已启动：每 4 小时刷新剧集在线人数；每月 1 日 2:00 生成月度快照")
     
     print(f"✅ 服务器启动成功")
     print(f"📖 API 文档: http://{settings.host}:{settings.port}/api/docs")
