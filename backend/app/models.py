@@ -86,7 +86,7 @@ class DailyStats(SQLModel, table=True):
 
 class EpisodeStats(SQLModel, table=True):
     """
-    单集统计表 - 存储每一集的详细数据
+    单集统计表 - 存储每一集的详细数据，包含完整互动指标
     """
     __tablename__ = "episode_stats"
     
@@ -96,6 +96,12 @@ class EpisodeStats(SQLModel, table=True):
     bvid: str = Field(max_length=20, index=True)  # B站视频 BV 号
     cid: str = Field(max_length=20)  # 弹幕 CID
     views: Optional[int] = Field(default=None)  # 播放量
+    danmaku: Optional[int] = Field(default=None)  # 弹幕数
+    reply: Optional[int] = Field(default=None)  # 评论数
+    favorite: Optional[int] = Field(default=None)  # 收藏数
+    coin: Optional[int] = Field(default=None)  # 投币数
+    share: Optional[int] = Field(default=None)  # 分享数
+    like: Optional[int] = Field(default=None)  # 点赞数
     online_viewers: Optional[int] = Field(default=None)  # 当前在线人数
     updated_at: datetime = Field(default_factory=datetime.now)
 
