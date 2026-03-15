@@ -552,6 +552,62 @@ class BilibiliBangumiCrawler:
         
         return None
 
+    def fetch_and_save_episodes(self, season_id: int) -> bool:
+        """
+        通过 B站 API 抓取指定番剧的分集信息并存入数据库
+
+        Args:
+            season_id: 番剧 season_id
+
+        Returns:
+            B站 API 成功返回分集数据则返回 True，否则返回 False
+        """
+        print(f"🔍 正在从 B站 抓取 season_id={season_id} 的分集数据...")
+        details = self.get_anime_details(season_id)
+        if not details or not details.get('episodes'):
+            print(f"❌ 未能获取 season_id={season_id} 的分集数据")
+            return False
+
+        episodes = details['episodes']
+        print(f"  -> 找到 {len(episodes)} 集，正在写入数据库...")
+        try:
+            saved_count = 0
+            for episode in episodes:
+                bvid = episode.get('bvid', '')
+                cid = str(episode.get('cid', ''))
+                if not bvid or not cid:
+                    continue
+
+                ep_title = (
+                    episode.get('long_title')
+                    or episode.get('title')
+                    or f'第{episode.get("index", "")}集'
+                )
+
+                existing_ep = self.session.exec(
+                    select(EpisodeStats).where(EpisodeStats.bvid == bvid)
+                ).first()
+
+                if not existing_ep:
+                    new_ep = EpisodeStats(
+                        season_id=season_id,
+                        episode_title=ep_title,
+                        bvid=bvid,
+                        cid=cid,
+                        views=None,
+                        online_viewers=None,
+                    )
+                    self.session.add(new_ep)
+                    saved_count += 1
+
+            self.session.commit()
+            print(f"  ✅ 已写入 {saved_count} 条分集记录 (season_id={season_id})")
+            return True
+        except Exception as e:
+            print(f"❌ 写入分集数据失败: {e}")
+            self.session.rollback()
+            return False
+
     def get_online_viewers(self, bvid: str, cid: str) -> Optional[int]:
         """
         获取指定单集的当前在线观看人数
