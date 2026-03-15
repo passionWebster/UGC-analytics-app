@@ -3,6 +3,10 @@
 数据分析服务
 提供各种数据查询和分析功能
 """
+import json
+import math
+import random
+from itertools import combinations
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from sqlmodel import Session, select, func, and_
@@ -44,7 +48,6 @@ class AnalyticsService:
                 .limit(1)
             ).first()
             
-            import json
             result.append({
                 'season_id': anime.season_id,
                 'title': anime.title,
@@ -84,7 +87,6 @@ class AnalyticsService:
             .limit(1)
         ).first()
         
-        import json
         return {
             'season_id': anime.season_id,
             'title': anime.title,
@@ -120,7 +122,6 @@ class AnalyticsService:
                 .limit(1)
             ).first()
             
-            import json
             result.append({
                 'season_id': anime.season_id,
                 'title': anime.title,
@@ -179,7 +180,6 @@ class AnalyticsService:
         for anime in animes:
             # 风格筛选
             if styles:
-                import json
                 anime_styles = json.loads(anime.styles) if anime.styles else []
                 if not any(style in anime_styles for style in styles):
                     continue
@@ -197,7 +197,6 @@ class AnalyticsService:
                 .limit(1)
             ).first()
             
-            import json
             result.append({
                 'season_id': anime.season_id,
                 'title': anime.title,
@@ -318,7 +317,6 @@ class AnalyticsService:
         animes = self.session.exec(query).all()
         
         style_count = {}
-        import json
         for anime in animes:
             if anime.styles:
                 styles = json.loads(anime.styles)
@@ -399,3 +397,235 @@ class AnalyticsService:
             }
             for i, stat in enumerate(stats)
         ]
+
+    def get_reputation_popularity_chart(self, areas: List[str] = None) -> List[Dict]:
+        """
+        获取口碑与热度散点图数据
+
+        获取番剧的评分、追番数、播放量和名称，用于绘制散点图。
+        为防止数据点重叠，给评分加上微小的随机抖动值。
+
+        Args:
+            areas: 地区筛选列表（如 ["国内", "日本"]），None 表示全部
+
+        Returns:
+            散点图数据列表，每项包含 title、rating、favorites、views 字段
+        """
+        query = select(Anime)
+        if areas:
+            query = query.where(Anime.area.in_(areas))
+        animes = self.session.exec(query).all()
+
+        result = []
+        for anime in animes:
+            if not anime.rating:
+                continue
+
+            latest_stats = self.session.exec(
+                select(DailyStats)
+                .where(DailyStats.season_id == anime.season_id)
+                .order_by(desc(DailyStats.date))
+                .limit(1)
+            ).first()
+
+            favorites = latest_stats.favorites if latest_stats else 0
+            views = latest_stats.views if latest_stats else 0
+
+            if not favorites:
+                continue
+
+            jitter = random.uniform(-0.05, 0.05)
+            result.append({
+                'title': anime.title,
+                'rating': anime.rating + jitter,
+                'ratingRaw': anime.rating,
+                'favorites': favorites,
+                'views': views,
+                'area': anime.area,
+            })
+
+        return result
+
+    def get_preference_difference_chart(self, region: str = "国内") -> List[Dict]:
+        """
+        获取地区偏好差异图数据
+
+        计算特定地区对各风格的偏好指数（地区平均追番数 / 全球平均追番数）。
+
+        Args:
+            region: 地区名称（如 "国内"、"日本"），默认 "国内"
+
+        Returns:
+            偏好指数列表，每项包含 style、preferenceIndex、regionCount、globalCount 字段
+        """
+        animes = self.session.exec(select(Anime)).all()
+
+        # 为每部番剧预取最新追番数
+        favorites_map: Dict[int, int] = {}
+        for anime in animes:
+            latest_stats = self.session.exec(
+                select(DailyStats)
+                .where(DailyStats.season_id == anime.season_id)
+                .order_by(desc(DailyStats.date))
+                .limit(1)
+            ).first()
+            favorites_map[anime.season_id] = latest_stats.favorites if latest_stats else 0
+
+        # 统计全局及地区各风格的追番总数与番剧数
+        global_style_data: Dict[str, List[int]] = {}
+        region_style_data: Dict[str, List[int]] = {}
+
+        for anime in animes:
+            if not anime.styles:
+                continue
+            styles = json.loads(anime.styles)
+            fav = favorites_map.get(anime.season_id, 0)
+            for style in styles:
+                global_style_data.setdefault(style, []).append(fav)
+                if anime.area == region:
+                    region_style_data.setdefault(style, []).append(fav)
+
+        result = []
+        for style, global_favs in global_style_data.items():
+            region_favs = region_style_data.get(style, [])
+            if len(region_favs) < 3:
+                continue
+            global_avg = sum(global_favs) / len(global_favs)
+            if not global_avg:
+                continue
+            region_avg = sum(region_favs) / len(region_favs)
+            preference_index = region_avg / global_avg
+            result.append({
+                'style': style,
+                'preferenceIndex': round(preference_index, 4),
+                'regionCount': len(region_favs),
+                'globalCount': len(global_favs),
+            })
+
+        result.sort(key=lambda x: x['preferenceIndex'], reverse=True)
+        return result
+
+    def get_reputation_heat_index_chart(
+        self,
+        season: str = None,
+        category: str = None,
+    ) -> List[Dict]:
+        """
+        获取口碑热度指数图数据
+
+        计算每部番剧的综合质量分：rating * log10(favorites) * log10(views)，
+        返回前 15 名。
+
+        Args:
+            season: 季节筛选（spring/summer/autumn/winter）
+            category: 风格/类型筛选
+
+        Returns:
+            前 15 名番剧列表，每项包含 title、qualityScore、rating、favorites、views 字段
+        """
+        SEASON_MONTH_MAP = {
+            'spring': '04',
+            'summer': '07',
+            'autumn': '10',
+            'winter': '01',
+        }
+
+        animes = self.session.exec(select(Anime)).all()
+
+        result = []
+        for anime in animes:
+            if not anime.rating:
+                continue
+
+            # 季节筛选
+            if season and season in SEASON_MONTH_MAP:
+                month_suffix = SEASON_MONTH_MAP[season]
+                if not (anime.release_date and anime.release_date.endswith(f'-{month_suffix}')):
+                    continue
+
+            # 风格（类型）筛选
+            if category:
+                anime_styles = json.loads(anime.styles) if anime.styles else []
+                if category not in anime_styles:
+                    continue
+
+            latest_stats = self.session.exec(
+                select(DailyStats)
+                .where(DailyStats.season_id == anime.season_id)
+                .order_by(desc(DailyStats.date))
+                .limit(1)
+            ).first()
+
+            favorites = latest_stats.favorites if latest_stats else 0
+            views = latest_stats.views if latest_stats else 0
+
+            if not favorites or not views:
+                continue
+
+            quality_score = anime.rating * math.log10(favorites) * math.log10(views)
+            result.append({
+                'title': anime.title,
+                'qualityScore': round(quality_score, 4),
+                'rating': anime.rating,
+                'favorites': favorites,
+                'views': views,
+                'area': anime.area,
+                'cover': anime.cover,
+            })
+
+        result.sort(key=lambda x: x['qualityScore'], reverse=True)
+        return result[:15]
+
+    def get_popular_style_combination_chart(self) -> List[Dict]:
+        """
+        获取热门风格组合图数据
+
+        遍历所有番剧的风格标签，统计所有两两组合的总追番数和包含番剧数，
+        过滤掉番剧数 < 5 的组合，按平均追番数倒序，返回前 20 个组合及代表番剧。
+
+        Returns:
+            前 20 个风格组合列表，每项包含 combination、totalFavorites、animeCount、
+            avgFavorites、representativeAnimes 字段
+        """
+        animes = self.session.exec(select(Anime)).all()
+
+        combo_data: Dict[str, Dict] = {}
+
+        for anime in animes:
+            if not anime.styles:
+                continue
+            styles = json.loads(anime.styles)
+            if len(styles) < 2:
+                continue
+
+            latest_stats = self.session.exec(
+                select(DailyStats)
+                .where(DailyStats.season_id == anime.season_id)
+                .order_by(desc(DailyStats.date))
+                .limit(1)
+            ).first()
+            fav = latest_stats.favorites if latest_stats else 0
+
+            for s1, s2 in combinations(sorted(styles), 2):
+                key = f"{s1} + {s2}"
+                if key not in combo_data:
+                    combo_data[key] = {'totalFavorites': 0, 'animes': []}
+                combo_data[key]['totalFavorites'] += fav
+                combo_data[key]['animes'].append(anime.title)
+
+        result = []
+        for combo, data in combo_data.items():
+            anime_count = len(data['animes'])
+            if anime_count < 5:
+                continue
+            avg_favorites = data['totalFavorites'] / anime_count
+            result.append({
+                'combination': combo,
+                'totalFavorites': data['totalFavorites'],
+                'animeCount': anime_count,
+                'avgFavorites': round(avg_favorites, 2),
+                'representativeAnimes': data['animes'][:5],
+            })
+
+        result.sort(key=lambda x: x['avgFavorites'], reverse=True)
+        return result[:20]
