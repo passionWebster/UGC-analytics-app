@@ -112,7 +112,7 @@
               class="rank-item"
             >
               <div class="rank-number">{{ index + 1 }}</div>
-              <img :src="anime.cover" :alt="anime.title" class="rank-cover" />
+              <img :src="getProxiedImageUrl(anime)" :alt="anime.title" class="rank-cover" />
               <div class="rank-info">
                 <div class="rank-title">{{ anime.title }}</div>
                 <div class="rank-stats">
@@ -175,6 +175,7 @@ import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { useAnalyticsStore } from '@/stores/analytics'
 import type { AnimeData } from '@/api/analytics'
+import { getProxiedImageUrl } from '@/utils/imageProxy'
 
 const router = useRouter()
 
