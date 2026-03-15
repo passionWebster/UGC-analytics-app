@@ -397,8 +397,8 @@ class AnalyticsService:
         """
         获取番剧的剧集统计数据
 
-        优先从 EpisodeStats 表中返回真实数据；若为空，则以 DailyStats 历史记录
-        作为代理，模拟剧集数据供图表展示。
+        优先从 EpisodeStats 表中返回真实数据；若为空，先实时抓取并入库，
+        再次查询后依然为空才以 DailyStats 历史记录作为代理数据返回。
 
         Args:
             season_id: 番剧 ID
@@ -406,12 +406,26 @@ class AnalyticsService:
         Returns:
             剧集数据列表，每项包含 title、views、peak_time、peak_online 字段
         """
+        from .scraper import BilibiliBangumiCrawler
+
         # 优先返回真实剧集数据
         episodes = self.session.exec(
             select(EpisodeStats)
             .where(EpisodeStats.season_id == season_id)
             .order_by(EpisodeStats.id)
         ).all()
+
+        if not episodes:
+            # 数据库中无分集数据，尝试实时抓取并入库
+            crawler = BilibiliBangumiCrawler(self.session)
+            crawler.fetch_and_save_episodes(season_id)
+
+            # 抓取完成后再次查询
+            episodes = self.session.exec(
+                select(EpisodeStats)
+                .where(EpisodeStats.season_id == season_id)
+                .order_by(EpisodeStats.id)
+            ).all()
 
         if episodes:
             return [
