@@ -43,7 +43,7 @@
           @click="handleAnimeClick(anime)"
         >
           <div class="anime-cover">
-            <img :src="anime.cover || '/placeholder.jpg'" :alt="anime.title" />
+            <img :src="getProxiedImageUrl(anime) || '/placeholder.jpg'" :alt="anime.title" />
             <div class="anime-overlay">
               <div class="anime-stats">
                 <span><i class="fas fa-play-circle"></i> {{ formatNumber(anime.views) }}</span>
@@ -85,6 +85,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { getRankings, type AnimeData } from '@/api/analytics'
+import { getProxiedImageUrl } from '@/utils/imageProxy'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 
