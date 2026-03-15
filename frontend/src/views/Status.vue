@@ -1,7 +1,7 @@
 <template>
   <div class="status-view">
     <!-- 搜索区域 -->
-    <div class="row mb-3">
+    <div class="row mb-4">
       <div class="col-md-8 mx-auto">
         <div class="input-group">
           <input
@@ -26,68 +26,104 @@
       </div>
     </div>
 
-    <!-- 统计卡片 -->
-    <div v-if="animeData" class="row mb-3">
+    <!-- 番剧标题与生命周期勋章 -->
+    <div v-if="animeData" class="anime-header mb-4">
+      <h3 class="anime-title">
+        {{ animeData.title }}
+        <span
+          v-for="badge in badges"
+          :key="badge.key"
+          :class="['lifecycle-badge', badge.className]"
+        >{{ badge.label }}</span>
+      </h3>
+      <p class="anime-meta">
+        <span v-if="animeData.area" class="meta-tag">{{ animeData.area }}</span>
+        <span v-if="animeData.release_date" class="meta-tag">{{ animeData.release_date }}</span>
+        <span v-if="animeData.rating" class="meta-tag rating">⭐ {{ animeData.rating }}</span>
+      </p>
+    </div>
+
+    <!-- 统计卡片（metric-card 风格，与 Home.vue 统一） -->
+    <div v-if="animeData" class="row mb-4">
+      <!-- 追番人数 - 粉红渐变 -->
       <div class="col-md-3 mb-3">
-        <div class="card text-center p-2 h-100 stat-card">
-          <div class="stat-icon bg-primary">
-            <i class="fas fa-heart"></i>
+        <div class="metric-card pink">
+          <div class="metric-icon"><i class="fas fa-heart"></i></div>
+          <div class="metric-content">
+            <h5>追番人数</h5>
+            <p class="metric-value">{{ formatNumber(animeData.favorites) }}</p>
+            <p class="metric-sub">Favorites</p>
           </div>
-          <h6 class="card-title text-muted mt-2 mb-1">追番人数</h6>
-          <p class="display-6 mb-0 text-primary">{{ formatNumber(animeData.favorites) }}</p>
         </div>
       </div>
+      <!-- 总播放量 - 蓝色渐变 -->
       <div class="col-md-3 mb-3">
-        <div class="card text-center p-2 h-100 stat-card">
-          <div class="stat-icon bg-success">
-            <i class="fas fa-play-circle"></i>
+        <div class="metric-card blue">
+          <div class="metric-icon"><i class="fas fa-play-circle"></i></div>
+          <div class="metric-content">
+            <h5>总播放量</h5>
+            <p class="metric-value">{{ formatNumber(animeData.views) }}</p>
+            <p class="metric-sub">Total Views</p>
           </div>
-          <h6 class="card-title text-muted mt-2 mb-1">播放数量</h6>
-          <p class="display-6 mb-0 text-success">{{ formatNumber(animeData.views) }}</p>
         </div>
       </div>
+      <!-- 剧集数量 - 黄色渐变 -->
       <div class="col-md-3 mb-3">
-        <div class="card text-center p-2 h-100 stat-card">
-          <div class="stat-icon bg-warning">
-            <i class="fas fa-film"></i>
+        <div class="metric-card yellow">
+          <div class="metric-icon"><i class="fas fa-film"></i></div>
+          <div class="metric-content">
+            <h5>剧集数量</h5>
+            <p class="metric-value">{{ episodes.length || 0 }}</p>
+            <p class="metric-sub">Episodes</p>
           </div>
-          <h6 class="card-title text-muted mt-2 mb-1">剧集数量</h6>
-          <p class="display-6 mb-0 text-warning">{{ episodes.length || 0 }}</p>
         </div>
       </div>
+      <!-- 平均播放 - 紫色渐变 -->
       <div class="col-md-3 mb-3">
-        <div class="card text-center p-2 h-100 stat-card">
-          <div class="stat-icon bg-info">
-            <i class="fas fa-chart-line"></i>
+        <div class="metric-card purple">
+          <div class="metric-icon"><i class="fas fa-chart-line"></i></div>
+          <div class="metric-content">
+            <h5>平均播放</h5>
+            <p class="metric-value">{{ formatNumber(avgViews) }}</p>
+            <p class="metric-sub">Avg Views / Ep</p>
           </div>
-          <h6 class="card-title text-muted mt-2 mb-1">平均播放</h6>
-          <p class="display-6 mb-0 text-info">{{ formatNumber(avgViews) }}</p>
         </div>
       </div>
     </div>
 
-    <!-- 图表区域 -->
-    <div v-if="animeData" class="row graph-row mb-3">
-      <div class="col-md-6">
-        <div class="card p-2">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="card-title mb-0">播放量趋势</h5>
+    <!-- 图表行：播放趋势+留存 | 受众互动雷达 -->
+    <div v-if="animeData" class="row mb-4">
+      <!-- 播放趋势与留存分析（升级版：柱状图 + 留存折线叠加） -->
+      <div class="col-md-8 mb-3">
+        <div class="style-unified">
+          <div class="card-header-unified">
+            <h5>播放趋势 &amp; 留存率分析</h5>
             <small class="text-muted">点击柱子查看该集观看时间分布</small>
           </div>
-          <div class="chart-container">
-            <div ref="playTrendChart" style="height: 400px; width: 100%"></div>
-          </div>
+          <div ref="playTrendChart" style="height: 400px; width: 100%"></div>
         </div>
       </div>
-      <div class="col-md-6">
-        <div class="card p-2">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="card-title mb-0">观看时间分布</h5>
+      <!-- 受众硬核互动雷达图 -->
+      <div class="col-md-4 mb-3">
+        <div class="style-unified">
+          <div class="card-header-unified">
+            <h5>受众硬核互动雷达</h5>
+            <small class="text-muted">弹幕 / 评论 / 投币 / 点赞密度</small>
+          </div>
+          <div ref="radarChartRef" style="height: 400px; width: 100%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 观看时间分布 -->
+    <div v-if="animeData" class="row mb-4">
+      <div class="col-md-12">
+        <div class="style-unified">
+          <div class="card-header-unified">
+            <h5>观看时间分布</h5>
             <small class="text-muted">{{ watchTimeSubtitle }}</small>
           </div>
-          <div class="chart-container">
-            <div ref="watchTimeChart" style="height: 400px; width: 100%"></div>
-          </div>
+          <div ref="watchTimeChart" style="height: 280px; width: 100%"></div>
         </div>
       </div>
     </div>
@@ -95,37 +131,39 @@
     <!-- 剧集详情表格 -->
     <div v-if="showEpisodeDetails && episodes.length > 0" class="row">
       <div class="col-md-12">
-        <div class="card p-3">
-          <h5 class="card-title mb-3">
-            <i class="fas fa-list"></i> 剧集详情
-          </h5>
-          <div class="table-responsive">
-            <table class="table table-hover">
-              <thead>
-                <tr>
-                  <th>集数</th>
-                  <th>标题</th>
-                  <th>播放量</th>
-                  <th>观看高峰时段</th>
-                  <th>在线峰值</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="(episode, index) in episodes"
-                  :key="index"
-                  :class="{ 'table-active': selectedEpisodeIndex === index }"
-                  style="cursor: pointer"
-                  @click="selectEpisode(index)"
-                >
-                  <td>{{ index + 1 }}</td>
-                  <td>{{ episode.title || `第${index + 1}集` }}</td>
-                  <td>{{ formatNumber(episode.views) }}</td>
-                  <td>{{ episode.peakTime || '暂无数据' }}</td>
-                  <td>{{ episode.peakOnline ? formatNumber(episode.peakOnline) : '暂无数据' }}</td>
-                </tr>
-              </tbody>
-            </table>
+        <div class="style-unified">
+          <div class="card-header-unified">
+            <h5><i class="fas fa-list me-1"></i>剧集详情</h5>
+          </div>
+          <div class="p-3">
+            <div class="table-responsive">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>集数</th>
+                    <th>标题</th>
+                    <th>播放量</th>
+                    <th>观看高峰时段</th>
+                    <th>在线峰值</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(episode, index) in episodes"
+                    :key="index"
+                    :class="{ 'table-active': selectedEpisodeIndex === index }"
+                    style="cursor: pointer"
+                    @click="selectEpisode(index)"
+                  >
+                    <td>{{ index + 1 }}</td>
+                    <td>{{ episode.title || `第${index + 1}集` }}</td>
+                    <td>{{ formatNumber(episode.views) }}</td>
+                    <td>{{ episode.peakTime || '暂无数据' }}</td>
+                    <td>{{ episode.peakOnline ? formatNumber(episode.peakOnline) : '暂无数据' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -134,10 +172,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
-import { searchAnimes, getAnimeDetail, getAnimeEpisodes } from '@/api/analytics'
+import {
+  searchAnimes,
+  getAnimeDetail,
+  getAnimeEpisodes,
+  getEpisodeBehaviorAnalysis,
+  getLifecycleAnalysis,
+  getCompetitiveAnalysis,
+} from '@/api/analytics'
+import type {
+  EpisodeBehaviorAnalysis,
+  LifecycleGrowthData,
+  CompetitiveLandscapeData,
+} from '@/api/analytics'
 
 // ─── 状态管理 ───────────────────────────────────────────────────────────────
 const keyword = ref('')
@@ -150,13 +200,23 @@ const watchTimeSubtitle = ref('所有剧集总计')
 /** 当前选中的剧集索引，-1 表示全局汇总 */
 const selectedEpisodeIndex = ref(-1)
 
+// 深度分析数据：请求失败时保持为 null，在界面上做降级展示；错误日志仍由全局 axios 拦截器统一处理
+const behaviorData = ref<EpisodeBehaviorAnalysis | null>(null)
+const lifecycleData = ref<LifecycleGrowthData | null>(null)
+const competitiveData = ref<CompetitiveLandscapeData | null>(null)
+
 // ─── 图表 DOM 引用 ───────────────────────────────────────────────────────────
 const playTrendChart = ref<HTMLElement>()
 const watchTimeChart = ref<HTMLElement>()
+const radarChartRef = ref<HTMLElement>()
+
 let playTrendInstance: ECharts | null = null
 let watchTimeInstance: ECharts | null = null
+let radarInstance: ECharts | null = null
+
 let playTrendResizeObserver: ResizeObserver | null = null
 let watchTimeResizeObserver: ResizeObserver | null = null
+let radarResizeObserver: ResizeObserver | null = null
 
 // ─── 计算属性 ────────────────────────────────────────────────────────────────
 /** 剧集平均播放量 */
@@ -164,6 +224,38 @@ const avgViews = computed(() => {
   if (!episodes.value.length) return 0
   const total = episodes.value.reduce((sum, ep) => sum + (ep.views || 0), 0)
   return Math.round(total / episodes.value.length)
+})
+
+/**
+ * 动态计算番剧生命周期与霸榜勋章列表。
+ * 规则：
+ * - 🔥 黑马预警：日增播放峰值超过当前总播放量的 8%（爆发式增长信号）
+ * - 👑 霸榜神作：Top3 霸榜比例 ≥ 15%（长期统治力证明）
+ * - 💎 硬核神作：全剧平均投币率 ≥ 4%（观众真金白银认可）
+ */
+const badges = computed(() => {
+  const result: Array<{ key: string; label: string; className: string }> = []
+
+  // 黑马指数判断：峰值日增 / 总播放量 ≥ 8%（无播放量或播放量为 0 时跳过，避免除零误判）
+  const peakGrowth = lifecycleData.value?.peak_daily_growth ?? 0
+  const totalViews = (animeData.value?.views as number | undefined) ?? 0
+  if (peakGrowth > 0 && totalViews > 0 && peakGrowth / totalViews >= 0.08) {
+    result.push({ key: 'dark-horse', label: '🔥 黑马预警', className: 'badge-fire' })
+  }
+
+  // 霸榜神作判断：Top3 占比 ≥ 15%
+  const domTop3 = competitiveData.value?.dominance_top3
+  if (domTop3 !== null && domTop3 !== undefined && domTop3 >= 15) {
+    result.push({ key: 'champion', label: '👑 霸榜神作', className: 'badge-crown' })
+  }
+
+  // 硬核神作判断：平均投币率 ≥ 4%
+  const coinRate = behaviorData.value?.avg_coin_rate
+  if (coinRate !== null && coinRate !== undefined && coinRate >= 0.04) {
+    result.push({ key: 'hardcore', label: '💎 硬核神作', className: 'badge-diamond' })
+  }
+
+  return result
 })
 
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
@@ -176,12 +268,27 @@ const formatNumber = (num: number | undefined | null): string => {
 }
 
 /**
- * 根据剧集索引生成该集的 24 小时观看时间分布。
- * 由于后端暂无小时粒度数据，这里使用确定性算法：
- * 基于剧集播放量和索引生成可重现的分布曲线，模拟真实观看高峰（晚高峰 + 午休峰值）。
+ * 将互动率（coin/like/danmaku/reply 除以播放量的小数）转换为百分比数值。
+ * 例：0.023 → 2.3
+ */
+const toPercentage = (rate: number | null): number =>
+  parseFloat(((rate ?? 0) * 100).toFixed(2))
+
+/**
+ * 剧集 X 轴标签超过此数量时旋转标签，避免文字重叠。
+ */
+const LABEL_ROTATION_THRESHOLD = 12
+
+/**
+ * 标签旋转角度（度）。
+ */
+const LABEL_ROTATION_ANGLE = 45
+
+/**
+ * 根据剧集索引生成该集的 24 小时观看时间分布（确定性模拟算法）。
+ * 使用 season_id 与剧集索引作为伪随机种子，保证同一集每次渲染结果一致。
  */
 const generateWatchTimeData = (episodeIndex: number, baseViews: number): number[] => {
-  // 使用 season_id 与剧集索引作为伪随机种子，保证同一集每次渲染结果一致
   const seed = (animeData.value?.season_id ?? 0) * 100 + episodeIndex
   const pseudoRand = (offset: number): number => {
     const x = Math.sin(seed + offset) * 10000
@@ -189,11 +296,8 @@ const generateWatchTimeData = (episodeIndex: number, baseViews: number): number[
   }
   const scale = Math.max(baseViews / 1000, 100)
   return Array.from({ length: 24 }, (_, hour) => {
-    // 晚高峰 20-23 点
     const eveningPeak = hour >= 20 && hour <= 23 ? 0.8 + pseudoRand(hour) * 0.4 : 0
-    // 午休高峰 12-14 点
     const lunchPeak = hour >= 12 && hour <= 14 ? 0.5 + pseudoRand(hour + 50) * 0.3 : 0
-    // 基础波动
     const base = 0.1 + pseudoRand(hour + 100) * 0.2
     return Math.round((eveningPeak + lunchPeak + base) * scale)
   })
@@ -212,7 +316,6 @@ const handleSearch = async () => {
 
     if (response.list && response.list.length > 0) {
       const anime = response.list[0]
-      // 获取详细信息
       const detailResponse = await getAnimeDetail(anime.season_id)
       animeData.value = detailResponse.data || anime
       statusMessage.value = `找到番剧：${anime.title}`
@@ -225,16 +328,32 @@ const handleSearch = async () => {
         episodes.value = []
       }
 
+      // 并行获取深度分析数据（任一失败时静默降级，不影响主流程）
+      const [behaviorRes, lifecycleRes, competitiveRes] = await Promise.allSettled([
+        getEpisodeBehaviorAnalysis(anime.season_id),
+        getLifecycleAnalysis(anime.season_id),
+        getCompetitiveAnalysis(anime.season_id),
+      ])
+      behaviorData.value =
+        behaviorRes.status === 'fulfilled' ? (behaviorRes.value?.data ?? null) : null
+      lifecycleData.value =
+        lifecycleRes.status === 'fulfilled' ? (lifecycleRes.value?.data ?? null) : null
+      competitiveData.value =
+        competitiveRes.status === 'fulfilled' ? (competitiveRes.value?.data ?? null) : null
+
       selectedEpisodeIndex.value = -1
       watchTimeSubtitle.value = '所有剧集总计'
 
-      // 等待 DOM 更新后渲染图表
+      // 等待 DOM 更新后渲染所有图表
       await nextTick()
       renderCharts()
     } else {
       statusMessage.value = '未找到相关番剧'
       animeData.value = null
       episodes.value = []
+      behaviorData.value = null
+      lifecycleData.value = null
+      competitiveData.value = null
     }
   } catch (error) {
     console.error('搜索失败:', error)
@@ -248,12 +367,11 @@ const toggleEpisodeDetails = () => {
 
 // ─── 剧集选中交互 ────────────────────────────────────────────────────────────
 /**
- * 点击剧集行或柱子时，切换观看时间分布图为该集数据。
- * 若再次点击同一集，则还原为全局汇总视图。
+ * 点击剧集行或柱子时切换该集的观看时间分布图。
+ * 再次点击同一集则还原为全局汇总视图。
  */
 const selectEpisode = (index: number) => {
   if (selectedEpisodeIndex.value === index) {
-    // 取消选中，恢复全局汇总
     selectedEpisodeIndex.value = -1
     watchTimeSubtitle.value = '所有剧集总计'
   } else {
@@ -268,16 +386,18 @@ const selectEpisode = (index: number) => {
 const renderCharts = () => {
   renderPlayTrendChart()
   renderWatchTimeChart()
+  renderRadarChart()
 }
 
 /**
- * 渲染播放量趋势柱状图（每集播放量）。
- * 绑定 click 事件，点击柱子后更新右侧观看时间分布图。
+ * 渲染播放趋势与留存分析组合图（柱状图 + 留存折线叠加，双 Y 轴）。
+ * - 左轴柱状图：各集播放量
+ * - 右轴折线图：相对第1集的留存率（%），直观展示弃坑趋势
+ * 留存数据优先使用行为分析 API，降级方案使用剧集播放量估算。
  */
 const renderPlayTrendChart = () => {
   if (!playTrendChart.value) return
 
-  // 销毁旧实例
   if (playTrendInstance) {
     playTrendInstance.dispose()
     playTrendResizeObserver?.disconnect()
@@ -285,64 +405,261 @@ const renderPlayTrendChart = () => {
 
   playTrendInstance = echarts.init(playTrendChart.value)
 
-  const labels = episodes.value.length
-    ? episodes.value.map((_, i) => `第${i + 1}集`)
-    : ['暂无剧集数据']
-  const viewsData = episodes.value.length
-    ? episodes.value.map((ep) => ep.views || 0)
+  // 统一的数据源：优先使用行为分析按集数据，其次降级为 episodes
+  const engList = behaviorData.value?.engagement_by_episode ?? []
+  const useEngagementAsSource = Array.isArray(engList) && engList.length > 0
+  const baseList: Array<{ views?: number }> = useEngagementAsSource
+    ? engList
+    : episodes.value
+
+  const labels = baseList.length
+    ? baseList.map((_, i) => `第${i + 1}集`)
+    : ['暂无数据']
+  const viewsData = baseList.length
+    ? baseList.map((ep) => ep.views || 0)
     : [0]
+
+  // 计算逐集留存率：优先使用行为分析 API，其次用剧集播放量降级估算
+  let retentionData: (number | null)[] = []
+  if (useEngagementAsSource) {
+    const firstViews = engList[0]?.views || 1
+    retentionData = engList.map((ep) =>
+      ep.views ? parseFloat(((ep.views / firstViews) * 100).toFixed(1)) : null
+    )
+  } else if (episodes.value.length > 1) {
+    const firstViews = episodes.value[0]?.views || 1
+    retentionData = episodes.value.map((ep) =>
+      ep.views ? parseFloat(((ep.views / firstViews) * 100).toFixed(1)) : null
+    )
+  }
+  const hasRetention = retentionData.length > 0
 
   const option: echarts.EChartsOption = {
     tooltip: {
       trigger: 'axis',
+      axisPointer: { type: 'cross' },
       formatter: (params: any) => {
-        const d = params[0]
-        return `${d.name}<br/>播放量: ${formatNumber(d.value)}`
-      }
+        let html = `<b>${params[0].name}</b><br/>`
+        params.forEach((p: any) => {
+          if (p.seriesName === '播放量') {
+            html += `${p.marker}${p.seriesName}：${formatNumber(p.value)}<br/>`
+          } else {
+            html += `${p.marker}${p.seriesName}：${p.value !== null ? p.value + '%' : 'N/A'}<br/>`
+          }
+        })
+        return html
+      },
     },
+    legend: {
+      data: hasRetention ? ['播放量', '留存率'] : ['播放量'],
+      top: 5,
+    },
+    grid: { left: '3%', right: hasRetention ? '6%' : '4%', bottom: '15%', containLabel: true },
     xAxis: {
       type: 'category',
       data: labels,
-      axisLabel: { rotate: 45, interval: 0 }
+    axisLabel: { rotate: labels.length > LABEL_ROTATION_THRESHOLD ? LABEL_ROTATION_ANGLE : 0, interval: 0 },
     },
-    yAxis: {
-      type: 'value',
-      axisLabel: { formatter: (v: number) => formatNumber(v) }
-    },
+    yAxis: [
+      {
+        type: 'value',
+        name: '播放量',
+        axisLabel: { formatter: (v: number) => formatNumber(v) },
+      },
+      ...(hasRetention
+        ? [
+            {
+              type: 'value' as const,
+              name: '留存率',
+              min: 0,
+              max: 105,
+              axisLabel: { formatter: '{value}%' },
+            },
+          ]
+        : []),
+    ],
     series: [
       {
         name: '播放量',
         type: 'bar',
+        yAxisIndex: 0,
         data: viewsData,
         itemStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#83bff6' },
-            { offset: 1, color: '#188df0' }
-          ])
+            { offset: 0, color: '#4facfe' },
+            { offset: 1, color: '#00f2fe' },
+          ]),
         },
-        emphasis: { itemStyle: { color: '#188df0' } }
-      }
+        emphasis: {
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#2196F3' },
+              { offset: 1, color: '#00BCD4' },
+            ]),
+          },
+        },
+      },
+      ...(hasRetention
+        ? [
+            {
+              name: '留存率',
+              type: 'line' as const,
+              yAxisIndex: 1,
+              data: retentionData,
+              smooth: true,
+              symbol: 'circle',
+              symbolSize: 6,
+              lineStyle: { color: '#f5576c', width: 2.5 },
+              itemStyle: { color: '#f5576c' },
+              areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: 'rgba(245, 87, 108, 0.15)' },
+                  { offset: 1, color: 'rgba(245, 87, 108, 0.02)' },
+                ]),
+              },
+            },
+          ]
+        : []),
     ],
-    grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true }
   }
 
   playTrendInstance.setOption(option)
 
-  // 点击柱子时切换对应剧集的观看时间分布
+  // 仅在 episodes 数据可用且与柱状图数据长度匹配时，支持点击查看单集分布
+  const canSelectEpisode =
+    Array.isArray(episodes.value) &&
+    episodes.value.length > 0 &&
+    episodes.value.length >= (Array.isArray(viewsData) ? viewsData.length : 0)
+
   playTrendInstance.on('click', (params: any) => {
+    if (!canSelectEpisode) return
     if (params.componentType === 'series') {
-      selectEpisode(params.dataIndex)
+      const index = params.dataIndex
+      if (typeof index === 'number' && index >= 0 && index < episodes.value.length) {
+        selectEpisode(index)
+      }
     }
   })
 
-  // 使用 ResizeObserver 实现响应式缩放
   playTrendResizeObserver = new ResizeObserver(() => playTrendInstance?.resize())
   playTrendResizeObserver.observe(playTrendChart.value)
 }
 
 /**
+ * 渲染受众硬核互动雷达图。
+ * 四个维度（每100次播放的互动次数，以百分比展示）：
+ * - 弹幕密度：avg_danmaku_rate × 100
+ * - 评论密度：avg_reply_rate × 100
+ * - 投币率：avg_coin_rate × 100
+ * - 点赞率：avg_like_rate × 100
+ * 若暂无行为分析数据则展示占位提示。
+ */
+const renderRadarChart = () => {
+  if (!radarChartRef.value) return
+
+  if (radarInstance) {
+    radarInstance.dispose()
+    radarResizeObserver?.disconnect()
+  }
+
+  radarInstance = echarts.init(radarChartRef.value)
+
+  // 暂无行为数据时展示占位图
+  if (!behaviorData.value) {
+    radarInstance.setOption({
+      title: {
+        text: '暂无互动数据',
+        subtext: '需要剧集级统计数据',
+        left: 'center',
+        top: 'center',
+        textStyle: { color: '#9ca3af', fontSize: 16 },
+        subtextStyle: { color: '#d1d5db' },
+      },
+    })
+    radarResizeObserver = new ResizeObserver(() => radarInstance?.resize())
+    radarResizeObserver.observe(radarChartRef.value)
+    return
+  }
+
+  // 各率转换为百分比（每100次播放的互动次数），复用 toPercentage 工具函数
+  const danmakuPct = toPercentage(behaviorData.value.avg_danmaku_rate)
+  const replyPct   = toPercentage(behaviorData.value.avg_reply_rate)
+  const coinPct    = toPercentage(behaviorData.value.avg_coin_rate)
+  const likePct    = toPercentage(behaviorData.value.avg_like_rate)
+
+  // 计算各维度最大值：取数据值的 2 倍，不低于兜底下限，确保雷达图形始终可见
+  const computeDynamicMax = (v: number, floor: number) => Math.max(v * 2.0, floor)
+
+  const option: echarts.EChartsOption = {
+    tooltip: {
+      trigger: 'item',
+      formatter: (params: any) => {
+        const [d, r, c, l] = params.value as number[]
+        return [
+          `<b>${params.name}</b>`,
+          `弹幕密度：${d}%`,
+          `评论密度：${r}%`,
+          `投币率：${c}%`,
+          `点赞率：${l}%`,
+        ].join('<br/>')
+      },
+    },
+    radar: {
+      indicator: [
+        { name: '弹幕密度', max: computeDynamicMax(danmakuPct, 5) },
+        { name: '评论密度', max: computeDynamicMax(replyPct,   2) },
+        { name: '投币率',   max: computeDynamicMax(coinPct,    5) },
+        { name: '点赞率',   max: computeDynamicMax(likePct,   15) },
+      ],
+      radius: '62%',
+      center: ['50%', '55%'],
+      splitNumber: 4,
+      axisName: { color: '#374151', fontSize: 13, fontWeight: 500 },
+      splitArea: {
+        areaStyle: {
+          color: [
+            'rgba(79, 172, 254, 0.03)',
+            'rgba(79, 172, 254, 0.07)',
+            'rgba(79, 172, 254, 0.11)',
+            'rgba(79, 172, 254, 0.16)',
+          ],
+        },
+      },
+      splitLine: { lineStyle: { color: 'rgba(79, 172, 254, 0.2)' } },
+      axisLine: { lineStyle: { color: 'rgba(79, 172, 254, 0.25)' } },
+    },
+    series: [
+      {
+        type: 'radar',
+        data: [
+          {
+            value: [danmakuPct, replyPct, coinPct, likePct],
+            name: animeData.value?.title || '当前番剧',
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: 'rgba(79, 172, 254, 0.45)' },
+                { offset: 1, color: 'rgba(0, 242, 254, 0.1)' },
+              ]),
+            },
+            lineStyle: { color: '#4facfe', width: 2.5 },
+            itemStyle: { color: '#4facfe' },
+            symbol: 'circle',
+            symbolSize: 6,
+          },
+        ],
+      },
+    ],
+  }
+
+  radarInstance.setOption(option)
+
+  radarResizeObserver = new ResizeObserver(() => radarInstance?.resize())
+  radarResizeObserver.observe(radarChartRef.value)
+}
+
+/**
  * 渲染观看时间分布折线图（24 小时分布）。
- * 当选中特定剧集时展示该集估算数据，否则展示全局汇总。
+ * 选中特定剧集时展示该集的估算分布，否则展示全剧汇总。
  */
 const renderWatchTimeChart = () => {
   if (!watchTimeChart.value) return
@@ -358,11 +675,9 @@ const renderWatchTimeChart = () => {
 
   let watchData: number[]
   if (selectedEpisodeIndex.value >= 0 && episodes.value.length > 0) {
-    // 展示所选剧集的估算分布
     const ep = episodes.value[selectedEpisodeIndex.value]
     watchData = generateWatchTimeData(selectedEpisodeIndex.value, ep.views || 1000)
   } else {
-    // 全局汇总：将所有剧集分布叠加
     const aggregated = Array(24).fill(0)
     if (episodes.value.length > 0) {
       episodes.value.forEach((ep, idx) => {
@@ -371,7 +686,6 @@ const renderWatchTimeChart = () => {
       })
       watchData = aggregated
     } else {
-      // 无剧集数据时使用通用模式
       watchData = generateWatchTimeData(0, 1000)
     }
   }
@@ -382,17 +696,10 @@ const renderWatchTimeChart = () => {
       formatter: (params: any) => {
         const d = params[0]
         return `${d.name}<br/>观看人数: ${Math.round(d.value)}`
-      }
+      },
     },
-    xAxis: {
-      type: 'category',
-      data: hours,
-      boundaryGap: false
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { formatter: '{value}' }
-    },
+    xAxis: { type: 'category', data: hours, boundaryGap: false },
+    yAxis: { type: 'value', axisLabel: { formatter: '{value}' } },
     series: [
       {
         name: '观看人数',
@@ -402,33 +709,31 @@ const renderWatchTimeChart = () => {
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(88, 160, 253, 0.5)' },
-            { offset: 1, color: 'rgba(88, 160, 253, 0.1)' }
-          ])
+            { offset: 1, color: 'rgba(88, 160, 253, 0.1)' },
+          ]),
         },
         lineStyle: { color: '#58a0fd', width: 2 },
-        itemStyle: { color: '#58a0fd' }
-      }
+        itemStyle: { color: '#58a0fd' },
+      },
     ],
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true }
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
   }
 
   watchTimeInstance.setOption(option)
 
-  // 使用 ResizeObserver 实现响应式缩放
   watchTimeResizeObserver = new ResizeObserver(() => watchTimeInstance?.resize())
   watchTimeResizeObserver.observe(watchTimeChart.value)
 }
 
 // ─── 生命周期 ────────────────────────────────────────────────────────────────
-onMounted(() => {
-  // window.resize 兜底（ResizeObserver 已覆盖大多数场景）
-})
-
 onUnmounted(() => {
+  // 断开所有 ResizeObserver，销毁所有 ECharts 实例，防止内存泄漏
   playTrendResizeObserver?.disconnect()
   watchTimeResizeObserver?.disconnect()
+  radarResizeObserver?.disconnect()
   playTrendInstance?.dispose()
   watchTimeInstance?.dispose()
+  radarInstance?.dispose()
 })
 </script>
 
@@ -437,56 +742,158 @@ onUnmounted(() => {
   padding: 20px;
 }
 
-.stat-card {
-  position: relative;
-  overflow: hidden;
-  border-radius: 10px;
-  border: none;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+/* ── 番剧标题与勋章区域 ── */
+.anime-header {
+  border-left: 4px solid #4facfe;
+  padding-left: 1rem;
+}
+
+.anime-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.anime-meta {
+  margin: 0;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.meta-tag {
+  background: #f3f4f6;
+  color: #374151;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+}
+
+.meta-tag.rating {
+  background: linear-gradient(135deg, #fad0c4 0%, #ffd1ff 100%);
+  color: #6b21a8;
+}
+
+/* ── 生命周期与霸榜勋章 ── */
+.lifecycle-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.badge-fire {
+  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+  color: #9d174d;
+}
+
+.badge-crown {
+  background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+  color: #78350f;
+}
+
+.badge-diamond {
+  background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
+  color: #1e3a5f;
+}
+
+/* ── Metric 卡片（与 Home.vue 统一设计语言） ── */
+.metric-card {
+  padding: 1.5rem;
+  border-radius: 12px;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  height: 100%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-.stat-card:hover {
+.metric-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
 }
 
-.stat-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
+.metric-card.pink {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.metric-card.blue {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.metric-card.yellow {
+  background: linear-gradient(135deg, #fad0c4 0%, #ffd1ff 100%);
+  color: #6b21a8;
+}
+
+.metric-card.purple {
+  background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);
+}
+
+.metric-icon {
+  font-size: 2.5rem;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.metric-content h5 {
+  margin: 0;
+  font-size: 0.88rem;
+  opacity: 0.9;
+  font-weight: 500;
+}
+
+.metric-value {
+  margin: 0.4rem 0 0.2rem;
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.metric-sub {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+/* ── 统一图表容器（style-unified） ── */
+.style-unified {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  height: 100%;
+}
+
+.card-header-unified {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  margin: 0 auto;
-  font-size: 24px;
-  color: white;
+  padding: 0.9rem 1.25rem;
+  background: transparent;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-.card {
-  border-radius: 10px;
-  border: none;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+.card-header-unified h5 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
 }
 
-.chart-container {
-  min-height: 400px;
-}
-
-.table-responsive {
-  max-height: 600px;
-  overflow-y: auto;
-}
-
-.table-hover tbody tr:hover {
-  background-color: rgba(0, 123, 255, 0.05);
-  cursor: pointer;
-}
-
-.table-active {
-  background-color: rgba(24, 141, 240, 0.1) !important;
-}
-
+/* ── 搜索栏 ── */
 .form-control-lg {
   border-radius: 8px 0 0 8px;
 }
@@ -501,13 +908,28 @@ onUnmounted(() => {
   font-size: 0.9rem;
 }
 
+/* ── 剧集表格 ── */
+.table-responsive {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.table-hover tbody tr:hover {
+  background-color: rgba(79, 172, 254, 0.07);
+  cursor: pointer;
+}
+
+.table-active {
+  background-color: rgba(79, 172, 254, 0.12) !important;
+}
+
 @media (max-width: 768px) {
-  .col-md-6 {
-    margin-bottom: 1rem;
+  .anime-title {
+    font-size: 1.2rem;
   }
 
-  .display-6 {
-    font-size: 1.5rem;
+  .metric-value {
+    font-size: 1.4rem;
   }
 }
 </style>
