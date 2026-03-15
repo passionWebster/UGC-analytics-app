@@ -405,17 +405,23 @@ const renderPlayTrendChart = () => {
 
   playTrendInstance = echarts.init(playTrendChart.value)
 
-  const labels = episodes.value.length
-    ? episodes.value.map((_, i) => `第${i + 1}集`)
+  // 统一的数据源：优先使用行为分析按集数据，其次降级为 episodes
+  const engList = behaviorData.value?.engagement_by_episode ?? []
+  const useEngagementAsSource = Array.isArray(engList) && engList.length > 0
+  const baseList: Array<{ views?: number }> = useEngagementAsSource
+    ? engList
+    : episodes.value
+
+  const labels = baseList.length
+    ? baseList.map((_, i) => `第${i + 1}集`)
     : ['暂无数据']
-  const viewsData = episodes.value.length
-    ? episodes.value.map((ep) => ep.views || 0)
+  const viewsData = baseList.length
+    ? baseList.map((ep) => ep.views || 0)
     : [0]
 
   // 计算逐集留存率：优先使用行为分析 API，其次用剧集播放量降级估算
   let retentionData: (number | null)[] = []
-  if (behaviorData.value?.engagement_by_episode?.length) {
-    const engList = behaviorData.value.engagement_by_episode
+  if (useEngagementAsSource) {
     const firstViews = engList[0]?.views || 1
     retentionData = engList.map((ep) =>
       ep.views ? parseFloat(((ep.views / firstViews) * 100).toFixed(1)) : null
@@ -519,10 +525,19 @@ const renderPlayTrendChart = () => {
 
   playTrendInstance.setOption(option)
 
-  // 点击柱子时切换对应剧集的观看时间分布
+  // 仅在 episodes 数据可用且与柱状图数据长度匹配时，支持点击查看单集分布
+  const canSelectEpisode =
+    Array.isArray(episodes.value) &&
+    episodes.value.length > 0 &&
+    episodes.value.length >= (Array.isArray(viewsData) ? viewsData.length : 0)
+
   playTrendInstance.on('click', (params: any) => {
+    if (!canSelectEpisode) return
     if (params.componentType === 'series') {
-      selectEpisode(params.dataIndex)
+      const index = params.dataIndex
+      if (typeof index === 'number' && index >= 0 && index < episodes.value.length) {
+        selectEpisode(index)
+      }
     }
   })
 
