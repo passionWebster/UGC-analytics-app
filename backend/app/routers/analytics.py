@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from typing import List, Optional
 from urllib.parse import urlparse
+import asyncio
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -26,7 +27,6 @@ from ..schemas import (
 
 
 router = APIRouter(prefix="/api/analytics", tags=["数据分析"])
-
 # 图片代理路由（路径为 /api/image_proxy，与 analytics 路由独立）
 proxy_router = APIRouter(prefix="/api", tags=["图片代理"])
 
@@ -208,24 +208,28 @@ async def trigger_tmdb_enrich(season_id: int, session: Session = Depends(get_ses
         raise HTTPException(status_code=404, detail="未在 TMDB 找到匹配的番剧记录")
 
     # 若已有记录则更新，否则新建
-    existing = session.exec(
-        sql_select(TmdbAnimeInfo).where(TmdbAnimeInfo.season_id == season_id)
-    ).first()
-    if existing:
-        existing.tmdb_id = info.tmdb_id
-        existing.original_name = info.original_name
-        existing.overview = info.overview
-        existing.tmdb_rating = info.tmdb_rating
-        existing.backdrop_url = info.backdrop_url
-        existing.logo_url = info.logo_url
-        existing.poster_url = info.poster_url
-        existing.genres = info.genres
-        existing.first_air_date = info.first_air_date
-        existing.updated_at = info.updated_at
-        session.add(existing)
-    else:
-        session.add(info)
-    session.commit()
+    def _upsert_tmdb_info() -> None:
+        existing = session.exec(
+            sql_select(TmdbAnimeInfo).where(TmdbAnimeInfo.season_id == season_id)
+        ).first()
+        if existing:
+            existing.tmdb_id = info.tmdb_id
+            existing.original_name = info.original_name
+            existing.overview = info.overview
+            existing.tmdb_rating = info.tmdb_rating
+            existing.backdrop_url = info.backdrop_url
+            existing.logo_url = info.logo_url
+            existing.poster_url = info.poster_url
+            existing.genres = info.genres
+            existing.first_air_date = info.first_air_date
+            existing.updated_at = info.updated_at
+            session.add(existing)
+        else:
+            session.add(info)
+        session.commit()
+
+    # 将同步数据库操作放入线程池，避免阻塞事件循环
+    await asyncio.to_thread(_upsert_tmdb_info)
 
     return {
         "success": True,
