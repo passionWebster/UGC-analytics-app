@@ -430,15 +430,15 @@ async def run_tmdb_enrichment(session: Session) -> Dict:
         return {"total": 0, "success": 0, "failed": 0, "message": "TMDB_API_KEY 未配置，任务跳过"}
 
     # 查询所有还没有 TMDB 记录的番剧（仅做读操作）
-    enriched_ids = session.exec(
-        select(TmdbAnimeInfo.season_id)
+    subquery = select(TmdbAnimeInfo.season_id)
+    pending = session.exec(
+        select(Anime).where(Anime.season_id.not_in(subquery))
     ).all()
-    enriched_set = set(enriched_ids)
-
-    all_animes = session.exec(select(Anime)).all()
-    pending = [a for a in all_animes if a.season_id not in enriched_set]
 
     if not pending:
+        return {"total": 0, "success": 0, "failed": 0, "message": "所有番剧均已完成 TMDB 富集"}
+
+    semaphore = asyncio.Semaphore(settings.tmdb_enrichment_concurrency)
         return {"total": 0, "success": 0, "failed": 0, "message": "所有番剧均已完成 TMDB 富集"}
 
     semaphore = asyncio.Semaphore(settings.tmdb_enrichment_concurrency)
