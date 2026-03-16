@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     doubao_api_url: str = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
     doubao_api_key: str = os.getenv('doubao_api_key')
     doubao_model: str = "doubao-seed-1-6-250615"
+
+    # TMDB API 配置
+    tmdb_api_key: Optional[str] = os.getenv("TMDB_API_KEY")  # 从环境变量读取，未配置时 TMDB 功能自动降级
+    tmdb_api_base_url: str = "https://api.themoviedb.org/3"
+    tmdb_image_base_original: str = "https://image.tmdb.org/t/p/original"  # 背景图使用原始分辨率
+    tmdb_image_base_w500: str = "https://image.tmdb.org/t/p/w500"  # Logo/海报使用 w500
+    tmdb_request_timeout: int = 10  # 单次请求超时秒数
+    tmdb_enrichment_concurrency: int = 5  # 后台富集任务并发上限
     
     class Config:
         env_file = ".env"

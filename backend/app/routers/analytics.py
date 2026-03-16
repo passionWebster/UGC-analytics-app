@@ -2,6 +2,7 @@
 """
 数据分析相关的 API 路由
 """
+import json
 import os
 import re
 from datetime import datetime
@@ -14,6 +15,7 @@ from sqlmodel import Session
 
 from ..database import get_session
 from ..crud import AnalyticsService
+from ..models import Anime
 from ..schemas import (
     EpisodeBehaviorAnalysisResponse,
     LifecycleGrowthResponse,
@@ -43,6 +45,8 @@ _ALLOWED_IMAGE_HOSTS = {
     "s2.hdslb.com",
     "pic.bilibili.com",
     "static.hdslb.com",
+    # TMDB 图片服务器（背景图、Logo、海报均由此域名提供）
+    "image.tmdb.org",
 }
 
 
@@ -53,13 +57,18 @@ def image_proxy(
     season_id: str = Query(..., description="番剧 season_id"),
 ):
     """
-    图片反向代理接口，绕过 B站图片防盗链并提供本地缓存。
+    图片反向代理接口，同时支持 B站图片防盗链绕过和 TMDB 图片缓存。
 
-    首先检查本地 cover_cache 目录是否已缓存该图片；若命中则直接返回，
-    否则伪造 Referer 请求原始 URL，将图片二进制保存后再返回。
+    处理流程：
+    1. 校验 URL 域名是否在白名单内（防止 SSRF）
+    2. 命中本地缓存则直接返回 FileResponse
+    3. 未命中则向源站发起请求，按域名区分请求头策略：
+       - B站域名：附加 Referer 绕过防盗链
+       - TMDB 域名：使用标准 User-Agent，无需 Referer
+    4. 将图片二进制写入本地缓存后返回
 
     Args:
-        url: 原始图片链接
+        url: 原始图片链接（支持 B站 CDN 和 image.tmdb.org）
         title: 番剧名（用于生成缓存文件名）
         season_id: 番剧 season_id（用于生成缓存文件名）
 
@@ -68,10 +77,10 @@ def image_proxy(
     """
     os.makedirs(_COVER_CACHE_DIR, exist_ok=True)
 
-    # 校验 URL 只能指向 B站图片 CDN（防止 SSRF）
+    # 校验 URL 只能指向白名单域名（防止 SSRF）
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or parsed.hostname not in _ALLOWED_IMAGE_HOSTS:
-        raise HTTPException(status_code=400, detail="不支持的图片域名，仅允许 B站图片 CDN 域名")
+        raise HTTPException(status_code=400, detail="不支持的图片域名，仅允许 B站图片 CDN 及 TMDB 图片域名")
 
     # 生成安全的文件名：清理特殊字符，保留字母、数字、中文、连字符
     safe_title = re.sub(r"[^\w\u4e00-\u9fff\-]", "_", title)
@@ -79,7 +88,7 @@ def image_proxy(
     # 尝试从 URL 中推断扩展名，默认使用 .jpg
     url_path = url.split("?")[0]
     ext = os.path.splitext(url_path)[-1].lower()
-    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"):
         ext = ".jpg"
     filename = f"{safe_title}_{safe_season_id}{ext}"
     filepath = os.path.join(_COVER_CACHE_DIR, filename)
@@ -88,11 +97,12 @@ def image_proxy(
     if os.path.exists(filepath):
         return FileResponse(filepath)
 
-    # 伪造 Referer 请求原始图片
-    headers = {
-        "Referer": "https://www.bilibili.com/",
-        "User-Agent": "Mozilla/5.0",
-    }
+    # 按域名区分请求头策略：B站需要伪造 Referer，TMDB 无需
+    is_bilibili = parsed.hostname != "image.tmdb.org"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    if is_bilibili:
+        headers["Referer"] = "https://www.bilibili.com/"
+
     try:
         with httpx.Client(follow_redirects=True, timeout=15) as client:
             response = client.get(url, headers=headers)
@@ -155,6 +165,83 @@ def get_anime_detail(season_id: int, session: Session = Depends(get_session)):
     return {
         "success": True,
         "data": anime
+    }
+
+
+@router.post("/tmdb/enrich/{season_id}", response_model=dict)
+async def trigger_tmdb_enrich(season_id: int, session: Session = Depends(get_session)):
+    """
+    手动触发单部番剧的 TMDB 数据富集。
+
+    若该番剧已有 TMDB 记录，则更新现有记录；否则新建记录。
+    适用于首次导入或需要强制刷新 TMDB 数据的场景。
+
+    Args:
+        season_id: 需要富集的番剧 season_id
+        session:   数据库会话
+
+    Returns:
+        富集结果，包含 tmdb_id 等关键字段
+    """
+    from ..tmdb_service import TmdbService
+    from ..models import TmdbAnimeInfo
+    from sqlmodel import select as sql_select
+
+    # 校验番剧是否存在
+    anime = session.exec(
+        sql_select(Anime).where(Anime.season_id == season_id)
+    ).first()
+    if not anime:
+        raise HTTPException(status_code=404, detail="番剧不存在")
+
+    service = TmdbService()
+    if not service.is_available():
+        raise HTTPException(status_code=503, detail="TMDB_API_KEY 未配置，服务不可用")
+
+    # 执行富集
+    info = await service.enrich_anime(
+        season_id=anime.season_id,
+        title=anime.title,
+        release_date=anime.release_date,
+    )
+    if not info:
+        raise HTTPException(status_code=404, detail="未在 TMDB 找到匹配的番剧记录")
+
+    # 若已有记录则更新，否则新建
+    existing = session.exec(
+        sql_select(TmdbAnimeInfo).where(TmdbAnimeInfo.season_id == season_id)
+    ).first()
+    if existing:
+        existing.tmdb_id = info.tmdb_id
+        existing.original_name = info.original_name
+        existing.overview = info.overview
+        existing.tmdb_rating = info.tmdb_rating
+        existing.backdrop_url = info.backdrop_url
+        existing.logo_url = info.logo_url
+        existing.poster_url = info.poster_url
+        existing.genres = info.genres
+        existing.first_air_date = info.first_air_date
+        existing.updated_at = info.updated_at
+        session.add(existing)
+    else:
+        session.add(info)
+    session.commit()
+
+    return {
+        "success": True,
+        "message": f"番剧 {anime.title} 的 TMDB 数据富集成功",
+        "data": {
+            "season_id": info.season_id,
+            "tmdb_id": info.tmdb_id,
+            "original_name": info.original_name,
+            "overview": info.overview,
+            "tmdb_rating": info.tmdb_rating,
+            "backdrop_url": info.backdrop_url,
+            "logo_url": info.logo_url,
+            "poster_url": info.poster_url,
+            "genres": json.loads(info.genres) if info.genres else [],
+            "first_air_date": info.first_air_date,
+        },
     }
 
 

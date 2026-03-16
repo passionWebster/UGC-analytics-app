@@ -16,7 +16,6 @@ from sqlmodel import Session, select
 from .database import engine
 from .models import Anime, DailyStats, EpisodeStats
 
-
 # 项目根目录（backend/app/ 的上上级目录）
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -102,6 +101,25 @@ def _task_b_monthly_snapshot():
     print(f"  ✅ 任务 B 完成：月度快照已保存到 {filepath}，共 {len(snapshot)} 条记录")
 
 
+async def _task_c_tmdb_enrichment():
+    """
+    任务 C：TMDB 数据后台批量富集（异步）。
+
+    查询所有尚未建立 TmdbAnimeInfo 记录的番剧，
+    使用受控并发异步调用 TMDB API 进行数据富集，并写入数据库。
+    若 TMDB_API_KEY 未配置则直接跳过，不产生错误。
+    """
+    from .tmdb_service import run_tmdb_enrichment
+
+    print("🔄 [任务 C] 开始执行 TMDB 数据批量富集...")
+    with Session(engine) as session:
+        result = await run_tmdb_enrichment(session)
+    print(
+        f"  ✅ 任务 C 完成：{result.get('message', '')} "
+        f"（成功 {result.get('success', 0)}，失败 {result.get('failed', 0)}）"
+    )
+
+
 def create_scheduler() -> AsyncIOScheduler:
     """
     创建并配置 AsyncIOScheduler 调度器。
@@ -128,6 +146,16 @@ def create_scheduler() -> AsyncIOScheduler:
         hour=2,
         minute=0,
         id="task_b_monthly_snapshot",
+        replace_existing=True,
+    )
+
+    # 任务 C：每天凌晨 3:00 执行 TMDB 富集，自动补全未处理的番剧
+    scheduler.add_job(
+        _task_c_tmdb_enrichment,
+        trigger="cron",
+        hour=3,
+        minute=0,
+        id="task_c_tmdb_enrichment",
         replace_existing=True,
     )
 
