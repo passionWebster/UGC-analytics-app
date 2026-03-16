@@ -88,7 +88,7 @@ def image_proxy(
     # 尝试从 URL 中推断扩展名，默认使用 .jpg
     url_path = url.split("?")[0]
     ext = os.path.splitext(url_path)[-1].lower()
-    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"):
+    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
         ext = ".jpg"
     filename = f"{safe_title}_{safe_season_id}{ext}"
     filepath = os.path.join(_COVER_CACHE_DIR, filename)
