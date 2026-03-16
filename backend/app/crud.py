@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from sqlmodel import Session, select, func, and_
 from sqlalchemy import desc
 
-from .models import Anime, DailyStats, EpisodeStats, Ranking
+from .models import Anime, DailyStats, EpisodeStats, Ranking, TmdbAnimeInfo
 
 
 class AnalyticsService:
@@ -64,13 +64,16 @@ class AnalyticsService:
     
     def get_anime_by_id(self, season_id: int) -> Optional[Dict]:
         """
-        根据 season_id 获取番剧详情
-        
+        根据 season_id 获取番剧详情，同时携带 TMDB 补充信息。
+
+        通过对 TmdbAnimeInfo 表执行左连接，若存在对应的 TMDB 记录，
+        则在返回字典中嵌套 tmdb_info 字段；否则 tmdb_info 为 None。
+
         Args:
             season_id: 番剧 ID
-            
+
         Returns:
-            番剧详情字典
+            番剧详情字典，包含可选的 tmdb_info 嵌套字段
         """
         anime = self.session.exec(
             select(Anime).where(Anime.season_id == season_id)
@@ -86,8 +89,13 @@ class AnalyticsService:
             .order_by(desc(DailyStats.date))
             .limit(1)
         ).first()
-        
-        return {
+
+        # 查询关联的 TMDB 补充数据（左连接效果：未命中时为 None）
+        tmdb_info = self.session.exec(
+            select(TmdbAnimeInfo).where(TmdbAnimeInfo.season_id == season_id)
+        ).first()
+
+        result = {
             'season_id': anime.season_id,
             'title': anime.title,
             'cover': anime.cover,
@@ -96,8 +104,25 @@ class AnalyticsService:
             'styles': json.loads(anime.styles) if anime.styles else [],
             'release_date': anime.release_date,
             'views': latest_stats.views if latest_stats else 0,
-            'favorites': latest_stats.favorites if latest_stats else 0
+            'favorites': latest_stats.favorites if latest_stats else 0,
+            'tmdb_info': None,
         }
+
+        # 若存在 TMDB 补充记录，则嵌套序列化后写入返回结果
+        if tmdb_info:
+            result['tmdb_info'] = {
+                'tmdb_id': tmdb_info.tmdb_id,
+                'original_name': tmdb_info.original_name,
+                'overview': tmdb_info.overview,
+                'tmdb_rating': tmdb_info.tmdb_rating,
+                'backdrop_url': tmdb_info.backdrop_url,
+                'logo_url': tmdb_info.logo_url,
+                'poster_url': tmdb_info.poster_url,
+                'genres': json.loads(tmdb_info.genres) if tmdb_info.genres else [],
+                'first_air_date': tmdb_info.first_air_date,
+            }
+
+        return result
     
     def search_anime_by_title(self, keyword: str) -> List[Dict]:
         """

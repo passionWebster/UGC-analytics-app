@@ -58,6 +58,7 @@ class Anime(SQLModel, table=True):
     
     # 关系
     daily_stats: List["DailyStats"] = Relationship(back_populates="anime")
+    tmdb_info: Optional["TmdbAnimeInfo"] = Relationship(back_populates="anime")
 
 
 class DailyStats(SQLModel, table=True):
@@ -140,6 +141,43 @@ class CrawlLog(SQLModel, table=True):
     completed_at: Optional[datetime] = Field(default=None)
 
 
+class TmdbAnimeInfo(SQLModel, table=True):
+    """
+    TMDB 番剧扩展信息表 - 与 Anime 表 1:1 关联（从表）
+
+    存储从 TMDB API 获取的补充元数据和高清图片资源，
+    通过 season_id 外键与 Anime 表关联，保持两套数据系统的解耦。
+    """
+    __tablename__ = "tmdb_anime_info"
+
+    # 主键同时为外键，实现 1:1 关联
+    season_id: int = Field(primary_key=True, foreign_key="anime.season_id")
+    # TMDB 剧集唯一标识，方便后续跳过搜索直接更新
+    tmdb_id: Optional[int] = Field(default=None, index=True)
+    # 原始名称（通常为日文）
+    original_name: Optional[str] = Field(default=None, max_length=255)
+    # 剧集简介（优先中文，降级为英文）
+    overview: Optional[str] = Field(default=None)
+    # TMDB 综合评分（可与 B站评分并列展示）
+    tmdb_rating: Optional[float] = Field(default=None)
+    # 横版背景剧照 URL（适合详情页头部大图，使用原始分辨率）
+    backdrop_url: Optional[str] = Field(default=None, max_length=500)
+    # 透明背景 Logo URL（适合悬浮于背景图上方展示）
+    logo_url: Optional[str] = Field(default=None, max_length=500)
+    # TMDB 版竖版海报 URL（可作为高清备选封面）
+    poster_url: Optional[str] = Field(default=None, max_length=500)
+    # TMDB 风格分类列表（JSON 序列化字符串，读取后需 json.loads 解析；
+    # 与现有 Anime.styles 字段保持一致的存储约定）
+    genres: Optional[str] = Field(default=None, sa_column=Column(JSON))
+    # TMDB 首播日期（格式 "YYYY-MM-DD"）
+    first_air_date: Optional[str] = Field(default=None, max_length=20)
+    # 数据最近更新时间
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    # 反向关系：关联到 Anime 主表
+    anime: Optional["Anime"] = Relationship(back_populates="tmdb_info")
+
+
 # Pydantic 模型用于 API 请求/响应
 class UserCreate(SQLModel):
     """用户注册请求模型"""
@@ -189,3 +227,18 @@ class DailyStatsResponse(SQLModel):
     views: int
     favorites: int
     online_viewers: Optional[int]
+
+
+class TmdbInfoResponse(SQLModel):
+    """
+    TMDB 补充信息响应模型 - 嵌套在番剧详情响应的 tmdb_info 字段中
+    """
+    tmdb_id: Optional[int] = None
+    original_name: Optional[str] = None
+    overview: Optional[str] = None
+    tmdb_rating: Optional[float] = None
+    backdrop_url: Optional[str] = None
+    logo_url: Optional[str] = None
+    poster_url: Optional[str] = None
+    genres: Optional[List[str]] = None
+    first_air_date: Optional[str] = None
