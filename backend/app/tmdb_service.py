@@ -21,6 +21,29 @@ from .config import settings
 from .database import engine
 from .models import Anime, TmdbAnimeInfo
 
+# 全局复用的 TMDB AsyncClient，避免每次调用重复建连与 TLS 握手
+_tmdb_async_client: Optional[httpx.AsyncClient] = None
+_tmdb_client_lock = asyncio.Lock()
+
+
+async def get_shared_tmdb_client(timeout: float) -> httpx.AsyncClient:
+    """
+    获取全局复用的 httpx.AsyncClient 实例。
+
+    若客户端尚未创建或已被关闭，则在加锁的情况下重新创建。
+    """
+    global _tmdb_async_client
+
+    # 快路径：已存在且未关闭的客户端直接返回
+    if _tmdb_async_client is not None and not _tmdb_async_client.is_closed:
+        return _tmdb_async_client
+
+    # 慢路径：需要在锁内检查并创建新客户端
+    async with _tmdb_client_lock:
+        if _tmdb_async_client is None or _tmdb_async_client.is_closed:
+            _tmdb_async_client = httpx.AsyncClient(timeout=timeout)
+        return _tmdb_async_client
+
 
 class TmdbService:
     """
@@ -107,12 +130,12 @@ class TmdbService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{self.base_url}/search/tv", params=params
-                )
-                response.raise_for_status()
-                data = response.json()
+            client = await get_shared_tmdb_client(self.timeout)
+            response = await client.get(
+                f"{self.base_url}/search/tv", params=params
+            )
+            response.raise_for_status()
+            data = response.json()
         except httpx.HTTPError:
             return None
 
