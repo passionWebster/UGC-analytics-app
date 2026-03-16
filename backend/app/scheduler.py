@@ -10,6 +10,7 @@ import os
 import time
 from datetime import datetime
 
+import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlmodel import Session, select
 
@@ -101,19 +102,20 @@ def _task_b_monthly_snapshot():
     print(f"  ✅ 任务 B 完成：月度快照已保存到 {filepath}，共 {len(snapshot)} 条记录")
 
 
-async def _task_c_tmdb_enrichment():
+def _task_c_tmdb_enrichment():
     """
-    任务 C：TMDB 数据后台批量富集（异步）。
+    任务 C：TMDB 数据后台批量富集。
 
-    查询所有尚未建立 TmdbAnimeInfo 记录的番剧，
-    使用受控并发异步调用 TMDB API 进行数据富集，并写入数据库。
+    在 APScheduler 的线程池中运行，同步打开数据库会话，
+    并通过 asyncio.run 驱动异步 TMDB 富集逻辑，避免阻塞主事件循环。
     若 TMDB_API_KEY 未配置则直接跳过，不产生错误。
     """
     from .tmdb_service import run_tmdb_enrichment
 
     print("🔄 [任务 C] 开始执行 TMDB 数据批量富集...")
     with Session(engine) as session:
-        result = await run_tmdb_enrichment(session)
+        # 在独立线程内使用 asyncio.run 执行异步 TMDB 富集任务
+        result = asyncio.run(run_tmdb_enrichment(session))
     print(
         f"  ✅ 任务 C 完成：{result.get('message', '')} "
         f"（成功 {result.get('success', 0)}，失败 {result.get('failed', 0)}）"
