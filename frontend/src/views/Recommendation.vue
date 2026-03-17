@@ -152,7 +152,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { getRankings, getAnimeDetail, type AnimeData, type AnimeDetailData } from '@/api/analytics'
 import { getProxiedImageUrl, getProxiedUrl } from '@/utils/imageProxy'
 import { useAuthStore } from '@/stores/auth'
