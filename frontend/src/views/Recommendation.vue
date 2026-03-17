@@ -236,9 +236,17 @@ const useFallbackPoster = () => {
   posterFallback.value = true
 }
 
+/** 当前详情请求的标记，用于避免乱序响应覆盖最新选择 */
+let detailRequestToken = 0
+
 /** 选择番剧并加载详情 */
 const selectAnime = async (anime: AnimeData) => {
   if (selectedAnime.value?.season_id === anime.season_id) return
+
+  // 为本次请求生成独立标记
+  detailRequestToken += 1
+  const currentToken = detailRequestToken
+
   // 先设 detailLoading，再清空 selectedDetail，确保显示加载态而非空占位
   detailLoading.value = true
   selectedAnime.value = anime
@@ -247,13 +255,24 @@ const selectAnime = async (anime: AnimeData) => {
   posterFallback.value = false
   try {
     const resp = await getAnimeDetail(anime.season_id)
+    // 如果期间发起了新的详情请求，则丢弃本次结果
+    if (currentToken !== detailRequestToken) {
+      return
+    }
     selectedDetail.value = resp.data
   } catch (error) {
+    // 如果期间发起了新的详情请求，则不覆盖最新错误/数据状态
+    if (currentToken !== detailRequestToken) {
+      return
+    }
     console.error('加载番剧详情失败:', error)
     // 降级：用基础数据展示，不含 TMDB 信息
     selectedDetail.value = { ...anime, tmdb_info: null }
   } finally {
-    detailLoading.value = false
+    // 仅在当前请求仍是最新时更新加载状态
+    if (currentToken === detailRequestToken) {
+      detailLoading.value = false
+    }
   }
 }
 
