@@ -212,11 +212,17 @@ const preferencesText = computed<string>(() => {
 
 /** 当前海报 URL：优先使用 TMDB poster，降级使用 B站封面 */
 const currentPosterUrl = computed<string>(() => {
-  if (!selectedDetail.value) return '/placeholder.jpg'
-  if (!posterFallback.value && selectedDetail.value.tmdb_info?.poster_url) {
-    return proxyTmdb(selectedDetail.value.tmdb_info.poster_url)
+  const detail = selectedDetail.value
+  if (!detail) return '/placeholder.jpg'
+
+  if (!posterFallback.value) {
+    const posterUrl = detail.tmdb_info?.poster_url
+    if (posterUrl) {
+      return proxyTmdb(posterUrl)
+    }
   }
-  return getProxiedUrl(selectedDetail.value.cover, selectedDetail.value.title, selectedDetail.value.season_id) || '/placeholder.jpg'
+
+  return getProxiedUrl(detail.cover, detail.title, detail.season_id) || '/placeholder.jpg'
 })
 
 /** 将 TMDB 图片 URL 转换为代理地址 */
