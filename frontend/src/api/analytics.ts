@@ -22,6 +22,30 @@ export interface AnimeListResponse {
   list: AnimeData[]
 }
 
+/** TMDB 扩展信息 */
+export interface TmdbInfo {
+  tmdb_id: number | null
+  original_name: string | null
+  overview: string | null
+  tmdb_rating: number | null
+  backdrop_url: string | null
+  logo_url: string | null
+  poster_url: string | null
+  genres: string[]
+  first_air_date: string | null
+}
+
+/** 番剧详情（含 TMDB 扩展信息） */
+export interface AnimeDetailData extends AnimeData {
+  tmdb_info: TmdbInfo | null
+}
+
+/** 番剧详情接口响应 */
+export interface AnimeDetailResponse {
+  success: boolean
+  data: AnimeDetailData
+}
+
 export interface StatisticsOverview {
   total_animes: number
   total_views: number
@@ -41,9 +65,9 @@ export const getAnimes = async (limit?: number, offset?: number): Promise<AnimeL
 }
 
 /**
- * 获取番剧详情
+ * 获取番剧详情（含 TMDB 扩展信息）
  */
-export const getAnimeDetail = async (seasonId: number): Promise<any> => {
+export const getAnimeDetail = async (seasonId: number): Promise<AnimeDetailResponse> => {
   return apiClient.get(`/analytics/animes/${seasonId}`)
 }
 
