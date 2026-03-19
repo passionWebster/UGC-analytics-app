@@ -777,11 +777,26 @@ onUnmounted(() => {
   stopHourlyFetch()
 })
 
-// KeepAlive 激活：从缓存恢复时触发图表 resize，防止容器尺寸变化导致图表变形
+// KeepAlive 激活：从缓存恢复时触发图表 resize，并根据当前番剧恢复小时轮询
 onActivated(() => {
+  // 恢复图表尺寸
   playTrendInstance?.resize()
   watchTimeInstance?.resize()
   radarInstance?.resize()
+
+  // 根据当前 animeData / season_id 重新启动小时轮询（避免从其它路由返回后不再自动刷新）
+  let seasonId: any | undefined
+  // 兼容 animeData 为普通对象或 ref 的情况
+  if (animeData) {
+    // @ts-ignore: 运行时兼容两种结构
+    seasonId = (animeData as any).season_id ?? (animeData as any).value?.season_id
+  }
+  if (seasonId) {
+    // 使用现有的轮询启动方法，保持与初始加载时一致的行为
+    // 若 startHourlyFetch 支持「立即拉取」选项，可在其内部处理
+    // @ts-ignore: 依赖于现有函数签名
+    startHourlyFetch(seasonId)
+  }
 })
 
 // KeepAlive 失活：页面切走时停止轮询，避免后台持续请求
