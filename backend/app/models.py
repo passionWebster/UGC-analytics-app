@@ -104,6 +104,8 @@ class EpisodeStats(SQLModel, table=True):
     share: Optional[int] = Field(default=None)  # 分享数
     like: Optional[int] = Field(default=None)  # 点赞数
     online_viewers: Optional[int] = Field(default=None)  # 当前在线人数
+    # 存储 24 小时在线人数分布，格式: {"00": 1500, "01": 1200, ..., "23": 1800}
+    hourly_online_history: Optional[str] = Field(default=None, sa_column=Column(JSON))
     updated_at: datetime = Field(default_factory=datetime.now)
 
 

@@ -122,6 +122,20 @@ def _task_c_tmdb_enrichment():
     )
 
 
+def _task_d_hourly_online_viewers():
+    """
+    任务 D：每小时记录所有剧集的在线人数，写入 hourly_online_history 列。
+    建议每小时第 5 分钟执行，避开整点网络拥堵。
+    """
+    from .scraper import BilibiliBangumiCrawler
+
+    print("🔄 [任务 D] 开始记录每小时在线人数...")
+    with Session(engine) as session:
+        crawler = BilibiliBangumiCrawler(session)
+        crawler.record_hourly_online_viewers()
+    print("  ✅ 任务 D 完成")
+
+
 def create_scheduler() -> AsyncIOScheduler:
     """
     创建并配置 AsyncIOScheduler 调度器。
@@ -158,6 +172,15 @@ def create_scheduler() -> AsyncIOScheduler:
         hour=3,
         minute=0,
         id="task_c_tmdb_enrichment",
+        replace_existing=True,
+    )
+
+    # 任务 D：每小时第 5 分钟记录剧集在线人数分布
+    scheduler.add_job(
+        _task_d_hourly_online_viewers,
+        trigger="cron",
+        minute=5,
+        id="task_d_hourly_online_viewers",
         replace_existing=True,
     )
 

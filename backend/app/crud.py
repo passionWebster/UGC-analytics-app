@@ -483,6 +483,45 @@ class AnalyticsService:
             for i, stat in enumerate(stats)
         ]
 
+    def get_watch_time_distribution(self, season_id: int) -> Dict[str, Any]:
+        """
+        获取番剧的 24 小时观看时间分布（真实数据）。
+
+        从 EpisodeStats 表读取 hourly_online_history 列，
+        将 JSON 字典格式化为长度为 24 的整数数组（缺失小时填 0）。
+
+        Args:
+            season_id: 番剧 ID
+
+        Returns:
+            包含 season_id 和 episodes_data 列表的字典；
+            episodes_data 每项含 episode_title 和 distribution（长度24数组）
+        """
+        episodes = self.session.exec(
+            select(EpisodeStats)
+            .where(EpisodeStats.season_id == season_id)
+            .order_by(EpisodeStats.id)
+        ).all()
+
+        result = []
+        for ep in episodes:
+            try:
+                history_dict: Dict[str, int] = json.loads(ep.hourly_online_history) if ep.hourly_online_history else {}
+            except (json.JSONDecodeError, TypeError):
+                history_dict = {}
+
+            # 将 {"14": 150, "15": 200} 转换为长度 24 的数组，缺失小时填 0
+            distribution = [history_dict.get(f"{hour:02d}", 0) for hour in range(24)]
+            result.append({
+                "episode_title": ep.episode_title,
+                "distribution": distribution,
+            })
+
+        return {
+            "season_id": season_id,
+            "episodes_data": result,
+        }
+
     def get_reputation_popularity_chart(self, areas: List[str] = None) -> List[Dict]:
         """
         获取口碑与热度散点图数据
