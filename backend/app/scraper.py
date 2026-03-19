@@ -703,7 +703,7 @@ class BilibiliBangumiCrawler:
                 ep.hourly_online_history = json.dumps(history, ensure_ascii=False)
                 ep.updated_at = datetime.now()
                 updated += 1
-            time.sleep(0.5)  # 严格控制请求频率，防止触发 B站风控
+            time.sleep(settings.bilibili_request_delay)  # 严格控制请求频率，防止触发 B站风控
 
         self.session.commit()
         print(f"✅ 在线人数记录完成，成功更新 {updated}/{len(episodes)} 个剧集")
