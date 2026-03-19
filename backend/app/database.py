@@ -39,10 +39,12 @@ def set_sqlite_pragma(dbapi_connection, _connection_record):
     WAL 模式允许爬虫写入时，其他请求仍能正常读取，消除 'database is locked' 错误。
     """
     cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")      # 开启 WAL 模式，支持读写并发
-    cursor.execute("PRAGMA synchronous=NORMAL")    # 平衡性能与安全
-    cursor.execute("PRAGMA busy_timeout=5000")     # 等待锁的超时时间设为 5000 毫秒
-    cursor.close()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")      # 开启 WAL 模式，支持读写并发
+        cursor.execute("PRAGMA synchronous=NORMAL")    # 平衡性能与安全
+        cursor.execute("PRAGMA busy_timeout=5000")     # 等待锁的超时时间设为 5000 毫秒
+    finally:
+        cursor.close()
 
 
 def create_db_and_tables():
