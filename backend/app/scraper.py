@@ -90,6 +90,29 @@ class BilibiliBangumiCrawler:
         return int(num)
     
     @staticmethod
+    def _is_valid_main_episode(episode: dict) -> bool:
+        """
+        根据 API 返回的字段判断该集是否为正片。
+        第二道防线：利用 badge（角标）和 title/long_title（标题）过滤预告、PV 等非正片内容。
+        """
+        # 检查角标 (badge)
+        badge = episode.get('badge', '')
+        if badge in ['预告', 'PV', 'CM', '特报', '花絮']:
+            return False
+
+        # 检查标题 (title 和 long_title)
+        title = episode.get('title', '')
+        long_title = episode.get('long_title', '')
+        combined_title = f"{title} {long_title}"
+
+        invalid_keywords = ['预告', 'PV', 'NCOP', 'NCED', '先行图', '总集篇']
+        for keyword in invalid_keywords:
+            if keyword in combined_title:
+                return False
+
+        return True
+
+    @staticmethod
     def _get_quarter_month(month: int) -> Optional[int]:
         """根据月份获取季度首月"""
         if 1 <= month <= 3:
@@ -575,6 +598,13 @@ class BilibiliBangumiCrawler:
             for episode in episodes:
                 bvid = episode.get('bvid', '')
                 cid = str(episode.get('cid', ''))
+
+                # 【防线 2】利用 API 的 badge / title 字段进行初步过滤
+                if not self._is_valid_main_episode(episode):
+                    ep_title = episode.get('long_title') or episode.get('title')
+                    print(f"  ⏭️ API字段过滤，跳过非正片: {ep_title}")
+                    continue
+
                 if not bvid or not cid:
                     continue
 
@@ -584,9 +614,16 @@ class BilibiliBangumiCrawler:
                     or f'第{episode.get("index", "")}集'
                 )
 
-                # 获取完整统计数据（播放量、弹幕、评论、收藏、投币、分享、点赞）
-                stat = self.get_episode_stat_details(bvid)
+                # 获取完整视频详情数据（含统计和时长）
+                full_data = self.get_episode_stat_details(bvid)
+                stat = full_data.get('stat', {})
+                duration = full_data.get('duration', 0)
                 time.sleep(settings.bilibili_request_delay)
+
+                # 【防线 3】时长兜底，过滤掉短于 3 分钟（180 秒）的视频
+                if 0 < duration < 180:
+                    print(f"  ⏭️ 时长兜底过滤，跳过极短视频: {ep_title} ({duration}秒)")
+                    continue
 
                 existing_ep = self.session.exec(
                     select(EpisodeStats).where(EpisodeStats.bvid == bvid)
@@ -616,13 +653,13 @@ class BilibiliBangumiCrawler:
 
     def get_episode_stat_details(self, bvid: str) -> dict:
         """
-        通过 B站 视频详情 API 获取单集完整统计数据
+        通过 B站 视频详情 API 获取单集完整数据（含统计和时长）。
 
         Args:
             bvid: 视频 BV 号
 
         Returns:
-            包含 view/danmaku/reply/favorite/coin/share/like 等字段的 stat 字典；
+            包含 stat（播放量等）和 duration（时长，秒）等字段的完整 data 字典；
             请求失败或数据结构异常时返回空字典
         """
         url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
@@ -631,7 +668,12 @@ class BilibiliBangumiCrawler:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 0:
-                return data.get('data', {}).get('stat', {})
+                # 返回完整 data 字典，以便调用方同时获取 stat 和 duration
+                payload = data.get('data')
+                if isinstance(payload, dict):
+                    return payload
+                # 若 data 字段为空或不是字典，则按照约定返回空字典
+                return {}
         except Exception as e:
             print(f"❌ 获取单集统计详情失败 bvid={bvid}: {e}")
         return {}
@@ -797,14 +839,28 @@ class BilibiliBangumiCrawler:
         for episode in episodes:
             bvid = episode.get('bvid', '')
             cid = str(episode.get('cid', ''))
+
+            # 【防线 2】利用 API 的 badge / title 字段进行初步过滤
+            if not self._is_valid_main_episode(episode):
+                ep_title = episode.get('long_title') or episode.get('title')
+                print(f"  ⏭️ API字段过滤，跳过非正片: {ep_title}")
+                continue
+
             if not bvid or not cid:
                 continue
 
             ep_title = episode.get('long_title') or episode.get('title') or f'第{episode.get("index", "")}集'
 
-            # 使用统一辅助方法获取完整单集统计
-            stat = self.get_episode_stat_details(bvid)
+            # 获取完整视频详情数据（含统计和时长）
+            full_data = self.get_episode_stat_details(bvid)
+            stat = full_data.get('stat', {})
+            duration = full_data.get('duration', 0)
             time.sleep(settings.bilibili_request_delay)
+
+            # 【防线 3】时长兜底，过滤掉短于 3 分钟（180 秒）的视频
+            if 0 < duration < 180:
+                print(f"  ⏭️ 时长兜底过滤，跳过极短视频: {ep_title} ({duration}秒)")
+                continue
 
             existing_ep = self.session.exec(
                 select(EpisodeStats).where(EpisodeStats.bvid == bvid)
