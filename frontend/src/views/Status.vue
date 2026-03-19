@@ -172,7 +172,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onUnmounted, onActivated, onDeactivated, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
 import {
@@ -182,12 +182,17 @@ import {
   getEpisodeBehaviorAnalysis,
   getLifecycleAnalysis,
   getCompetitiveAnalysis,
+  getWatchTimeDistribution,
 } from '@/api/analytics'
 import type {
   EpisodeBehaviorAnalysis,
   LifecycleGrowthData,
   CompetitiveLandscapeData,
+  WatchTimeDistributionData,
 } from '@/api/analytics'
+
+// 为 KeepAlive 注册组件名
+defineOptions({ name: 'StatusView' })
 
 // ─── 状态管理 ───────────────────────────────────────────────────────────────
 const keyword = ref('')
@@ -199,6 +204,11 @@ const showEpisodeDetails = ref(false)
 const watchTimeSubtitle = ref('所有剧集总计')
 /** 当前选中的剧集索引，-1 表示全局汇总 */
 const selectedEpisodeIndex = ref(-1)
+
+// 真实 24 小时观看时间分布数据（从后端获取），各集的分布数组
+const watchTimeDistributionData = ref<WatchTimeDistributionData | null>(null)
+// 1 小时轮询定时器
+let watchTimeTimer: ReturnType<typeof setInterval> | null = null
 
 // 深度分析数据：请求失败时保持为 null，在界面上做降级展示；错误日志仍由全局 axios 拦截器统一处理
 const behaviorData = ref<EpisodeBehaviorAnalysis | null>(null)
@@ -285,22 +295,41 @@ const LABEL_ROTATION_THRESHOLD = 12
 const LABEL_ROTATION_ANGLE = 45
 
 /**
- * 根据剧集索引生成该集的 24 小时观看时间分布（确定性模拟算法）。
- * 使用 season_id 与剧集索引作为伪随机种子，保证同一集每次渲染结果一致。
+ * 每小时轮询间隔（毫秒）。
  */
-const generateWatchTimeData = (episodeIndex: number, baseViews: number): number[] => {
-  const seed = (animeData.value?.season_id ?? 0) * 100 + episodeIndex
-  const pseudoRand = (offset: number): number => {
-    const x = Math.sin(seed + offset) * 10000
-    return x - Math.floor(x)
+const HOUR_IN_MS = 3_600_000
+
+/**
+ * 从后端获取真实 24 小时观看时间分布数据，更新 watchTimeDistributionData 并重新渲染图表。
+ * 若接口返回 404（暂无数据）则静默降级，保持当前数据不变。
+ */
+const fetchWatchTimeDistribution = async (seasonId: number) => {
+  try {
+    const res = await getWatchTimeDistribution(seasonId)
+    watchTimeDistributionData.value = res.data
+    renderWatchTimeChart()
+  } catch {
+    // 暂无分集在线人数数据，保持现有图表不变（降级展示）
   }
-  const scale = Math.max(baseViews / 1000, 100)
-  return Array.from({ length: 24 }, (_, hour) => {
-    const eveningPeak = hour >= 20 && hour <= 23 ? 0.8 + pseudoRand(hour) * 0.4 : 0
-    const lunchPeak = hour >= 12 && hour <= 14 ? 0.5 + pseudoRand(hour + 50) * 0.3 : 0
-    const base = 0.1 + pseudoRand(hour + 100) * 0.2
-    return Math.round((eveningPeak + lunchPeak + base) * scale)
-  })
+}
+
+/**
+ * 启动每小时轮询，保持观看时间分布图表数据实时更新。
+ * 若已有定时器则先清除，防止重复注册。
+ */
+const startHourlyFetch = (seasonId: number) => {
+  stopHourlyFetch()
+  watchTimeTimer = setInterval(() => {
+    fetchWatchTimeDistribution(seasonId)
+  }, HOUR_IN_MS)
+}
+
+/** 清除小时级轮询定时器 */
+const stopHourlyFetch = () => {
+  if (watchTimeTimer !== null) {
+    clearInterval(watchTimeTimer)
+    watchTimeTimer = null
+  }
 }
 
 // ─── 搜索逻辑 ────────────────────────────────────────────────────────────────
@@ -347,6 +376,11 @@ const handleSearch = async () => {
       // 等待 DOM 更新后渲染所有图表
       await nextTick()
       renderCharts()
+
+      // 获取真实 24 小时观看时间分布，并启动每小时轮询刷新
+      watchTimeDistributionData.value = null
+      await fetchWatchTimeDistribution(anime.season_id)
+      startHourlyFetch(anime.season_id)
     } else {
       statusMessage.value = '未找到相关番剧'
       animeData.value = null
@@ -354,6 +388,8 @@ const handleSearch = async () => {
       behaviorData.value = null
       lifecycleData.value = null
       competitiveData.value = null
+      watchTimeDistributionData.value = null
+      stopHourlyFetch()
     }
   } catch (error) {
     console.error('搜索失败:', error)
@@ -659,7 +695,8 @@ const renderRadarChart = () => {
 
 /**
  * 渲染观看时间分布折线图（24 小时分布）。
- * 选中特定剧集时展示该集的估算分布，否则展示全剧汇总。
+ * 优先使用后端真实数据（watchTimeDistributionData），暂无数据时展示全零占位图。
+ * 选中特定剧集时展示该集的分布，否则展示全剧汇总（各集逐小时求和）。
  */
 const renderWatchTimeChart = () => {
   if (!watchTimeChart.value) return
@@ -674,20 +711,22 @@ const renderWatchTimeChart = () => {
   const hours = Array.from({ length: 24 }, (_, i) => `${i}:00`)
 
   let watchData: number[]
-  if (selectedEpisodeIndex.value >= 0 && episodes.value.length > 0) {
-    const ep = episodes.value[selectedEpisodeIndex.value]
-    watchData = generateWatchTimeData(selectedEpisodeIndex.value, ep.views || 1000)
-  } else {
-    const aggregated = Array(24).fill(0)
-    if (episodes.value.length > 0) {
-      episodes.value.forEach((ep, idx) => {
-        const dist = generateWatchTimeData(idx, ep.views || 1000)
-        dist.forEach((v, h) => { aggregated[h] += v })
-      })
-      watchData = aggregated
+  const distData = watchTimeDistributionData.value?.episodes_data
+
+  if (distData && distData.length > 0) {
+    if (selectedEpisodeIndex.value >= 0 && selectedEpisodeIndex.value < distData.length) {
+      // 单集分布
+      watchData = distData[selectedEpisodeIndex.value].distribution
     } else {
-      watchData = generateWatchTimeData(0, 1000)
+      // 全剧汇总：各集逐小时求和
+      watchData = Array(24).fill(0)
+      distData.forEach((ep) => {
+        ep.distribution.forEach((v, h) => { watchData[h] += v })
+      })
     }
+  } else {
+    // 暂无真实数据，展示全零占位
+    watchData = Array(24).fill(0)
   }
 
   const option: echarts.EChartsOption = {
@@ -734,6 +773,35 @@ onUnmounted(() => {
   playTrendInstance?.dispose()
   watchTimeInstance?.dispose()
   radarInstance?.dispose()
+  // 清除轮询定时器
+  stopHourlyFetch()
+})
+
+// KeepAlive 激活：从缓存恢复时触发图表 resize，并根据当前番剧恢复小时轮询
+onActivated(() => {
+  // 恢复图表尺寸
+  playTrendInstance?.resize()
+  watchTimeInstance?.resize()
+  radarInstance?.resize()
+
+  // 根据当前 animeData / season_id 重新启动小时轮询（避免从其它路由返回后不再自动刷新）
+  let seasonId: any | undefined
+  // 兼容 animeData 为普通对象或 ref 的情况
+  if (animeData) {
+    // @ts-ignore: 运行时兼容两种结构
+    seasonId = (animeData as any).season_id ?? (animeData as any).value?.season_id
+  }
+  if (seasonId) {
+    // 使用现有的轮询启动方法，保持与初始加载时一致的行为
+    // 若 startHourlyFetch 支持「立即拉取」选项，可在其内部处理
+    // @ts-ignore: 依赖于现有函数签名
+    startHourlyFetch(seasonId)
+  }
+})
+
+// KeepAlive 失活：页面切走时停止轮询，避免后台持续请求
+onDeactivated(() => {
+  stopHourlyFetch()
 })
 </script>
 

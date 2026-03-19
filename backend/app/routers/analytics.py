@@ -3,6 +3,7 @@
 数据分析相关的 API 路由
 """
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -12,11 +13,11 @@ import asyncio
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from sqlmodel import Session
+from sqlmodel import Session, select as sql_select
 
 from ..database import get_session
 from ..crud import AnalyticsService
-from ..models import Anime
+from ..models import Anime, TmdbAnimeInfo
 from ..schemas import (
     EpisodeBehaviorAnalysisResponse,
     LifecycleGrowthResponse,
@@ -25,6 +26,7 @@ from ..schemas import (
     PersonalizedRecommendationsResponse,
 )
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analytics", tags=["数据分析"])
 # 图片代理路由（路径为 /api/image_proxy，与 analytics 路由独立）
@@ -145,28 +147,72 @@ def get_animes(
 
 
 @router.get("/animes/{season_id}", response_model=dict)
-def get_anime_detail(season_id: int, session: Session = Depends(get_session)):
+async def get_anime_detail(season_id: int, session: Session = Depends(get_session)):
     """
-    获取番剧详情
-    
+    获取番剧详情，若尚未绑定 TMDB 数据则自动触发富集（超时或失败时降级返回基础数据）。
+
     Args:
         season_id: 番剧 ID
         session: 数据库会话
-        
+
     Returns:
-        番剧详情
+        番剧详情（含可选的 tmdb_info 嵌套字段）
     """
+    from ..tmdb_service import TmdbService
+    from ..models import TmdbAnimeInfo
+    from sqlmodel import select as sql_select
+
     analytics_service = AnalyticsService(session)
     anime = analytics_service.get_anime_by_id(season_id)
-    
+
     if not anime:
         raise HTTPException(status_code=404, detail="番剧不存在")
-    
+
+    # 若尚未绑定 TMDB 数据，自动触发富集（失败时降级，不阻断主流程）
+    if anime.get("tmdb_info") is None:
+        try:
+            from ..tmdb_service import TmdbService  # 延迟导入，避免模块加载期语法错误影响路由注册
+            service = TmdbService()
+            if service.is_available():
+                info = await asyncio.wait_for(
+                    service.enrich_anime(
+                        season_id=season_id,
+                        title=anime["title"],
+                        release_date=anime.get("release_date"),
+                    ),
+                    timeout=5.0,
+                )
+                if info:
+                    existing = session.exec(
+                        sql_select(TmdbAnimeInfo).where(TmdbAnimeInfo.season_id == season_id)
+                    ).first()
+                    if existing:
+                        existing.tmdb_id = info.tmdb_id
+                        existing.original_name = info.original_name
+                        existing.overview = info.overview
+                        existing.tmdb_rating = info.tmdb_rating
+                        existing.backdrop_url = info.backdrop_url
+                        existing.logo_url = info.logo_url
+                        existing.poster_url = info.poster_url
+                        existing.genres = info.genres
+                        existing.first_air_date = info.first_air_date
+                        existing.updated_at = info.updated_at
+                        session.add(existing)
+                    else:
+                        session.add(info)
+                    session.commit()
+
+                    # 写入成功后重新读取，以返回完整数据
+                    anime = analytics_service.get_anime_by_id(season_id) or anime
+        except asyncio.TimeoutError:
+            logger.warning("自动 TMDB 富集超时（season_id=%s），降级返回基础数据", season_id)
+        except Exception:
+            logger.warning("自动 TMDB 富集失败（season_id=%s），降级返回基础数据", season_id, exc_info=True)
+
     return {
         "success": True,
         "data": anime
     }
-
 
 @router.post("/tmdb/enrich/{season_id}", response_model=dict)
 async def trigger_tmdb_enrich(season_id: int, session: Session = Depends(get_session)):
@@ -183,10 +229,6 @@ async def trigger_tmdb_enrich(season_id: int, session: Session = Depends(get_ses
     Returns:
         富集结果，包含 tmdb_id 等关键字段
     """
-    from ..tmdb_service import TmdbService
-    from ..models import TmdbAnimeInfo
-    from sqlmodel import select as sql_select
-
     # 校验番剧是否存在
     anime = session.exec(
         sql_select(Anime).where(Anime.season_id == season_id)
@@ -194,6 +236,7 @@ async def trigger_tmdb_enrich(season_id: int, session: Session = Depends(get_ses
     if not anime:
         raise HTTPException(status_code=404, detail="番剧不存在")
 
+    from ..tmdb_service import TmdbService  # 延迟导入，避免模块加载期语法错误影响路由注册
     service = TmdbService()
     if not service.is_available():
         raise HTTPException(status_code=503, detail="TMDB_API_KEY 未配置，服务不可用")
@@ -444,6 +487,33 @@ def get_anime_episodes(season_id: int, session: Session = Depends(get_session)):
         "success": True,
         "total": len(episodes),
         "data": episodes
+    }
+
+
+@router.get("/animes/{season_id}/watch-time", response_model=dict)
+def get_watch_time(season_id: int, session: Session = Depends(get_session)):
+    """
+    获取番剧各集的 24 小时观看时间分布（真实数据）。
+
+    从 EpisodeStats.hourly_online_history 列读取每小时在线人数快照，
+    格式化为长度 24 的整数数组供前端 ECharts 渲染。
+
+    Args:
+        season_id: 番剧 ID
+        session: 数据库会话
+
+    Returns:
+        各集 24 小时分布数据，episodes_data 为空时返回 404
+    """
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_watch_time_distribution(season_id)
+
+    if not data["episodes_data"]:
+        raise HTTPException(status_code=404, detail="暂无分集在线人数数据")
+
+    return {
+        "success": True,
+        "data": data,
     }
 
 

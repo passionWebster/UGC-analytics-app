@@ -6,7 +6,9 @@
     <!-- 主内容区 -->
     <main :class="{ 'with-layout': showLayout }">
       <div class="container">
-        <router-view />
+        <KeepAlive include="StatusView">
+          <router-view />
+        </KeepAlive>
       </div>
     </main>
     

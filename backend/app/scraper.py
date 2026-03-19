@@ -681,6 +681,33 @@ class BilibiliBangumiCrawler:
             print(f"❌ 获取在线人数失败 bvid={bvid}: {e}")
         return None
 
+    def record_hourly_online_viewers(self) -> None:
+        """
+        获取所有剧集的当前在线人数，并将结果按当前小时写入 hourly_online_history 列。
+        建议由调度器每小时的第 5 分钟触发，避开整点网络拥堵。
+        """
+        print("🔄 [定时任务] 开始记录剧集每小时在线人数...")
+        episodes = self.session.exec(select(EpisodeStats)).all()
+        current_hour = datetime.now().strftime("%H")
+        updated = 0
+
+        for ep in episodes:
+            online_count = self.get_online_viewers(ep.bvid, ep.cid)
+            if online_count is not None:
+                # 解析现有历史记录（兼容 None 和空字符串）
+                try:
+                    history: Dict[str, int] = json.loads(ep.hourly_online_history) if ep.hourly_online_history else {}
+                except (json.JSONDecodeError, TypeError):
+                    history = {}
+                history[current_hour] = online_count
+                ep.hourly_online_history = json.dumps(history, ensure_ascii=False)
+                ep.updated_at = datetime.now()
+                updated += 1
+            time.sleep(settings.bilibili_request_delay)  # 严格控制请求频率，防止触发 B站风控
+
+        self.session.commit()
+        print(f"✅ 在线人数记录完成，成功更新 {updated}/{len(episodes)} 个剧集")
+
     def search_bangumi_on_bilibili(self, keyword: str) -> Optional[int]:
         """
         通过关键词在 B站 搜索番剧，返回最匹配的 season_id

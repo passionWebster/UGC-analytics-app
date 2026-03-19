@@ -231,3 +231,26 @@ export const getCompetitiveAnalysis = async (
 ): Promise<{ success: boolean; data: CompetitiveLandscapeData }> => {
   return apiClient.get(`/analytics/animes/${seasonId}/competitive`)
 }
+
+/** 单集 24 小时观看时间分布 */
+export interface EpisodeWatchTimeDistribution {
+  episode_title: string
+  /** 长度为 24 的整数数组，索引对应 0~23 时 */
+  distribution: number[]
+}
+
+/** 观看时间分布接口响应 */
+export interface WatchTimeDistributionData {
+  season_id: number
+  episodes_data: EpisodeWatchTimeDistribution[]
+}
+
+/**
+ * 获取番剧各集的 24 小时观看时间分布（真实数据）。
+ * 若番剧暂无分集在线人数数据，后端返回 404，axios 会拒绝 Promise。
+ */
+export const getWatchTimeDistribution = async (
+  seasonId: number
+): Promise<{ success: boolean; data: WatchTimeDistributionData }> => {
+  return apiClient.get(`/analytics/animes/${seasonId}/watch-time`)
+}
