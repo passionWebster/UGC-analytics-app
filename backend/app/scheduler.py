@@ -11,6 +11,8 @@ import time
 from datetime import datetime
 
 import asyncio
+from apscheduler.executors.asyncio import AsyncIOExecutor
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlmodel import Session, select
 
@@ -143,7 +145,13 @@ def create_scheduler() -> AsyncIOScheduler:
     Returns:
         配置好任务的 AsyncIOScheduler 实例（尚未启动）
     """
-    scheduler = AsyncIOScheduler()
+    scheduler = AsyncIOScheduler(
+        executors={
+            "default": AsyncIOExecutor(),
+            # 用于执行包含阻塞操作的任务（如网络请求、time.sleep 等）
+            "blocking": ThreadPoolExecutor(max_workers=5),
+        }
+    )
 
     # 任务 A：每 4 小时执行一次
     scheduler.add_job(
@@ -182,6 +190,7 @@ def create_scheduler() -> AsyncIOScheduler:
         minute=5,
         id="task_d_hourly_online_viewers",
         replace_existing=True,
+        executor="blocking",
     )
 
     return scheduler
