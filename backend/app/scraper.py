@@ -669,7 +669,11 @@ class BilibiliBangumiCrawler:
             data = response.json()
             if data.get('code') == 0:
                 # 返回完整 data 字典，以便调用方同时获取 stat 和 duration
-                return data.get('data', {})
+                payload = data.get('data')
+                if isinstance(payload, dict):
+                    return payload
+                # 若 data 字段为空或不是字典，则按照约定返回空字典
+                return {}
         except Exception as e:
             print(f"❌ 获取单集统计详情失败 bvid={bvid}: {e}")
         return {}
