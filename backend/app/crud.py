@@ -504,11 +504,15 @@ class AnalyticsService:
         ).all()
 
         result = []
+        has_non_empty_history = False
         for ep in episodes:
             try:
                 history_dict: Dict[str, int] = json.loads(ep.hourly_online_history) if ep.hourly_online_history else {}
             except (json.JSONDecodeError, TypeError):
                 history_dict = {}
+
+            if history_dict:
+                has_non_empty_history = True
 
             # 将 {"14": 150, "15": 200} 转换为长度 24 的数组，缺失小时填 0
             distribution = [history_dict.get(f"{hour:02d}", 0) for hour in range(24)]
@@ -517,7 +521,10 @@ class AnalyticsService:
                 "distribution": distribution,
             })
 
-        return {
+        if not has_non_empty_history:
+            result = []
+
+        return:
             "season_id": season_id,
             "episodes_data": result,
         }
