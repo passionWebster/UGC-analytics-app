@@ -183,27 +183,25 @@ async def get_anime_detail(season_id: int, session: Session = Depends(get_sessio
                     timeout=5.0,
                 )
                 if info:
-                    def _upsert() -> None:
-                        existing = session.exec(
-                            sql_select(TmdbAnimeInfo).where(TmdbAnimeInfo.season_id == season_id)
-                        ).first()
-                        if existing:
-                            existing.tmdb_id = info.tmdb_id
-                            existing.original_name = info.original_name
-                            existing.overview = info.overview
-                            existing.tmdb_rating = info.tmdb_rating
-                            existing.backdrop_url = info.backdrop_url
-                            existing.logo_url = info.logo_url
-                            existing.poster_url = info.poster_url
-                            existing.genres = info.genres
-                            existing.first_air_date = info.first_air_date
-                            existing.updated_at = info.updated_at
-                            session.add(existing)
-                        else:
-                            session.add(info)
-                        session.commit()
+                    existing = session.exec(
+                        sql_select(TmdbAnimeInfo).where(TmdbAnimeInfo.season_id == season_id)
+                    ).first()
+                    if existing:
+                        existing.tmdb_id = info.tmdb_id
+                        existing.original_name = info.original_name
+                        existing.overview = info.overview
+                        existing.tmdb_rating = info.tmdb_rating
+                        existing.backdrop_url = info.backdrop_url
+                        existing.logo_url = info.logo_url
+                        existing.poster_url = info.poster_url
+                        existing.genres = info.genres
+                        existing.first_air_date = info.first_air_date
+                        existing.updated_at = info.updated_at
+                        session.add(existing)
+                    else:
+                        session.add(info)
+                    session.commit()
 
-                    await asyncio.to_thread(_upsert)
                     # 写入成功后重新读取，以返回完整数据
                     anime = analytics_service.get_anime_by_id(season_id) or anime
         except asyncio.TimeoutError:
