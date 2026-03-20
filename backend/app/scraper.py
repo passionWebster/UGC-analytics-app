@@ -690,7 +690,7 @@ class BilibiliBangumiCrawler:
                 # 若 data 字段为空或不是字典，则按照约定返回空字典
                 return {}
         except Exception as e:
-            logger.info(f"❌ 获取单集统计详情失败 bvid={bvid}: {e}")
+            logger.exception('❌ 获取单集统计详情失败 bvid={}: {}', bvid, e)
         return {}
 
     @staticmethod
@@ -735,7 +735,7 @@ class BilibiliBangumiCrawler:
             if data.get('code') == 0 and 'data' in data:
                 return self._convert_order_to_int(str(data['data'].get('total', 0)))
         except Exception as e:
-            logger.info(f"❌ 获取在线人数失败 bvid={bvid}: {e}")
+            logger.exception('❌ 获取在线人数失败 bvid={}: {}', bvid, e)
         return None
 
     def record_hourly_online_viewers(self) -> None:
@@ -789,7 +789,7 @@ class BilibiliBangumiCrawler:
                     if season_id:
                         return int(season_id)
         except Exception as e:
-            logger.info(f"❌ B站搜索失败 keyword={keyword}: {e}")
+            logger.exception('❌ B站搜索失败 keyword={}: {}', keyword, e)
         return None
 
     def fetch_and_save_anime_with_episodes(self, keyword: str) -> Optional[int]:

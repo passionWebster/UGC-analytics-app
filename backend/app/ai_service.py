@@ -4,6 +4,7 @@ AI 助手服务
 处理与豆包 AI 的交互，并对相同消息进行 TTL 缓存以减少重复外部调用
 """
 import hashlib
+import threading
 import requests
 from typing import Optional, Dict, Any
 from fastapi import HTTPException
@@ -15,8 +16,10 @@ from .logger import app_logger
 # ──────────────────────────────────────────────────────────────────────────────
 # AI 响应缓存：最多缓存 128 条结果，每条 TTL 10 分钟
 # 以 (message, context) 的 SHA256 摘要为键，避免缓存对象过大
+# cachetools 不是线程安全的，使用 RLock 保护并发读写
 # ──────────────────────────────────────────────────────────────────────────────
 _ai_cache: TTLCache = TTLCache(maxsize=128, ttl=600)
+_ai_cache_lock = threading.RLock()
 
 
 class AIService:
@@ -67,9 +70,11 @@ class AIService:
         cache_key = hashlib.sha256(
             f"{message}||{context or ''}".encode("utf-8")
         ).hexdigest()
-        if cache_key in _ai_cache:
+        with _ai_cache_lock:
+            cached = _ai_cache.get(cache_key)
+        if cached is not None:
             app_logger.debug("AI 响应缓存命中，跳过外部请求（key={}...）", cache_key[:8])
-            return _ai_cache[cache_key]
+            return cached
 
         # 构建系统提示词
         system_content = "你是一个B站数据分析助手，帮助用户理解B站番剧数据、用户行为分析报告和系统使用。"
@@ -127,7 +132,8 @@ class AIService:
                 raise HTTPException(status_code=500, detail="解析 AI 响应失败")
 
             # 写入缓存
-            _ai_cache[cache_key] = reply
+            with _ai_cache_lock:
+                _ai_cache[cache_key] = reply
             return reply
         
         except requests.exceptions.RequestException as e:

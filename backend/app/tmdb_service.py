@@ -11,6 +11,7 @@ TMDB API 集成服务
 import asyncio
 import json
 import re
+import threading
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -32,10 +33,13 @@ _tmdb_client_lock = asyncio.Lock()
 #   - search_cache:  搜索结果缓存，最多 256 条，TTL 1 小时
 #   - details_cache: 剧集详情缓存，最多 512 条，TTL 6 小时
 #   - images_cache:  图片资源缓存，最多 512 条，TTL 24 小时（图片 URL 极少变动）
+# cachetools 不是线程安全的；此模块同时被异步 API handler 和 APScheduler
+# 线程池任务（_task_c_tmdb_enrichment）访问，因此使用 RLock 保护全部缓存操作
 # ──────────────────────────────────────────────────────────────────────────────
 _search_cache: TTLCache = TTLCache(maxsize=256, ttl=3600)
 _details_cache: TTLCache = TTLCache(maxsize=512, ttl=21600)
 _images_cache: TTLCache = TTLCache(maxsize=512, ttl=86400)
+_tmdb_cache_lock = threading.RLock()
 
 
 async def get_shared_tmdb_client(timeout: float) -> httpx.AsyncClient:
@@ -138,9 +142,11 @@ class TmdbService:
 
         # ── 缓存命中检查 ─────────────────────────────────────────────────────
         cache_key = f"search:{title}:{year or ''}"
-        if cache_key in _search_cache:
+        with _tmdb_cache_lock:
+            cached = _search_cache.get(cache_key)
+        if cached is not None:
             app_logger.debug("TMDB 搜索缓存命中: {}", cache_key)
-            return _search_cache[cache_key]
+            return cached
 
         params: Dict = {
             "api_key": self.api_key,
@@ -162,21 +168,21 @@ class TmdbService:
         if not results:
             return None
 
-        # 优先选择年份匹配的结果
-        result: Optional[Dict] = None
+        _result: Optional[Dict] = None
         if year:
             for r in results:
                 first_air = r.get("first_air_date") or ""
                 if first_air.startswith(year):
-                    result = r
+                    _result = r
                     break
 
         # 年份未命中，退回第一个结果
-        if result is None:
-            result = results[0]
+        if _result is None:
+            _result = results[0]
 
-        _search_cache[cache_key] = result
-        return result
+        with _tmdb_cache_lock:
+            _search_cache[cache_key] = _result
+        return _result
 
     async def get_tv_details(self, tmdb_id: int) -> Optional[Dict]:
         """
@@ -196,9 +202,11 @@ class TmdbService:
 
         # ── 缓存命中检查 ─────────────────────────────────────────────────────
         cache_key = f"details:{tmdb_id}"
-        if cache_key in _details_cache:
+        with _tmdb_cache_lock:
+            cached = _details_cache.get(cache_key)
+        if cached is not None:
             app_logger.debug("TMDB 详情缓存命中: tmdb_id={}", tmdb_id)
-            return _details_cache[cache_key]
+            return cached
 
         params: Dict = {"api_key": self.api_key, "language": "zh-CN"}
 
@@ -226,7 +234,8 @@ class TmdbService:
             except httpx.HTTPError:
                 pass  # 降级失败则 overview 保持空字符串
 
-        _details_cache[cache_key] = data
+        with _tmdb_cache_lock:
+            _details_cache[cache_key] = data
         return data
 
     async def get_tv_images(self, tmdb_id: int) -> Optional[Dict]:
@@ -249,9 +258,11 @@ class TmdbService:
 
         # ── 缓存命中检查 ─────────────────────────────────────────────────────
         cache_key = f"images:{tmdb_id}"
-        if cache_key in _images_cache:
+        with _tmdb_cache_lock:
+            cached = _images_cache.get(cache_key)
+        if cached is not None:
             app_logger.debug("TMDB 图片缓存命中: tmdb_id={}", tmdb_id)
-            return _images_cache[cache_key]
+            return cached
 
         params: Dict = {
             "api_key": self.api_key,
@@ -266,7 +277,8 @@ class TmdbService:
                 )
                 response.raise_for_status()
                 result = response.json()
-                _images_cache[cache_key] = result
+                with _tmdb_cache_lock:
+                    _images_cache[cache_key] = result
                 return result
         except httpx.HTTPError:
             return None
