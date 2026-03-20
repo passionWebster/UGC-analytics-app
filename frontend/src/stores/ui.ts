@@ -10,13 +10,25 @@ import { ref, computed } from 'vue'
 /** 支持的主题类型 */
 export type ThemeMode = 'light' | 'dark'
 
+const getInitialThemeMode = (): ThemeMode => {
+  const stored = localStorage.getItem('theme') as ThemeMode | null
+  if (stored === 'light' || stored === 'dark') {
+    return stored
+  }
+
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    return prefersDark ? 'dark' : 'light'
+  }
+
+  return 'dark'
+}
+
 export const useUIStore = defineStore('ui', () => {
   // ── 状态 ──────────────────────────────────────────────────────────────────
 
   /** 当前主题模式，默认跟随系统偏好 */
-  const themeMode = ref<ThemeMode>(
-    (localStorage.getItem('theme') as ThemeMode) || 'dark'
-  )
+  const themeMode = ref<ThemeMode>(getInitialThemeMode())
 
   /** 全局加载状态（用于页面级骨架屏或全屏 Loading） */
   const globalLoading = ref<boolean>(false)
