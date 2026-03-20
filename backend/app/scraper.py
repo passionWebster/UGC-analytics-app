@@ -660,7 +660,7 @@ class BilibiliBangumiCrawler:
                 except Exception as e:
                     self.session.rollback()
                     has_error = True
-                    logger.info(f"  ❌ 写入 {ep_title} 时发生错误: {e}")
+                    logger.exception(f"  ❌ 写入 {ep_title} 时发生错误: {e}")
 
         logger.info(f"  ✅ 已写入 {saved_count} 条分集记录 (season_id={season_id})")
         # 有任意一集写入失败时返回 False，让调用方感知并视情况重试
