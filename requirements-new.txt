@@ -26,3 +26,9 @@ tqdm==4.67.1
 
 # Data Validation
 email-validator==2.2.0
+
+# Logging
+loguru==0.7.3
+
+# Caching
+cachetools==7.0.5

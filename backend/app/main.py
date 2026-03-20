@@ -3,13 +3,15 @@
 FastAPI 应用主入口
 整合所有路由和中间件，启动应用服务
 """
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-import os
+import time
 
-from .database import init_database, engine
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from .database import init_database
 from .config import settings
+from .logger import app_logger
 from .routers import auth, analytics, ai, crawler
 from .scheduler import create_scheduler
 
@@ -32,6 +34,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HTTP 请求日志中间件：记录每条请求的时间、路径、方法、耗时与状态码
+# ──────────────────────────────────────────────────────────────────────────────
+@app.middleware("http")
+async def http_request_logging_middleware(request: Request, call_next):
+    """拦截所有 HTTP 请求，统一记录访问日志"""
+    start_time = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        latency = (time.perf_counter() - start_time) * 1000  # 单位：毫秒
+        app_logger.info(
+            "{method} {path} | status={status} | latency={latency:.1f}ms",
+            method=request.method,
+            path=request.url.path,
+            status=500,
+            latency=latency,
+        )
+        # 重新抛出异常，让全局异常处理器生成统一的 500 响应
+        raise
+    else:
+        latency = (time.perf_counter() - start_time) * 1000  # 单位：毫秒
+        app_logger.info(
+            "{method} {path} | status={status} | latency={latency:.1f}ms",
+            method=request.method,
+            path=request.url.path,
+            status=response.status_code,
+            latency=latency,
+        )
+        return response
+# ──────────────────────────────────────────────────────────────────────────────
+# 全局异常处理器：捕获未处理异常，返回标准 JSON 错误响应
+# ──────────────────────────────────────────────────────────────────────────────
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """捕获全局未处理异常，返回统一格式的 JSON 错误信息"""
+    app_logger.exception(
+        "未处理的异常 [{method} {path}]: {exc}",
+        method=request.method,
+        path=request.url.path,
+        exc=exc,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"code": 500, "msg": "服务器内部错误，请稍后重试", "data": None},
+    )
+
 # 注册路由
 app.include_router(auth.router)
 app.include_router(analytics.router)
@@ -40,22 +90,13 @@ app.include_router(ai.router)
 app.include_router(crawler.router)
 
 
-def _run_update_online_viewers():
-    """在独立的数据库会话中刷新所有剧集在线人数"""
-    from sqlmodel import Session
-    from .scraper import BilibiliBangumiCrawler
-    with Session(engine) as session:
-        crawler_instance = BilibiliBangumiCrawler(session)
-        crawler_instance.update_online_viewers_for_all_episodes()
-
-
 @app.on_event("startup")
 async def startup_event():
     """应用启动事件"""
-    print("=" * 60)
-    print(f"🚀 {settings.app_name} v{settings.app_version}")
-    print("=" * 60)
-    
+    app_logger.info("=" * 60)
+    app_logger.info("🚀 {} v{}", settings.app_name, settings.app_version)
+    app_logger.info("=" * 60)
+
     # 初始化数据库
     init_database()
 
@@ -64,12 +105,12 @@ async def startup_event():
     scheduler.start()
     # 将 scheduler 挂载到 app.state，以便 shutdown 时停止
     app.state.scheduler = scheduler
-    print("⏰ 定时任务已启动：每 1 小时刷新剧集在线人数；每月 1 日 2:00 生成月度快照")
-    
-    print(f"✅ 服务器启动成功")
-    print(f"📖 API 文档: http://{settings.host}:{settings.port}/api/docs")
-    print(f"📖 ReDoc 文档: http://{settings.host}:{settings.port}/api/redoc")
-    print("=" * 60)
+    app_logger.info("⏰ 定时任务已启动：每 1 小时刷新剧集在线人数；每月 1 日 2:00 生成月度快照")
+
+    app_logger.info("✅ 服务器启动成功")
+    app_logger.info("📖 API 文档: http://{}:{}/api/docs", settings.host, settings.port)
+    app_logger.info("📖 ReDoc 文档: http://{}:{}/api/redoc", settings.host, settings.port)
+    app_logger.info("=" * 60)
 
 
 @app.on_event("shutdown")
@@ -78,7 +119,7 @@ async def shutdown_event():
     scheduler = getattr(app.state, "scheduler", None)
     if scheduler and scheduler.running:
         scheduler.shutdown(wait=False)
-        print("⏰ 定时任务已停止")
+        app_logger.info("⏰ 定时任务已停止")
 
 
 @app.get("/")

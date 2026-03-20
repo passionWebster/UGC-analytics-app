@@ -16,6 +16,7 @@ from tqdm import tqdm
 from .models import Anime, DailyStats, EpisodeStats, CrawlLog
 from .database import get_session
 from .config import settings
+from .logger import scraper_logger as logger
 
 # SQLite 写入互斥锁：用于本模块内的爬虫写入操作，防止多线程并发写入时产生数据库锁冲突。
 # 注意：此锁仅在当前进程内、且仅对实际获取它的代码路径生效，并不能保证全项目的所有写入都已串行化。
@@ -74,7 +75,7 @@ class BilibiliBangumiCrawler:
             'Accept': 'application/json, text/plain, */*',
             'Referer': 'https://www.bilibili.com/'
         })
-        print(f"✅ 爬虫已初始化")
+        logger.info('✅ 爬虫已初始化')
     
     @staticmethod
     def _convert_order_to_int(order_str: Any) -> int:
@@ -209,10 +210,10 @@ class BilibiliBangumiCrawler:
                     
                     time.sleep(settings.bilibili_request_delay)
                 else:
-                    print(f"  ❌ API 返回错误: {data.get('message', '未知错误')}")
+                    logger.warning('  ❌ API 返回错误: {}', data.get('message', '未知错误'))
                     break
             except Exception as e:
-                print(f"  ❌ 请求失败: {e}")
+                logger.exception('  ❌ 请求失败: {}', e)
                 break
         
         return all_items
@@ -225,7 +226,7 @@ class BilibiliBangumiCrawler:
         Returns:
             成功返回 True，失败返回 False
         """
-        print("🚀 [任务开始] 更新番剧数据库")
+        logger.info("🚀 [任务开始] 更新番剧数据库")
         
         # 创建爬虫日志
         crawl_log = CrawlLog(
@@ -238,32 +239,32 @@ class BilibiliBangumiCrawler:
         
         try:
             # 1. 底库构建：获取国产番剧和常规番剧基础信息
-            print("\n📊 正在获取国产番剧数据...")
+            logger.info("\n📊 正在获取国产番剧数据...")
             domestic_animes = self._fetch_domestic_animes()
             
-            print("\n📊 正在获取常规番剧数据...")
+            logger.info("\n📊 正在获取常规番剧数据...")
             regular_animes = self._fetch_regular_animes()
             
             all_animes = {**domestic_animes, **regular_animes}
-            print(f"\n✅ 底库构建完成，共获取 {len(all_animes)} 部番剧")
+            logger.info(f"\n✅ 底库构建完成，共获取 {len(all_animes)} 部番剧")
             
             # 2. 补充地区信息：按地区再次请求，更新底库中非国产番剧的地区字段
-            print("\n🌍 正在补充地区信息...")
+            logger.info("\n🌍 正在补充地区信息...")
             all_animes = self._enrich_area(all_animes)
             
             # 3. 补充风格信息：遍历风格ID，将匹配的风格追加到底库
-            print("\n🎨 正在补充风格信息（常规番剧）...")
+            logger.info("\n🎨 正在补充风格信息（常规番剧）...")
             all_animes = self._enrich_regular_styles(all_animes)
             
-            print("\n🎨 正在补充风格信息（国产番剧）...")
+            logger.info("\n🎨 正在补充风格信息（国产番剧）...")
             all_animes = self._enrich_domestic_styles(all_animes)
             
             # 4. 补充播放量和追番量：使用 order=2/3 重新请求，覆盖底库数据
-            print("\n📈 正在补充播放量和追番量数据...")
+            logger.info("\n📈 正在补充播放量和追番量数据...")
             all_animes = self._enrich_views_and_favorites(all_animes)
             
             # 5. 入库存储
-            print("\n💾 正在保存到数据库...")
+            logger.info("\n💾 正在保存到数据库...")
             self._save_animes_to_db(all_animes)
             
             # 更新爬虫日志
@@ -272,11 +273,11 @@ class BilibiliBangumiCrawler:
             crawl_log.completed_at = datetime.now()
             self.session.commit()
             
-            print(f"\n🎉 数据库更新成功！共保存 {len(all_animes)} 部番剧")
+            logger.info(f"\n🎉 数据库更新成功！共保存 {len(all_animes)} 部番剧")
             return True
             
         except Exception as e:
-            print(f"\n❌ 更新失败: {e}")
+            logger.exception("\n❌ 更新失败")
             crawl_log.status = "failed"
             crawl_log.error_message = str(e)
             crawl_log.completed_at = datetime.now()
@@ -297,7 +298,7 @@ class BilibiliBangumiCrawler:
             }
             
             items = self._fetch_api_data(params)
-            print(f"  获取 {year} 年国产番剧: {len(items)} 部")
+            logger.info(f"  获取 {year} 年国产番剧: {len(items)} 部")
             
             for item in items:
                 season_id = item.get('season_id')
@@ -344,7 +345,7 @@ class BilibiliBangumiCrawler:
                 }
                 
                 items = self._fetch_api_data(params)
-                print(f"  获取 {year}-{month:02d} 常规番剧: {len(items)} 部")
+                logger.info(f"  获取 {year}-{month:02d} 常规番剧: {len(items)} 部")
                 
                 for item in items:
                     season_id = item.get('season_id')
@@ -368,7 +369,7 @@ class BilibiliBangumiCrawler:
     
     def _fetch_regular_by_area(self, area: int) -> List[Dict[str, Any]]:
         """获取指定地区的常规番剧列表 (area=2 日本, area=3 美国)"""
-        print(f"  获取地区 {area} 常规番剧...")
+        logger.info(f"  获取地区 {area} 常规番剧...")
         params = {
             'st': 1, 'order': 2, 'season_version': -1,
             'spoken_language_type': -1, 'area': area, 'is_finish': -1,
@@ -436,7 +437,7 @@ class BilibiliBangumiCrawler:
             elif season_id in usa_ids:
                 item['area'] = '美国'
 
-        print(f"  ✅ 地区标记完成：日本 {len(japan_ids)} 部，美国 {len(usa_ids)} 部")
+        logger.info(f"  ✅ 地区标记完成：日本 {len(japan_ids)} 部，美国 {len(usa_ids)} 部")
         return all_animes
 
     def _enrich_regular_styles(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
@@ -475,10 +476,10 @@ class BilibiliBangumiCrawler:
         """
         补充播放量和追番量：使用 order=2(播放量) 和 order=3(追番量) 重新请求，覆盖底库数据
         """
-        print("  获取播放量数据 (order=2)...")
+        logger.info("  获取播放量数据 (order=2)...")
         views_items = self._fetch_regular_ranking(2) + self._fetch_domestic_ranking(2)
 
-        print("  获取追番量数据 (order=3)...")
+        logger.info("  获取追番量数据 (order=3)...")
         favorites_items = self._fetch_regular_ranking(3) + self._fetch_domestic_ranking(3)
 
         views_map = {
@@ -494,7 +495,7 @@ class BilibiliBangumiCrawler:
             item['views'] = views_map.get(season_id, item.get('views', 0))
             item['favorites'] = favorites_map.get(season_id, 0)
 
-        print(f"  ✅ 播放量/追番量补充完成")
+        logger.info(f"  ✅ 播放量/追番量补充完成")
         return all_animes
 
     def _save_animes_to_db(self, animes: Dict[int, Dict]):
@@ -549,7 +550,7 @@ class BilibiliBangumiCrawler:
                 self.session.add(daily_stat)
         
         self.session.commit()
-        print(f"✅ 已保存 {len(animes)} 部番剧到数据库")
+        logger.info(f"✅ 已保存 {len(animes)} 部番剧到数据库")
     
     def get_anime_details(self, season_id: int) -> Optional[Dict]:
         """
@@ -576,7 +577,7 @@ class BilibiliBangumiCrawler:
                     'episodes': result.get('episodes', [])
                 }
         except Exception as e:
-            print(f"❌ 获取番剧详情失败: {e}")
+            logger.exception("❌ 获取番剧详情失败")
         
         return None
 
@@ -590,14 +591,14 @@ class BilibiliBangumiCrawler:
         Returns:
             B站 API 成功返回分集数据则返回 True，否则返回 False
         """
-        print(f"🔍 正在从 B站 抓取 season_id={season_id} 的分集数据...")
+        logger.info(f"🔍 正在从 B站 抓取 season_id={season_id} 的分集数据...")
         details = self.get_anime_details(season_id)
         if not details or not details.get('episodes'):
-            print(f"❌ 未能获取 season_id={season_id} 的分集数据")
+            logger.info(f"❌ 未能获取 season_id={season_id} 的分集数据")
             return False
 
         episodes = details['episodes']
-        print(f"  -> 找到 {len(episodes)} 集，正在写入数据库...")
+        logger.info(f"  -> 找到 {len(episodes)} 集，正在写入数据库...")
         saved_count = 0
         has_error = False
         for episode in episodes:
@@ -607,7 +608,7 @@ class BilibiliBangumiCrawler:
             # 【防线 2】利用 API 的 badge / title 字段进行初步过滤
             if not self._is_valid_main_episode(episode):
                 ep_title = episode.get('long_title') or episode.get('title')
-                print(f"  ⏭️ API字段过滤，跳过非正片: {ep_title}")
+                logger.info(f"  ⏭️ API字段过滤，跳过非正片: {ep_title}")
                 continue
 
             if not bvid or not cid:
@@ -627,7 +628,7 @@ class BilibiliBangumiCrawler:
 
             # 【防线 3】时长兜底，过滤掉短于 3 分钟（180 秒）的视频
             if 0 < duration < 180:
-                print(f"  ⏭️ 时长兜底过滤，跳过极短视频: {ep_title} ({duration}秒)")
+                logger.info(f"  ⏭️ 时长兜底过滤，跳过极短视频: {ep_title} ({duration}秒)")
                 continue
 
             # 【数据库写入阶段】：加锁，单条写入后立即提交，做到"快进快出"
@@ -659,9 +660,9 @@ class BilibiliBangumiCrawler:
                 except Exception as e:
                     self.session.rollback()
                     has_error = True
-                    print(f"  ❌ 写入 {ep_title} 时发生错误: {e}")
+                    logger.exception(f"  ❌ 写入 {ep_title} 时发生错误: {e}")
 
-        print(f"  ✅ 已写入 {saved_count} 条分集记录 (season_id={season_id})")
+        logger.info(f"  ✅ 已写入 {saved_count} 条分集记录 (season_id={season_id})")
         # 有任意一集写入失败时返回 False，让调用方感知并视情况重试
         return not has_error
 
@@ -689,7 +690,7 @@ class BilibiliBangumiCrawler:
                 # 若 data 字段为空或不是字典，则按照约定返回空字典
                 return {}
         except Exception as e:
-            print(f"❌ 获取单集统计详情失败 bvid={bvid}: {e}")
+            logger.exception('❌ 获取单集统计详情失败 bvid={}: {}', bvid, e)
         return {}
 
     @staticmethod
@@ -734,7 +735,7 @@ class BilibiliBangumiCrawler:
             if data.get('code') == 0 and 'data' in data:
                 return self._convert_order_to_int(str(data['data'].get('total', 0)))
         except Exception as e:
-            print(f"❌ 获取在线人数失败 bvid={bvid}: {e}")
+            logger.exception('❌ 获取在线人数失败 bvid={}: {}', bvid, e)
         return None
 
     def record_hourly_online_viewers(self) -> None:
@@ -742,7 +743,7 @@ class BilibiliBangumiCrawler:
         获取所有剧集的当前在线人数，并将结果按当前小时写入 hourly_online_history 列。
         建议由调度器每小时的第 5 分钟触发，避开整点网络拥堵。
         """
-        print("🔄 [定时任务] 开始记录剧集每小时在线人数...")
+        logger.info("🔄 [定时任务] 开始记录剧集每小时在线人数...")
         episodes = self.session.exec(select(EpisodeStats)).all()
         current_hour = datetime.now().strftime("%H")
         updated = 0
@@ -762,7 +763,7 @@ class BilibiliBangumiCrawler:
             time.sleep(settings.bilibili_request_delay)  # 严格控制请求频率，防止触发 B站风控
 
         self.session.commit()
-        print(f"✅ 在线人数记录完成，成功更新 {updated}/{len(episodes)} 个剧集")
+        logger.info(f"✅ 在线人数记录完成，成功更新 {updated}/{len(episodes)} 个剧集")
 
     def search_bangumi_on_bilibili(self, keyword: str) -> Optional[int]:
         """
@@ -788,7 +789,7 @@ class BilibiliBangumiCrawler:
                     if season_id:
                         return int(season_id)
         except Exception as e:
-            print(f"❌ B站搜索失败 keyword={keyword}: {e}")
+            logger.exception('❌ B站搜索失败 keyword={}: {}', keyword, e)
         return None
 
     def fetch_and_save_anime_with_episodes(self, keyword: str) -> Optional[int]:
@@ -801,16 +802,16 @@ class BilibiliBangumiCrawler:
         Returns:
             成功时返回 season_id，失败时返回 None
         """
-        print(f"🔍 正在搜索番剧: {keyword}")
+        logger.info(f"🔍 正在搜索番剧: {keyword}")
         season_id = self.search_bangumi_on_bilibili(keyword)
         if not season_id:
-            print(f"❌ 未能通过 B站 API 找到番剧: {keyword}")
+            logger.info(f"❌ 未能通过 B站 API 找到番剧: {keyword}")
             return None
 
-        print(f"  -> 找到 season_id={season_id}，正在获取详情...")
+        logger.info(f"  -> 找到 season_id={season_id}，正在获取详情...")
         details = self.get_anime_details(season_id)
         if not details:
-            print(f"❌ 获取番剧详情失败: season_id={season_id}")
+            logger.info(f"❌ 获取番剧详情失败: season_id={season_id}")
             return None
 
         # ==========================================
@@ -852,9 +853,9 @@ class BilibiliBangumiCrawler:
                 )
                 self.session.add(daily_stat)
                 self.session.commit()  # 立即提交，释放写入锁
-            print(f"  ✅ 已新增番剧: {details.get('title')} (season_id={season_id})")
+            logger.info(f"  ✅ 已新增番剧: {details.get('title')} (season_id={season_id})")
         else:
-            print(f"  ℹ️  番剧已存在: {existing_anime.title} (season_id={season_id})")
+            logger.info(f"  ℹ️  番剧已存在: {existing_anime.title} (season_id={season_id})")
 
         # ==========================================
         # 2. 【自愈校验】剧集差集比对与增量修补
@@ -881,10 +882,10 @@ class BilibiliBangumiCrawler:
 
         # 步骤 D：无缺失则跳过，有缺失则补抓
         if not missing_episodes:
-            print(f"  ✅ 数据校验通过：本地已完整包含 {len(api_valid_episodes)} 集正片数据，无需修补。")
+            logger.info(f"  ✅ 数据校验通过：本地已完整包含 {len(api_valid_episodes)} 集正片数据，无需修补。")
             return season_id
 
-        print(f"  ⚠️ 触发自动修复：发现本地缺失 {len(missing_episodes)} 集，正在补充抓取...")
+        logger.info(f"  ⚠️ 触发自动修复：发现本地缺失 {len(missing_episodes)} 集，正在补充抓取...")
         saved_count = 0
 
         for episode in missing_episodes:
@@ -900,7 +901,7 @@ class BilibiliBangumiCrawler:
 
             # 【防线 3】时长兜底，过滤掉短于 3 分钟（180 秒）的视频
             if 0 < duration < 180:
-                print(f"  ⏭️ 时长兜底过滤，跳过极短视频: {ep_title} ({duration}秒)")
+                logger.info(f"  ⏭️ 时长兜底过滤，跳过极短视频: {ep_title} ({duration}秒)")
                 continue
 
             # 【数据库写入阶段】：加锁，单条写入后立即提交，做到"快进快出"
@@ -926,19 +927,19 @@ class BilibiliBangumiCrawler:
                     saved_count += 1
                 except Exception as e:
                     self.session.rollback()
-                    print(f"  ❌ 补充写入 {ep_title} 时发生错误: {e}")
+                    logger.exception(f"  ❌ 补充写入 {ep_title} 时发生错误: {e}")
 
-        print(f"  ✅ 修复完成：成功补充 {saved_count} 条剧集记录 (season_id={season_id})")
+        logger.info(f"  ✅ 修复完成：成功补充 {saved_count} 条剧集记录 (season_id={season_id})")
         return season_id
 
     def update_online_viewers_for_all_episodes(self):
         """
         遍历 EpisodeStats 表中所有记录，通过 B站 API 刷新在线观看人数
         """
-        print("🔄 [定时任务] 开始刷新所有剧集在线人数...")
+        logger.info("🔄 [定时任务] 开始刷新所有剧集在线人数...")
         episodes = self.session.exec(select(EpisodeStats)).all()
         if not episodes:
-            print("  ℹ️  EpisodeStats 表为空，跳过更新")
+            logger.info("  ℹ️  EpisodeStats 表为空，跳过更新")
             return
 
         updated = 0
@@ -951,7 +952,7 @@ class BilibiliBangumiCrawler:
             time.sleep(0.2)
 
         self.session.commit()
-        print(f"  ✅ 在线人数刷新完成，共更新 {updated}/{len(episodes)} 条记录")
+        logger.info(f"  ✅ 在线人数刷新完成，共更新 {updated}/{len(episodes)} 条记录")
 
     def search_anime_by_title(self, title: str) -> Optional[int]:
         """
