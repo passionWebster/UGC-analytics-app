@@ -17,8 +17,8 @@ from .models import Anime, DailyStats, EpisodeStats, CrawlLog
 from .database import get_session
 from .config import settings
 
-# SQLite 写入互斥锁：防止多线程并发写入时产生数据库锁冲突。
-# 在对 SQLite 进行写入操作前必须持有此锁，释放锁后立即 commit，做到"快进快出"。
+# SQLite 写入互斥锁：用于本模块内的爬虫写入操作，防止多线程并发写入时产生数据库锁冲突。
+# 注意：此锁仅在当前进程内、且仅对实际获取它的代码路径生效，并不能保证全项目的所有写入都已串行化。
 sqlite_write_lock = threading.Lock()
 
 
