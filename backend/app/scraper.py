@@ -815,18 +815,23 @@ class BilibiliBangumiCrawler:
         ).first()
 
         if not existing_anime:
+            # 在加锁后再次检查，避免并发线程在此期间已插入相同 season_id
             with sqlite_write_lock:
-                new_anime = Anime(
-                    season_id=season_id,
-                    title=details.get('title', keyword),
-                    cover=details.get('cover'),
-                    area='其他',
-                    rating=None,
-                    styles=json.dumps([], ensure_ascii=False),
-                    release_date=None,
-                )
-                self.session.add(new_anime)
-                self.session.commit()  # 立即提交，释放写入锁
+                existing_anime = self.session.exec(
+                    select(Anime).where(Anime.season_id == season_id)
+                ).first()
+                if not existing_anime:
+                    new_anime = Anime(
+                        season_id=season_id,
+                        title=details.get('title', keyword),
+                        cover=details.get('cover'),
+                        area='其他',
+                        rating=None,
+                        styles=json.dumps([], ensure_ascii=False),
+                        release_date=None,
+                    )
+                    self.session.add(new_anime)
+                    self.session.commit()  # 立即提交，释放写入锁
 
             # 添加每日统计快照（使用番剧级别的整体统计）
             anime_stat = details.get('stat', {})
