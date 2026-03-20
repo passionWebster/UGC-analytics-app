@@ -5,6 +5,7 @@ B站数据爬虫服务 - 重构版
 """
 import json
 import re
+import threading
 import time
 from datetime import datetime, timedelta
 from typing import Tuple, List, Dict, Any, Optional
@@ -15,6 +16,10 @@ from tqdm import tqdm
 from .models import Anime, DailyStats, EpisodeStats, CrawlLog
 from .database import get_session
 from .config import settings
+
+# SQLite 写入互斥锁：用于本模块内的爬虫写入操作，防止多线程并发写入时产生数据库锁冲突。
+# 注意：此锁仅在当前进程内、且仅对实际获取它的代码路径生效，并不能保证全项目的所有写入都已串行化。
+sqlite_write_lock = threading.Lock()
 
 
 class BilibiliBangumiCrawler:
@@ -593,63 +598,72 @@ class BilibiliBangumiCrawler:
 
         episodes = details['episodes']
         print(f"  -> 找到 {len(episodes)} 集，正在写入数据库...")
-        try:
-            saved_count = 0
-            for episode in episodes:
-                bvid = episode.get('bvid', '')
-                cid = str(episode.get('cid', ''))
+        saved_count = 0
+        has_error = False
+        for episode in episodes:
+            bvid = episode.get('bvid', '')
+            cid = str(episode.get('cid', ''))
 
-                # 【防线 2】利用 API 的 badge / title 字段进行初步过滤
-                if not self._is_valid_main_episode(episode):
-                    ep_title = episode.get('long_title') or episode.get('title')
-                    print(f"  ⏭️ API字段过滤，跳过非正片: {ep_title}")
-                    continue
+            # 【防线 2】利用 API 的 badge / title 字段进行初步过滤
+            if not self._is_valid_main_episode(episode):
+                ep_title = episode.get('long_title') or episode.get('title')
+                print(f"  ⏭️ API字段过滤，跳过非正片: {ep_title}")
+                continue
 
-                if not bvid or not cid:
-                    continue
+            if not bvid or not cid:
+                continue
 
-                ep_title = (
-                    episode.get('long_title')
-                    or episode.get('title')
-                    or f'第{episode.get("index", "")}集'
-                )
+            ep_title = (
+                episode.get('long_title')
+                or episode.get('title')
+                or f'第{episode.get("index", "")}集'
+            )
 
-                # 获取完整视频详情数据（含统计和时长）
-                full_data = self.get_episode_stat_details(bvid)
-                stat = full_data.get('stat', {})
-                duration = full_data.get('duration', 0)
-                time.sleep(settings.bilibili_request_delay)
+            # 【网络 I/O 阶段】：无锁，避免长事务持有写入锁
+            full_data = self.get_episode_stat_details(bvid)
+            stat = full_data.get('stat', {})
+            duration = full_data.get('duration', 0)
+            time.sleep(settings.bilibili_request_delay)
 
-                # 【防线 3】时长兜底，过滤掉短于 3 分钟（180 秒）的视频
-                if 0 < duration < 180:
-                    print(f"  ⏭️ 时长兜底过滤，跳过极短视频: {ep_title} ({duration}秒)")
-                    continue
+            # 【防线 3】时长兜底，过滤掉短于 3 分钟（180 秒）的视频
+            if 0 < duration < 180:
+                print(f"  ⏭️ 时长兜底过滤，跳过极短视频: {ep_title} ({duration}秒)")
+                continue
 
-                existing_ep = self.session.exec(
-                    select(EpisodeStats).where(EpisodeStats.bvid == bvid)
-                ).first()
+            # 【数据库写入阶段】：加锁，单条写入后立即提交，做到"快进快出"
+            # 查询也在锁内执行，防止并发线程在检查和插入之间写入相同的 bvid
+            with sqlite_write_lock:
+                try:
+                    existing_ep = self.session.exec(
+                        select(EpisodeStats).where(EpisodeStats.bvid == bvid)
+                    ).first()
 
-                if existing_ep:
-                    self._apply_stat_to_episode(existing_ep, stat, ep_title)
-                else:
-                    new_ep = EpisodeStats(
-                        season_id=season_id,
-                        episode_title=ep_title,
-                        bvid=bvid,
-                        cid=cid,
-                        online_viewers=None,
-                    )
-                    self._apply_stat_to_episode(new_ep, stat, ep_title)
-                    self.session.add(new_ep)
-                    saved_count += 1
+                    is_new = not existing_ep
+                    if existing_ep:
+                        self._apply_stat_to_episode(existing_ep, stat, ep_title)
+                    else:
+                        new_ep = EpisodeStats(
+                            season_id=season_id,
+                            episode_title=ep_title,
+                            bvid=bvid,
+                            cid=cid,
+                            online_viewers=None,
+                        )
+                        self._apply_stat_to_episode(new_ep, stat, ep_title)
+                        self.session.add(new_ep)
 
-            self.session.commit()
-            print(f"  ✅ 已写入 {saved_count} 条分集记录 (season_id={season_id})")
-            return True
-        except Exception as e:
-            print(f"❌ 写入分集数据失败: {e}")
-            self.session.rollback()
-            return False
+                    self.session.commit()
+                    # commit 成功后才计入已保存数量
+                    if is_new:
+                        saved_count += 1
+                except Exception as e:
+                    self.session.rollback()
+                    has_error = True
+                    print(f"  ❌ 写入 {ep_title} 时发生错误: {e}")
+
+        print(f"  ✅ 已写入 {saved_count} 条分集记录 (season_id={season_id})")
+        # 有任意一集写入失败时返回 False，让调用方感知并视情况重试
+        return not has_error
 
     def get_episode_stat_details(self, bvid: str) -> dict:
         """
@@ -799,59 +813,86 @@ class BilibiliBangumiCrawler:
             print(f"❌ 获取番剧详情失败: season_id={season_id}")
             return None
 
-        # 保存或更新 Anime 基础信息
+        # ==========================================
+        # 1. 保存或更新 Anime 基础信息
+        # ==========================================
         existing_anime = self.session.exec(
             select(Anime).where(Anime.season_id == season_id)
         ).first()
 
         if not existing_anime:
-            new_anime = Anime(
-                season_id=season_id,
-                title=details.get('title', keyword),
-                cover=details.get('cover'),
-                area='其他',
-                rating=None,
-                styles=json.dumps([], ensure_ascii=False),
-                release_date=None,
-            )
-            self.session.add(new_anime)
-            self.session.flush()
+            # 在加锁后再次检查，避免并发线程在此期间已插入相同 season_id
+            with sqlite_write_lock:
+                existing_anime = self.session.exec(
+                    select(Anime).where(Anime.season_id == season_id)
+                ).first()
+                if not existing_anime:
+                    new_anime = Anime(
+                        season_id=season_id,
+                        title=details.get('title', keyword),
+                        cover=details.get('cover'),
+                        area='其他',
+                        rating=None,
+                        styles=json.dumps([], ensure_ascii=False),
+                        release_date=None,
+                    )
+                    self.session.add(new_anime)
+                    self.session.commit()  # 立即提交，释放写入锁
 
             # 添加每日统计快照（使用番剧级别的整体统计）
             anime_stat = details.get('stat', {})
             views = anime_stat.get('views', 0) or 0
             favorites = anime_stat.get('favorites', 0) or 0
-            daily_stat = DailyStats(
-                season_id=season_id,
-                date=datetime.now(),
-                views=views,
-                favorites=favorites,
-            )
-            self.session.add(daily_stat)
+            with sqlite_write_lock:
+                daily_stat = DailyStats(
+                    season_id=season_id,
+                    date=datetime.now(),
+                    views=views,
+                    favorites=favorites,
+                )
+                self.session.add(daily_stat)
+                self.session.commit()  # 立即提交，释放写入锁
             print(f"  ✅ 已新增番剧: {details.get('title')} (season_id={season_id})")
         else:
             print(f"  ℹ️  番剧已存在: {existing_anime.title} (season_id={season_id})")
 
-        # 写入/更新 EpisodeStats（含完整互动统计）
+        # ==========================================
+        # 2. 【自愈校验】剧集差集比对与增量修补
+        # ==========================================
         episodes = details.get('episodes', [])
-        print(f"  -> 正在写入 {len(episodes)} 集数据到 EpisodeStats...")
+
+        # 步骤 A：提纯 API 权威数据，过滤非正片
+        api_valid_episodes = [
+            ep for ep in episodes
+            if self._is_valid_main_episode(ep) and ep.get('bvid') and ep.get('cid')
+        ]
+
+        # 步骤 B：获取本地数据库中该番剧已保存的 bvid 集合
+        db_existing_bvids = set(
+            self.session.exec(
+                select(EpisodeStats.bvid).where(EpisodeStats.season_id == season_id)
+            ).all()
+        )
+
+        # 步骤 C：计算差集，找出本地缺失的剧集
+        missing_episodes = [
+            ep for ep in api_valid_episodes if ep.get('bvid') not in db_existing_bvids
+        ]
+
+        # 步骤 D：无缺失则跳过，有缺失则补抓
+        if not missing_episodes:
+            print(f"  ✅ 数据校验通过：本地已完整包含 {len(api_valid_episodes)} 集正片数据，无需修补。")
+            return season_id
+
+        print(f"  ⚠️ 触发自动修复：发现本地缺失 {len(missing_episodes)} 集，正在补充抓取...")
         saved_count = 0
-        for episode in episodes:
+
+        for episode in missing_episodes:
             bvid = episode.get('bvid', '')
             cid = str(episode.get('cid', ''))
-
-            # 【防线 2】利用 API 的 badge / title 字段进行初步过滤
-            if not self._is_valid_main_episode(episode):
-                ep_title = episode.get('long_title') or episode.get('title')
-                print(f"  ⏭️ API字段过滤，跳过非正片: {ep_title}")
-                continue
-
-            if not bvid or not cid:
-                continue
-
             ep_title = episode.get('long_title') or episode.get('title') or f'第{episode.get("index", "")}集'
 
-            # 获取完整视频详情数据（含统计和时长）
+            # 【网络 I/O 阶段】：无锁，避免长事务持有写入锁
             full_data = self.get_episode_stat_details(bvid)
             stat = full_data.get('stat', {})
             duration = full_data.get('duration', 0)
@@ -862,26 +903,32 @@ class BilibiliBangumiCrawler:
                 print(f"  ⏭️ 时长兜底过滤，跳过极短视频: {ep_title} ({duration}秒)")
                 continue
 
-            existing_ep = self.session.exec(
-                select(EpisodeStats).where(EpisodeStats.bvid == bvid)
-            ).first()
+            # 【数据库写入阶段】：加锁，单条写入后立即提交，做到"快进快出"
+            # 锁内再次查询，防止并发线程在差集计算后、本次写入前已插入相同 bvid
+            with sqlite_write_lock:
+                try:
+                    already_exists = self.session.exec(
+                        select(EpisodeStats).where(EpisodeStats.bvid == bvid)
+                    ).first()
+                    if already_exists:
+                        # 差集计算完成后被其他线程抢先插入，跳过避免重复
+                        continue
+                    new_ep = EpisodeStats(
+                        season_id=season_id,
+                        episode_title=ep_title,
+                        bvid=bvid,
+                        cid=cid,
+                        online_viewers=None,
+                    )
+                    self._apply_stat_to_episode(new_ep, stat, ep_title)
+                    self.session.add(new_ep)
+                    self.session.commit()
+                    saved_count += 1
+                except Exception as e:
+                    self.session.rollback()
+                    print(f"  ❌ 补充写入 {ep_title} 时发生错误: {e}")
 
-            if existing_ep:
-                self._apply_stat_to_episode(existing_ep, stat, ep_title)
-            else:
-                new_ep = EpisodeStats(
-                    season_id=season_id,
-                    episode_title=ep_title,
-                    bvid=bvid,
-                    cid=cid,
-                    online_viewers=None,
-                )
-                self._apply_stat_to_episode(new_ep, stat, ep_title)
-                self.session.add(new_ep)
-                saved_count += 1
-
-        self.session.commit()
-        print(f"  ✅ 已写入 {saved_count} 条新剧集记录 (season_id={season_id})")
+        print(f"  ✅ 修复完成：成功补充 {saved_count} 条剧集记录 (season_id={season_id})")
         return season_id
 
     def update_online_viewers_for_all_episodes(self):
