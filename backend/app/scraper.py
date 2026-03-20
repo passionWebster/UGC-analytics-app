@@ -577,7 +577,7 @@ class BilibiliBangumiCrawler:
                     'episodes': result.get('episodes', [])
                 }
         except Exception as e:
-            logger.info(f"❌ 获取番剧详情失败: {e}")
+            logger.exception("❌ 获取番剧详情失败")
         
         return None
 
