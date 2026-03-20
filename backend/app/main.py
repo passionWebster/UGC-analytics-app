@@ -42,19 +42,29 @@ app.add_middleware(
 async def http_request_logging_middleware(request: Request, call_next):
     """拦截所有 HTTP 请求，统一记录访问日志"""
     start_time = time.perf_counter()
-    response = await call_next(request)
-    latency = (time.perf_counter() - start_time) * 1000  # 单位：毫秒
-
-    app_logger.info(
-        "{method} {path} | status={status} | latency={latency:.1f}ms",
-        method=request.method,
-        path=request.url.path,
-        status=response.status_code,
-        latency=latency,
-    )
-    return response
-
-
+    try:
+        response = await call_next(request)
+    except Exception:
+        latency = (time.perf_counter() - start_time) * 1000  # 单位：毫秒
+        app_logger.info(
+            "{method} {path} | status={status} | latency={latency:.1f}ms",
+            method=request.method,
+            path=request.url.path,
+            status=500,
+            latency=latency,
+        )
+        # 重新抛出异常，让全局异常处理器生成统一的 500 响应
+        raise
+    else:
+        latency = (time.perf_counter() - start_time) * 1000  # 单位：毫秒
+        app_logger.info(
+            "{method} {path} | status={status} | latency={latency:.1f}ms",
+            method=request.method,
+            path=request.url.path,
+            status=response.status_code,
+            latency=latency,
+        )
+        return response
 # ──────────────────────────────────────────────────────────────────────────────
 # 全局异常处理器：捕获未处理异常，返回标准 JSON 错误响应
 # ──────────────────────────────────────────────────────────────────────────────
