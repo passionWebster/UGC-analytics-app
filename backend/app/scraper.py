@@ -75,7 +75,7 @@ class BilibiliBangumiCrawler:
             'Accept': 'application/json, text/plain, */*',
             'Referer': 'https://www.bilibili.com/'
         })
-        logger.info(f"✅ 爬虫已初始化")
+        logger.info('✅ 爬虫已初始化')
     
     @staticmethod
     def _convert_order_to_int(order_str: Any) -> int:
@@ -210,10 +210,10 @@ class BilibiliBangumiCrawler:
                     
                     time.sleep(settings.bilibili_request_delay)
                 else:
-                    logger.info(f"  ❌ API 返回错误: {data.get('message', '未知错误')}")
+                    logger.warning('  ❌ API 返回错误: {}', data.get('message', '未知错误'))
                     break
             except Exception as e:
-                logger.info(f"  ❌ 请求失败: {e}")
+                logger.exception('  ❌ 请求失败: {}', e)
                 break
         
         return all_items
