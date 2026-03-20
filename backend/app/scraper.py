@@ -277,7 +277,7 @@ class BilibiliBangumiCrawler:
             return True
             
         except Exception as e:
-            logger.info(f"\n❌ 更新失败: {e}")
+            logger.exception("\n❌ 更新失败")
             crawl_log.status = "failed"
             crawl_log.error_message = str(e)
             crawl_log.completed_at = datetime.now()
