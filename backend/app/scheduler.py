@@ -2,7 +2,7 @@
 """
 定时任务调度器
 使用 APScheduler AsyncIOScheduler 实现：
-- 任务 A：每 4 小时刷新最新 50 部番剧的剧集在线人数
+- 任务 A：每 1 小时刷新最新 50 部番剧的剧集在线人数
 - 任务 B：每月 1 日凌晨 2:00 生成月度数据快照
 """
 import json
@@ -153,11 +153,11 @@ def create_scheduler() -> AsyncIOScheduler:
         }
     )
 
-    # 任务 A：每 4 小时执行一次
+    # 任务 A：每 1 小时执行一次
     scheduler.add_job(
         _task_a_update_recent_episodes,
         trigger="interval",
-        hours=4,
+        hours=1,
         id="task_a_update_recent_episodes",
         replace_existing=True,
     )

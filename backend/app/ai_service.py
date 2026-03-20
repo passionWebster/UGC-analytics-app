@@ -59,18 +59,26 @@ class AIService:
         try:
             request_body = {
                 "model": self.model,
-                "messages": [
+                "input": [
                     {
                         "role": "system",
-                        "content": system_content
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": system_content
+                            }
+                        ]
                     },
                     {
                         "role": "user",
-                        "content": message
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": message
+                            }
+                        ]
                     }
-                ],
-                "temperature": 0.7,
-                "max_tokens": 500
+                ]
             }
             
             response = requests.post(
@@ -85,10 +93,21 @@ class AIService:
             response.raise_for_status()
             
             data = response.json()
-            reply = data['choices'][0]['message']['content']
+            
+            reply = ""
+            if "output" in data:
+                for output_item in data["output"]:
+                    if output_item.get("type") == "message" and output_item.get("role") == "assistant":
+                        content_list = output_item.get("content", [])
+                        for content_item in content_list:
+                            if content_item.get("type") == "output_text":
+                                reply += content_item.get("text", "")
+            if not reply:
+                print(f"未能从响应中解析出文本，原始响应: {data}")
+                raise HTTPException(status_code=500, detail="解析 AI 响应失败")
             
             return reply
-            
+        
         except requests.exceptions.RequestException as e:
             print(f"AI 服务错误: {e}")
             raise HTTPException(

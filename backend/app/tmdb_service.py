@@ -439,9 +439,6 @@ async def run_tmdb_enrichment(session: Session) -> Dict:
         return {"total": 0, "success": 0, "failed": 0, "message": "所有番剧均已完成 TMDB 富集"}
 
     semaphore = asyncio.Semaphore(settings.tmdb_enrichment_concurrency)
-        return {"total": 0, "success": 0, "failed": 0, "message": "所有番剧均已完成 TMDB 富集"}
-
-    semaphore = asyncio.Semaphore(settings.tmdb_enrichment_concurrency)
     success_count = 0
     failed_count = 0
 

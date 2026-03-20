@@ -524,7 +524,7 @@ class AnalyticsService:
         if not has_non_empty_history:
             result = []
 
-        return:
+        return {
             "season_id": season_id,
             "episodes_data": result,
         }

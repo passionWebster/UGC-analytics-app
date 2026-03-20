@@ -8,7 +8,7 @@
     <!-- 聊天窗口：使用 visibility + opacity + transform 实现平滑动画 -->
     <div class="chat-container" :class="{ 'show': isOpen }">
       <div class="chat-header">
-        <h3><i class="fas fa-robot"></i> 豆包AI助手</h3>
+        <h3><i class="fas fa-robot"></i> AI助手</h3>
         <button class="close-btn" @click="toggleChat" title="关闭">
           <i class="fas fa-times"></i>
         </button>
@@ -18,7 +18,7 @@
       <div class="messages" ref="messagesContainer">
         <!-- 挂载时显示欢迎消息 -->
         <div class="message bot-message">
-          您好！我是豆包AI助手，专门为B站分析系统服务。
+          您好！我是AI助手，专门为B站分析系统服务。
         </div>
         <div class="message bot-message">
           您可以问我关于番剧数据、用户行为分析、系统使用等问题。我会尽力为您提供帮助！

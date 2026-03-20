@@ -64,7 +64,7 @@ async def startup_event():
     scheduler.start()
     # 将 scheduler 挂载到 app.state，以便 shutdown 时停止
     app.state.scheduler = scheduler
-    print("⏰ 定时任务已启动：每 4 小时刷新剧集在线人数；每月 1 日 2:00 生成月度快照")
+    print("⏰ 定时任务已启动：每 1 小时刷新剧集在线人数；每月 1 日 2:00 生成月度快照")
     
     print(f"✅ 服务器启动成功")
     print(f"📖 API 文档: http://{settings.host}:{settings.port}/api/docs")
