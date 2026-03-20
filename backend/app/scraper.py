@@ -599,6 +599,7 @@ class BilibiliBangumiCrawler:
         episodes = details['episodes']
         print(f"  -> 找到 {len(episodes)} 集，正在写入数据库...")
         saved_count = 0
+        has_error = False
         for episode in episodes:
             bvid = episode.get('bvid', '')
             cid = str(episode.get('cid', ''))
@@ -637,6 +638,7 @@ class BilibiliBangumiCrawler:
                         select(EpisodeStats).where(EpisodeStats.bvid == bvid)
                     ).first()
 
+                    is_new = not existing_ep
                     if existing_ep:
                         self._apply_stat_to_episode(existing_ep, stat, ep_title)
                     else:
@@ -649,15 +651,19 @@ class BilibiliBangumiCrawler:
                         )
                         self._apply_stat_to_episode(new_ep, stat, ep_title)
                         self.session.add(new_ep)
-                        saved_count += 1
 
                     self.session.commit()
+                    # commit 成功后才计入已保存数量
+                    if is_new:
+                        saved_count += 1
                 except Exception as e:
                     self.session.rollback()
+                    has_error = True
                     print(f"  ❌ 写入 {ep_title} 时发生错误: {e}")
 
         print(f"  ✅ 已写入 {saved_count} 条分集记录 (season_id={season_id})")
-        return True
+        # 有任意一集写入失败时返回 False，让调用方感知并视情况重试
+        return not has_error
 
     def get_episode_stat_details(self, bvid: str) -> dict:
         """
