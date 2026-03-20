@@ -927,7 +927,7 @@ class BilibiliBangumiCrawler:
                     saved_count += 1
                 except Exception as e:
                     self.session.rollback()
-                    logger.info(f"  ❌ 补充写入 {ep_title} 时发生错误: {e}")
+                    logger.exception(f"  ❌ 补充写入 {ep_title} 时发生错误: {e}")
 
         logger.info(f"  ✅ 修复完成：成功补充 {saved_count} 条剧集记录 (season_id={season_id})")
         return season_id
