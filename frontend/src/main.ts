@@ -19,7 +19,7 @@ app.use(router)
 app.use(ElementPlus)
 
 // 初始化 UI store（恢复主题设置）
-const uiStore = useUIStore()
+const uiStore = useUIStore(pinia)
 uiStore.initUI()
 
 app.mount('#app')
