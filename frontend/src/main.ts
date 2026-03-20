@@ -9,11 +9,17 @@ import 'element-plus/dist/index.css'
 
 import App from './App.vue'
 import router from './router'
+import { useUIStore } from './stores/ui'
 
 const app = createApp(App)
+const pinia = createPinia()
 
-app.use(createPinia())
+app.use(pinia)
 app.use(router)
 app.use(ElementPlus)
+
+// 初始化 UI store（恢复主题设置）
+const uiStore = useUIStore()
+uiStore.initUI()
 
 app.mount('#app')

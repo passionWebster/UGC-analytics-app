@@ -1,13 +1,22 @@
 # ai_service.py
 """
 AI 助手服务
-处理与豆包 AI 的交互
+处理与豆包 AI 的交互，并对相同消息进行 TTL 缓存以减少重复外部调用
 """
+import hashlib
 import requests
 from typing import Optional, Dict, Any
 from fastapi import HTTPException
+from cachetools import TTLCache
 
 from .config import settings
+from .logger import app_logger
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AI 响应缓存：最多缓存 128 条结果，每条 TTL 10 分钟
+# 以 (message, context) 的 SHA256 摘要为键，避免缓存对象过大
+# ──────────────────────────────────────────────────────────────────────────────
+_ai_cache: TTLCache = TTLCache(maxsize=128, ttl=600)
 
 
 class AIService:
@@ -34,6 +43,9 @@ class AIService:
     def chat(self, message: str, context: Optional[str] = None) -> str:
         """
         与 AI 助手对话
+
+        相同 (message, context) 组合的响应将在 TTL 缓存内直接返回，
+        避免对同一问题重复消耗 API 配额。
         
         Args:
             message: 用户消息
@@ -50,7 +62,15 @@ class AIService:
                 status_code=503,
                 detail="AI 服务未配置，请设置 DOUBAO_API_KEY 环境变量"
             )
-        
+
+        # ── 缓存命中检查 ─────────────────────────────────────────────────────
+        cache_key = hashlib.sha256(
+            f"{message}||{context or ''}".encode("utf-8")
+        ).hexdigest()
+        if cache_key in _ai_cache:
+            app_logger.debug("AI 响应缓存命中，跳过外部请求（key={}...）", cache_key[:8])
+            return _ai_cache[cache_key]
+
         # 构建系统提示词
         system_content = "你是一个B站数据分析助手，帮助用户理解B站番剧数据、用户行为分析报告和系统使用。"
         if context:
@@ -103,13 +123,15 @@ class AIService:
                             if content_item.get("type") == "output_text":
                                 reply += content_item.get("text", "")
             if not reply:
-                print(f"未能从响应中解析出文本，原始响应: {data}")
+                app_logger.warning("未能从 AI 响应中解析出文本，原始响应: {}", data)
                 raise HTTPException(status_code=500, detail="解析 AI 响应失败")
-            
+
+            # 写入缓存
+            _ai_cache[cache_key] = reply
             return reply
         
         except requests.exceptions.RequestException as e:
-            print(f"AI 服务错误: {e}")
+            app_logger.error("AI 服务请求失败: {}", e)
             raise HTTPException(
                 status_code=500,
                 detail=f"AI 服务暂时不可用: {str(e)}"

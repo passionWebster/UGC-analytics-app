@@ -15,15 +15,27 @@ from datetime import datetime
 from typing import Optional, Dict, List
 
 import httpx
+from cachetools import TTLCache
 from sqlmodel import Session, select
 
 from .config import settings
 from .database import engine
+from .logger import app_logger
 from .models import Anime, TmdbAnimeInfo
 
 # 全局复用的 TMDB AsyncClient，避免每次调用重复建连与 TLS 握手
 _tmdb_async_client: Optional[httpx.AsyncClient] = None
 _tmdb_client_lock = asyncio.Lock()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TMDB 响应缓存
+#   - search_cache:  搜索结果缓存，最多 256 条，TTL 1 小时
+#   - details_cache: 剧集详情缓存，最多 512 条，TTL 6 小时
+#   - images_cache:  图片资源缓存，最多 512 条，TTL 24 小时（图片 URL 极少变动）
+# ──────────────────────────────────────────────────────────────────────────────
+_search_cache: TTLCache = TTLCache(maxsize=256, ttl=3600)
+_details_cache: TTLCache = TTLCache(maxsize=512, ttl=21600)
+_images_cache: TTLCache = TTLCache(maxsize=512, ttl=86400)
 
 
 async def get_shared_tmdb_client(timeout: float) -> httpx.AsyncClient:
@@ -112,6 +124,7 @@ class TmdbService:
         匹配策略：
         - 若提供年份，优先返回 first_air_date 年份与之吻合的结果；
         - 年份未命中或未提供时，回退到搜索结果列表第一项。
+        - 相同 (title, year) 组合的结果将在 TTL 缓存内直接返回。
 
         参数：
             title: 清洗后的番剧标题（建议先调用 clean_title）
@@ -122,6 +135,12 @@ class TmdbService:
         """
         if not self.is_available():
             return None
+
+        # ── 缓存命中检查 ─────────────────────────────────────────────────────
+        cache_key = f"search:{title}:{year or ''}"
+        if cache_key in _search_cache:
+            app_logger.debug("TMDB 搜索缓存命中: {}", cache_key)
+            return _search_cache[cache_key]
 
         params: Dict = {
             "api_key": self.api_key,
@@ -144,21 +163,27 @@ class TmdbService:
             return None
 
         # 优先选择年份匹配的结果
+        result: Optional[Dict] = None
         if year:
-            for result in results:
-                first_air = result.get("first_air_date") or ""
+            for r in results:
+                first_air = r.get("first_air_date") or ""
                 if first_air.startswith(year):
-                    return result
+                    result = r
+                    break
 
         # 年份未命中，退回第一个结果
-        return results[0]
+        if result is None:
+            result = results[0]
+
+        _search_cache[cache_key] = result
+        return result
 
     async def get_tv_details(self, tmdb_id: int) -> Optional[Dict]:
         """
         获取 TMDB 电视剧详情。
 
         降级策略：若中文 overview 为空，自动以英文重新请求一次，
-        确保简介字段不留白。
+        确保简介字段不留白。结果按 tmdb_id 缓存，减少重复外部请求。
 
         参数：
             tmdb_id: TMDB 剧集唯一标识
@@ -168,6 +193,12 @@ class TmdbService:
         """
         if not self.is_available():
             return None
+
+        # ── 缓存命中检查 ─────────────────────────────────────────────────────
+        cache_key = f"details:{tmdb_id}"
+        if cache_key in _details_cache:
+            app_logger.debug("TMDB 详情缓存命中: tmdb_id={}", tmdb_id)
+            return _details_cache[cache_key]
 
         params: Dict = {"api_key": self.api_key, "language": "zh-CN"}
 
@@ -195,6 +226,7 @@ class TmdbService:
             except httpx.HTTPError:
                 pass  # 降级失败则 overview 保持空字符串
 
+        _details_cache[cache_key] = data
         return data
 
     async def get_tv_images(self, tmdb_id: int) -> Optional[Dict]:
@@ -204,6 +236,7 @@ class TmdbService:
         关键设计：使用 include_image_language=zh-CN,en,ja,null 参数
         一次性拉取多语言图片，避免仅请求 zh-CN 导致结果为空的问题。
         其中 null 表示无语言文字的纯净背景图，最适合作为详情页大图。
+        结果按 tmdb_id 缓存，图片 URL 极少变动，TTL 设置为 24 小时。
 
         参数：
             tmdb_id: TMDB 剧集唯一标识
@@ -213,6 +246,12 @@ class TmdbService:
         """
         if not self.is_available():
             return None
+
+        # ── 缓存命中检查 ─────────────────────────────────────────────────────
+        cache_key = f"images:{tmdb_id}"
+        if cache_key in _images_cache:
+            app_logger.debug("TMDB 图片缓存命中: tmdb_id={}", tmdb_id)
+            return _images_cache[cache_key]
 
         params: Dict = {
             "api_key": self.api_key,
@@ -226,7 +265,9 @@ class TmdbService:
                     f"{self.base_url}/tv/{tmdb_id}/images", params=params
                 )
                 response.raise_for_status()
-                return response.json()
+                result = response.json()
+                _images_cache[cache_key] = result
+                return result
         except httpx.HTTPError:
             return None
 
