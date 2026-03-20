@@ -6,14 +6,16 @@
 - 标准应用日志（输出到控制台 + 文件）
 - 爬虫专属日志（独立绑定，隔离爬虫日志与 Web 服务日志）
 """
-import os
 import sys
+from pathlib import Path
 from loguru import logger
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 确保日志目录存在（新环境/容器首次启动时自动创建）
+# 日志目录：固定在项目根目录下的 logs/，与进程工作目录无关
+# __file__ = backend/app/logger.py  →  parents[2] = 项目根目录
 # ──────────────────────────────────────────────────────────────────────────────
-os.makedirs("logs", exist_ok=True)
+_LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 移除 Loguru 默认 Handler，统一重新配置
@@ -41,7 +43,7 @@ logger.add(
 # Handler 2：应用日志文件（轮转，保留 7 天）
 # ──────────────────────────────────────────────────────────────────────────────
 logger.add(
-    "logs/app.log",
+    _LOG_DIR / "app.log",
     level="INFO",
     format=(
         "{time:YYYY-MM-DD HH:mm:ss} | "
@@ -60,7 +62,7 @@ logger.add(
 # Handler 3：爬虫专属日志文件（独立文件，便于运维查看爬取状态）
 # ──────────────────────────────────────────────────────────────────────────────
 logger.add(
-    "logs/scraper.log",
+    _LOG_DIR / "scraper.log",
     level="DEBUG",
     format=(
         "{time:YYYY-MM-DD HH:mm:ss} | "
