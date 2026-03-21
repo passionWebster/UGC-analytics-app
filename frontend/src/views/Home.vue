@@ -181,7 +181,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import * as echarts from 'echarts'
 import { useEcharts } from '@/composables/useEcharts'
 import { useAnalyticsStore } from '@/stores/analytics'
 import type { AnimeData } from '@/api/analytics'
