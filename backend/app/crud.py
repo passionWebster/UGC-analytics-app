@@ -737,12 +737,21 @@ class AnalyticsService:
             ).first()
             fav = latest_stats.favorites if latest_stats else 0
 
+            # 保存完整番剧信息供下钻详情面板使用
+            anime_info = {
+                'title': anime.title,
+                'cover': anime.cover or '',
+                'season_id': anime.season_id,
+                'score': anime.rating,
+                'favorites': fav,
+            }
+
             for s1, s2 in combinations(sorted(styles), 2):
                 key = f"{s1} + {s2}"
                 if key not in combo_data:
                     combo_data[key] = {'totalFavorites': 0, 'animes': []}
                 combo_data[key]['totalFavorites'] += fav
-                combo_data[key]['animes'].append(anime.title)
+                combo_data[key]['animes'].append(anime_info)
 
         result = []
         for combo, data in combo_data.items():
@@ -750,12 +759,14 @@ class AnalyticsService:
             if anime_count < 5:
                 continue
             avg_favorites = data['totalFavorites'] / anime_count
+            # 代表番剧按追番数降序取前 8 部
+            top_animes = sorted(data['animes'], key=lambda a: a['favorites'], reverse=True)
             result.append({
                 'combination': combo,
                 'totalFavorites': data['totalFavorites'],
                 'animeCount': anime_count,
                 'avgFavorites': round(avg_favorites, 2),
-                'representativeAnimes': data['animes'][:5],
+                'representativeAnimes': top_animes[:8],
             })
 
         result.sort(key=lambda x: x['avgFavorites'], reverse=True)
