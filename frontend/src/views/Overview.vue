@@ -55,7 +55,7 @@
           <div class="d-flex h-100">
             <div class="custom-chart-panel h-100">
               <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="card-title mb-0">偏好差异</h5>
+                <h5 class="card-title mb-0">用户偏好差异</h5>
               </div>
               <div class="chart-container h-100">
                 <div ref="preferenceDiffChart" style="height: 500px; width: 100%"></div>
@@ -66,11 +66,11 @@
                 <h6 class="control-panel-title">地区维度</h6>
                 <div class="flex-grow-1 control-buttons-group">
                   <button 
-                    v-for="area in areaOptions" 
+                    v-for="area in prefAreaOptions" 
                     :key="area"
                     class="control-btn"
-                    :class="{ active: selectedArea === area }"
-                    @click="selectedArea = area; renderPreferenceChart()"
+                    :class="{ active: selectedPrefArea === area }"
+                    @click="selectedPrefArea = area; renderPreferenceChart()"
                   >
                     {{ area }}
                   </button>
@@ -129,8 +129,57 @@
             <h5 class="card-title mb-0">热门风格组合分析 (黄金搭档)</h5>
             <small class="text-muted">点击矩形查看详情</small>
           </div>
+          <!-- 图表与下钻详情面板的相对容器 -->
           <div class="chart-container h-100 position-relative overflow-hidden">
-            <div ref="categoryTrendChart" style="height: 600px; width: 100%"></div>
+            <div
+              ref="categoryTrendChart"
+              style="height: 600px; width: 100%"
+              :class="{ 'combo-chart-dimmed': isComboDetailVisible }"
+            ></div>
+
+            <!-- 下钻详情侧边面板 -->
+            <transition name="slide-panel">
+              <div v-if="isComboDetailVisible" class="combo-detail-panel">
+                <div class="combo-detail-header">
+                  <div
+                    class="combo-detail-block"
+                    :style="{ backgroundColor: comboDetailColor }"
+                  ></div>
+                  <h5 class="combo-detail-title" :style="{ color: comboDetailColor }">
+                    {{ comboDetailData.name }}
+                  </h5>
+                  <button class="btn-close-detail" @click="closeComboDetail" title="关闭">
+                    <i class="fas fa-times"></i>
+                  </button>
+                </div>
+                <p class="combo-detail-stats">
+                  共 {{ comboDetailData.count }} 部番剧・平均追番 {{ (comboDetailData.value ?? 0).toLocaleString() }}
+                </p>
+                <div class="detail-anime-list">
+                  <div
+                    v-for="(anime, index) in comboDetailData.animes"
+                    :key="index"
+                    class="detail-anime-item"
+                  >
+                    <span class="detail-rank">{{ index + 1 }}</span>
+                    <img
+                      :src="getComboAnimeImageUrl(anime)"
+                      :alt="anime.title"
+                      class="detail-cover"
+                    />
+                    <div class="detail-info">
+                      <h5>{{ anime.title }}</h5>
+                      <p>
+                        <i class="fas fa-star text-warning me-1"></i>
+                        {{ anime.score ?? '暂无评分' }}
+                        <i class="fas fa-heart text-danger ms-2 me-1"></i>
+                        {{ formatNumber(anime.favorites) }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </transition>
           </div>
         </div>
       </div>
@@ -139,10 +188,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import type { ECharts } from 'echarts'
-import { getReleaseTrend, getStyleDistribution, getRankings } from '@/api/analytics'
+import { useEcharts } from '@/composables/useEcharts'
+import { useAuthStore } from '@/stores/auth'
+import type { ComboAnimeItem } from '@/api/analytics'
+import {
+  getYearlyQuantityChart,
+  getPreferenceDifferenceChart,
+  getReputationHeatIndexChart,
+  getPopularStyleCombinationChart,
+} from '@/api/analytics'
+
+const authStore = useAuthStore()
 
 // ─── 标签页配置 ──────────────────────────────────────────────────────────────
 const tabs = [
@@ -155,27 +213,43 @@ const tabs = [
 // ─── 状态管理 ────────────────────────────────────────────────────────────────
 const activeTab = ref('yearly')
 const yearlyView = ref('all')
-const selectedArea = ref('全部')
+const selectedPrefArea = ref('国内')
 const selectedSeason = ref('all')
 const ratingView = ref('all')
 
-// ─── 图表 DOM 引用 ───────────────────────────────────────────────────────────
-const yearlyTrendChart = ref<HTMLElement>()
-const preferenceDiffChart = ref<HTMLElement>()
-const collectionRatioChart = ref<HTMLElement>()
-const categoryTrendChart = ref<HTMLElement>()
+// ─── 图表 DOM 引用（通过 useEcharts 管理） ──────────────────────────────────
+const {
+  chartRef: yearlyTrendChart,
+  initChart: initYearlyChart,
+  setOption: setYearlyOption,
+  showLoading: showYearlyLoad,
+  hideLoading: hideYearlyLoad,
+} = useEcharts()
 
-// ─── 图表实例 ────────────────────────────────────────────────────────────────
-let yearlyInstance: ECharts | null = null
-let preferenceInstance: ECharts | null = null
-let ratingInstance: ECharts | null = null
-let categoryInstance: ECharts | null = null
+const {
+  chartRef: preferenceDiffChart,
+  initChart: initPrefChart,
+  setOption: setPrefOption,
+  showLoading: showPrefLoad,
+  hideLoading: hidePrefLoad,
+} = useEcharts()
 
-// ─── ResizeObserver 实例 ─────────────────────────────────────────────────────
-let yearlyResizeObserver: ResizeObserver | null = null
-let preferenceResizeObserver: ResizeObserver | null = null
-let ratingResizeObserver: ResizeObserver | null = null
-let categoryResizeObserver: ResizeObserver | null = null
+const {
+  chartRef: collectionRatioChart,
+  initChart: initRatingChart,
+  setOption: setRatingOption,
+  showLoading: showRatingLoad,
+  hideLoading: hideRatingLoad,
+} = useEcharts()
+
+const {
+  chartRef: categoryTrendChart,
+  initChart: initCategoryChart,
+  setOption: setCategoryOption,
+  showLoading: showCategoryLoad,
+  hideLoading: hideCategoryLoad,
+  chartInstance: categoryChartInstance,
+} = useEcharts()
 
 // ─── 选项配置 ────────────────────────────────────────────────────────────────
 const yearlyOptions = [
@@ -185,7 +259,7 @@ const yearlyOptions = [
   { value: 'us', label: '美国' }
 ]
 
-const areaOptions = ['全部', '中国', '日本', '美国', '其他']
+const prefAreaOptions = ['国内', '日本', '美国']
 
 const ratingOptions = [
   { value: 'all', label: '全部' },
@@ -193,49 +267,37 @@ const ratingOptions = [
   { value: 'top20', label: 'Top 20' }
 ]
 
+// ─── 热门风格组合下钻状态 ───────────────────────────────────────────────────
+/** 是否显示下钻详情侧边面板 */
+const isComboDetailVisible = ref(false)
+
+/** 详情面板绑定的数据（包含 name、value、count、animes） */
+const comboDetailData = ref<{
+  name: string
+  value: number
+  count: number
+  animes: ComboAnimeItem[]
+}>({ name: '', value: 0, count: 0, animes: [] })
+
+/** 当前点击矩形的颜色（用于标题色块同步） */
+const comboDetailColor = ref('#667eea')
+
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
 /** 格式化数字（亿 / 万） */
-const formatNumber = (num: number): string => {
+const formatNumber = (num: number | null | undefined): string => {
+  if (num == null) return '0'
   if (num >= 100000000) return (num / 100000000).toFixed(1) + '亿'
   if (num >= 10000) return (num / 10000).toFixed(1) + '万'
-  return num.toString()
+  return num.toLocaleString()
 }
 
 /**
- * 将前端 yearlyView 值映射为后端可识别的 area 字符串。
- * 'all' → undefined（不过滤），'china' → '国内'，'japan' → '日本'，'us' → '美国'
+ * 获取风格组合详情中番剧封面的代理图片 URL。
+ * 通过后端 image_proxy 绕过 CDN 防盗链。
  */
-const yearlyViewToArea = (view: string): string | undefined => {
-  const MAP: Record<string, string> = { china: '国内', japan: '日本', us: '美国' }
-  return MAP[view]
-}
-
-/**
- * 将前端 selectedArea 值映射为后端 area 字符串。
- * '全部' / '中国' → '国内'（数据库存储为"国内"），其余直接传递。
- */
-const selectedAreaToParam = (area: string): string | undefined => {
-  if (area === '全部') return undefined
-  if (area === '中国') return '国内'
-  return area
-}
-
-/**
- * 初始化或获取图表实例，并绑定 ResizeObserver。
- * 若实例已存在，直接返回（复用实例、避免闪烁）。
- */
-const getOrCreateInstance = (
-  el: HTMLElement,
-  currentInstance: ECharts | null,
-  currentObserver: ResizeObserver | null
-): [ECharts, ResizeObserver] => {
-  if (currentInstance && !currentInstance.isDisposed()) {
-    return [currentInstance, currentObserver!]
-  }
-  const chart = echarts.init(el)
-  const observer = new ResizeObserver(() => chart.resize())
-  observer.observe(el)
-  return [chart, observer]
+const getComboAnimeImageUrl = (anime: ComboAnimeItem): string => {
+  if (!anime.cover) return ''
+  return `/api/image_proxy?url=${encodeURIComponent(anime.cover)}&title=${encodeURIComponent(anime.title)}&season_id=${anime.season_id}`
 }
 
 // ─── 切换标签页 ──────────────────────────────────────────────────────────────
@@ -244,266 +306,311 @@ const switchTab = (tabId: string) => {
   // 等待 v-show 更新 DOM 后再渲染/刷新图表
   nextTick(() => {
     switch (tabId) {
-      case 'yearly':    renderYearlyChart();     break
-      case 'genre':     renderPreferenceChart(); break
-      case 'rating':    renderRatingChart();     break
-      case 'category':  renderCategoryChart();   break
+      case 'yearly':   renderYearlyChart();    break
+      case 'genre':    renderPreferenceChart(); break
+      case 'rating':   renderRatingChart();    break
+      case 'category': renderCategoryChart();  break
     }
   })
 }
 
-// ─── 历年数量变化图（折线图） ────────────────────────────────────────────────
+// ─── 历年数量变化图（多系列折线图，X 轴为季度） ─────────────────────────────
 const renderYearlyChart = async () => {
   if (!yearlyTrendChart.value) return
 
-  ;[yearlyInstance, yearlyResizeObserver] = getOrCreateInstance(
-    yearlyTrendChart.value, yearlyInstance, yearlyResizeObserver
-  )
+  // 若实例尚未初始化，先创建空实例
+  initYearlyChart({})
 
   try {
-    // 将视图选项映射为地区参数传递给 API
-    const area = yearlyViewToArea(yearlyView.value)
-    const response = await getReleaseTrend(area)
-    const data = response.data || {}
+    showYearlyLoad()
+    const yearlyData = await getYearlyQuantityChart(yearlyView.value)
+    const xData = ['春季(1-3月)', '夏季(4-6月)', '秋季(7-9月)', '冬季(10-12月)']
 
-    const labels = Object.keys(data).sort()
-    const counts = labels.map((k) => data[k])
+    // 年份降序排列，最新年份在图例最前
+    const legendData = Object.keys(yearlyData).sort((a, b) => Number(b) - Number(a))
 
-    const option: echarts.EChartsOption = {
+    const seriesData: echarts.SeriesOption[] = legendData.map(year => ({
+      name: year,
+      type: 'line',
+      smooth: true,
+      data: yearlyData[year],
+    }))
+
+    setYearlyOption({
       tooltip: {
         trigger: 'axis',
-        formatter: (params: any) => `${params[0].name}<br/>上新数量: ${params[0].value} 部`
+        axisPointer: { type: 'cross' },
       },
-      xAxis: {
-        type: 'category',
-        data: labels,
-        axisLabel: { rotate: 45 }
-      },
-      yAxis: {
-        type: 'value',
-        name: '番剧数量'
-      },
-      series: [
-        {
-          name: '上新数量',
-          type: 'line',
-          data: counts,
-          smooth: true,
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(88, 160, 253, 0.5)' },
-              { offset: 1, color: 'rgba(88, 160, 253, 0.1)' }
-            ])
-          },
-          lineStyle: { color: '#58a0fd', width: 3 },
-          itemStyle: { color: '#58a0fd' }
-        }
-      ],
-      grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true }
-    }
-
-    // 使用 setOption 更新而非 dispose/reinit，保留动画过渡
-    yearlyInstance.setOption(option, true)
+      legend: { data: legendData, type: 'scroll' },
+      xAxis: { type: 'category', data: xData },
+      yAxis: { type: 'value', name: '番剧数量' },
+      series: seriesData,
+      grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
+    }, { notMerge: true })
   } catch (error) {
     console.error('加载历年趋势失败:', error)
+  } finally {
+    hideYearlyLoad()
   }
 }
 
-// ─── 偏好差异图（横向柱状图） ────────────────────────────────────────────────
+// ─── 偏好差异图（矩形树图，按地区偏好指数着色） ─────────────────────────────
 const renderPreferenceChart = async () => {
   if (!preferenceDiffChart.value) return
 
-  ;[preferenceInstance, preferenceResizeObserver] = getOrCreateInstance(
-    preferenceDiffChart.value, preferenceInstance, preferenceResizeObserver
-  )
+  initPrefChart({})
 
   try {
-    // 将地区选项映射为 API area 参数
-    const area = selectedAreaToParam(selectedArea.value)
-    const response = await getStyleDistribution(area)
-    const data = response.data || {}
+    showPrefLoad()
+    const response = await getPreferenceDifferenceChart(selectedPrefArea.value)
+    const chartData = response.data || []
 
-    // 按数量降序排列，最多展示前 20 个风格
-    const sorted = Object.entries(data)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 20)
-    const styles = sorted.map(([name]) => name)
-    const values = sorted.map(([, v]) => v)
+    // 获取用户偏好列表，用于高亮匹配的风格
+    const userPreferences: string[] = authStore.preferences || []
 
-    const option: echarts.EChartsOption = {
+    const treeData = chartData.map(d => ({
+      name: d.style,
+      value: d.preferenceIndex,
+      regionCount: d.regionCount,
+      globalCount: d.globalCount,
+      itemStyle: {
+        color: userPreferences.includes(d.style) ? '#fb7299' : '#87CEFA',
+        borderRadius: 4,
+        borderWidth: 2,
+        borderColor: '#fff',
+        gapWidth: 2,
+      },
+    }))
+
+    setPrefOption({
       tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' }
+        trigger: 'item',
+        formatter: (params: any) => {
+          // 跳过父节点
+          if (params.data?.children?.length > 0 || params.data?.value == null) return ''
+          const d = params.data
+          const compText =
+            d.value > 1.1
+              ? `<span style="color:#28a745;">(高于全球)</span>`
+              : d.value < 0.9
+              ? `<span style="color:#dc3545;">(低于全球)</span>`
+              : `<span>(与全球持平)</span>`
+          return `<b>${d.name}</b><br/>
+地区偏好指数: <b style="font-size:1.2em;">${d.value}</b> ${compText}<br/>
+<hr style="margin:4px 0;">
+该地区番剧数: ${d.regionCount}<br/>
+全球番剧数: ${d.globalCount}`
+        },
       },
-      xAxis: { type: 'value' },
-      yAxis: {
-        type: 'category',
-        data: styles,
-        axisLabel: { interval: 0 }
-      },
-      series: [
-        {
-          name: '番剧数量',
-          type: 'bar',
-          data: values,
-          itemStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-              { offset: 0, color: '#83bff6' },
-              { offset: 1, color: '#188df0' }
-            ])
-          },
-          label: { show: true, position: 'right' }
-        }
-      ],
-      grid: { left: '15%', right: '10%', bottom: '3%', top: '3%', containLabel: true }
-    }
-
-    preferenceInstance.setOption(option, true)
+      series: [{
+        type: 'treemap',
+        roam: false,
+        nodeClick: false,
+        breadcrumb: { show: false },
+        label: {
+          show: true,
+          position: 'inside',
+          formatter: (p: any) => `${p.name}\n${p.value}`,
+          color: '#fff',
+          fontSize: 14,
+        },
+        data: treeData,
+      }],
+    }, { notMerge: true })
   } catch (error) {
     console.error('加载偏好差异失败:', error)
+  } finally {
+    hidePrefLoad()
   }
 }
 
-// ─── 口碑热度排行图（柱线混合图） ───────────────────────────────────────────
+// ─── 口碑热度指数排行图（渐变条形图） ────────────────────────────────────────
 const renderRatingChart = async () => {
   if (!collectionRatioChart.value) return
 
-  ;[ratingInstance, ratingResizeObserver] = getOrCreateInstance(
-    collectionRatioChart.value, ratingInstance, ratingResizeObserver
-  )
+  initRatingChart({})
 
   try {
+    showRatingLoad()
+    const season = selectedSeason.value !== 'all' ? selectedSeason.value : ''
+    const response = await getReputationHeatIndexChart(season)
+    const topAnimes = response.data || []
+
+    // 根据 ratingView 控制展示数量
     const limit = ratingView.value === 'top10' ? 10 : 20
-    // 将季节选项作为 season 参数传递，'all' 时不过滤
-    const season = selectedSeason.value !== 'all' ? selectedSeason.value : undefined
+    const displayAnimes = topAnimes.slice(0, limit)
 
-    const response = await getRankings('rating', limit, undefined, undefined, season)
-    const animes = response.list || []
+    // 倒序显示（最高分在顶部）
+    const yAxisData = displayAnimes.map(a => a.title).reverse()
+    const seriesData = displayAnimes
+      .map(a => ({
+        value: parseFloat(a.qualityScore.toFixed(0)),
+        score: a.rating,
+        views: a.views,
+        favorites: a.favorites,
+      }))
+      .reverse()
 
-    const names = animes.map((anime: any) => anime.title)
-    const ratings = animes.map((anime: any) => anime.rating || 0)
-    const views = animes.map((anime: any) => anime.views || 0)
-
-    const option: echarts.EChartsOption = {
+    setRatingOption({
       tooltip: {
         trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        backgroundColor: 'rgba(30, 41, 59, 0.9)',
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        textStyle: { color: '#f0f0f0' },
         formatter: (params: any) => {
-          const anime = animes[params[0].dataIndex]
-          return `${anime.title}<br/>评分: ${anime.rating?.toFixed(1)}<br/>播放量: ${formatNumber(anime.views || 0)}`
-        }
-      },
-      legend: { data: ['评分', '热度指数'] },
-      xAxis: {
-        type: 'category',
-        data: names,
-        axisLabel: {
-          rotate: 45,
-          interval: 0,
-          formatter: (value: string) => (value.length > 8 ? value.substring(0, 8) + '…' : value)
-        }
-      },
-      yAxis: [
-        { type: 'value', name: '评分', min: 0, max: 10 },
-        {
-          type: 'value',
-          name: '热度',
-          axisLabel: { formatter: (value: number) => formatNumber(value) }
-        }
-      ],
-      series: [
-        {
-          name: '评分',
-          type: 'bar',
-          data: ratings,
-          itemStyle: { color: '#f5a623' }
+          if (!params?.length) return ''
+          const d = params[0].data
+          return `<b>${params[0].name}</b><br/>
+<span style="font-size:1.2em;color:#fde047;font-weight:bold;">口碑热度指数: ${formatNumber(d.value)}</span><br/>
+<hr style="margin:4px 0;border-color:rgba(255,255,255,0.2);">
+B站评分: ${d.score}<br/>
+追番数: ${formatNumber(d.favorites)}<br/>
+播放量: ${formatNumber(d.views)}`
         },
-        {
-          name: '热度指数',
-          type: 'line',
-          yAxisIndex: 1,
-          data: views,
-          smooth: true,
-          lineStyle: { color: '#58a0fd', width: 2 },
-          itemStyle: { color: '#58a0fd' }
-        }
-      ],
-      grid: { left: '3%', right: '4%', bottom: '20%', containLabel: true }
-    }
-
-    ratingInstance.setOption(option, true)
+      },
+      grid: { left: '5%', right: '10%', bottom: '3%', top: '3%', containLabel: true },
+      xAxis: { type: 'value', name: '口碑热度指数' },
+      yAxis: {
+        type: 'category',
+        data: yAxisData,
+        axisLabel: { show: false },
+        axisTick: { show: false },
+        axisLine: { show: false },
+      },
+      series: [{
+        name: '口碑热度指数',
+        type: 'bar',
+        barWidth: '60%',
+        data: seriesData,
+        itemStyle: {
+          borderRadius: [0, 5, 5, 0],
+          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+            { offset: 0, color: '#f97316' },
+            { offset: 1, color: '#facc15' },
+          ]),
+        },
+        emphasis: {
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+              { offset: 0, color: '#fb923c' },
+              { offset: 1, color: '#fde047' },
+            ]),
+          },
+        },
+        label: {
+          show: true,
+          position: 'insideLeft',
+          formatter: '{b}',
+          color: '#fff',
+          fontSize: 12,
+        },
+      }],
+    }, { notMerge: true })
   } catch (error) {
     console.error('加载口碑热度失败:', error)
+  } finally {
+    hideRatingLoad()
   }
 }
 
-// ─── 热门风格组合树图 ────────────────────────────────────────────────────────
+// ─── 热门风格组合矩形树图（含点击下钻详情面板） ─────────────────────────────
 const renderCategoryChart = async () => {
   if (!categoryTrendChart.value) return
 
-  ;[categoryInstance, categoryResizeObserver] = getOrCreateInstance(
-    categoryTrendChart.value, categoryInstance, categoryResizeObserver
-  )
+  initCategoryChart({})
+
+  // 移除旧的点击监听，防止重复绑定
+  categoryChartInstance.value?.off('click')
 
   try {
-    // 风格组合图不区分地区，展示全局数据
-    const response = await getStyleDistribution()
-    const data = response.data || {}
+    showCategoryLoad()
+    const response = await getPopularStyleCombinationChart()
+    const topCombinations = response.data || []
 
-    const treeData = Object.entries(data)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value]) => ({ name, value }))
+    const seriesData = topCombinations.map(combo => ({
+      name: combo.combination,
+      value: Math.round(combo.avgFavorites),
+      count: combo.animeCount,
+      animes: combo.representativeAnimes,
+    }))
 
-    const option: echarts.EChartsOption = {
+    setCategoryOption({
       tooltip: {
-        formatter: (info: any) => `${info.name}<br/>数量: ${info.value} 部`
+        trigger: 'item',
+        backgroundColor: 'rgba(30, 41, 59, 0.9)',
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        textStyle: { color: '#f0f0f0' },
+        formatter: (params: any) => {
+          if (params.data?.children?.length > 0 || params.data?.value == null) return ''
+          const { name, value, count, animes } = params.data
+          let animeListHtml = ''
+          if (animes?.length > 0) {
+            const preview = animes.slice(0, 5)
+            const items = preview.map((a: any) => `<li>${a.title || '未知标题'}</li>`).join('')
+            const more = animes.length > 5 ? `<li>等 ${animes.length} 部番剧...</li>` : ''
+            animeListHtml = `<hr style="margin:4px 0;border-color:rgba(255,255,255,0.2);">
+<span style="color:#d1d5db;">包含番剧（部分）:</span>
+<ul style="padding-left:15px;margin:5px 0 0;">${items}${more}</ul>`
+          }
+          return `<b>${name}</b><br/>
+<span style="font-size:1.2em;color:#34d399;font-weight:bold;">平均追番: ${value?.toLocaleString()}</span><br/>
+<hr style="margin:4px 0;border-color:rgba(255,255,255,0.2);">
+包含番剧数: ${count}${animeListHtml}`
+        },
       },
-      series: [
-        {
-          type: 'treemap',
-          data: treeData,
-          leafDepth: 1,
-          label: { show: true, formatter: '{b}\n{c}' },
-          upperLabel: { show: true, height: 30 },
-          itemStyle: {
-            borderColor: '#fff',
-            borderWidth: 2,
-            gapWidth: 2
-          },
-          levels: [
-            {
-              itemStyle: { borderColor: '#555', borderWidth: 4, gapWidth: 4 }
-            },
-            {
-              colorSaturation: [0.35, 0.5],
-              itemStyle: { borderWidth: 5, gapWidth: 1, borderColorSaturation: 0.6 }
-            }
-          ]
-        }
-      ]
-    }
+      series: [{
+        type: 'treemap',
+        roam: false,
+        nodeClick: false,
+        breadcrumb: { show: false },
+        label: {
+          show: true,
+          position: 'inside',
+          formatter: '{b}',
+          color: '#fff',
+          fontSize: 14,
+          fontWeight: 'bold',
+        },
+        itemStyle: { gapWidth: 3, borderColor: '#fff', borderRadius: 5 },
+        data: seriesData,
+      }],
+    }, { notMerge: true })
 
-    categoryInstance.setOption(option, true)
+    // 绑定点击事件：打开下钻详情面板
+    categoryChartInstance.value?.on('click', (params: any) => {
+      if (params.data?.animes) {
+        comboDetailData.value = {
+          name: params.data.name,
+          value: params.data.value,
+          count: params.data.count,
+          animes: params.data.animes,
+        }
+        comboDetailColor.value = params.color ?? '#667eea'
+        isComboDetailVisible.value = true
+
+        // 隐藏 tooltip 并将图表设为静默（防止遮挡面板）
+        categoryChartInstance.value?.dispatchAction({ type: 'hideTip' })
+        setCategoryOption({ series: [{ silent: true }] })
+      }
+    })
   } catch (error) {
     console.error('加载风格组合失败:', error)
+  } finally {
+    hideCategoryLoad()
   }
+}
+
+/** 关闭风格组合下钻详情面板，恢复图表交互 */
+const closeComboDetail = () => {
+  isComboDetailVisible.value = false
+  setCategoryOption({ series: [{ silent: false }] })
 }
 
 // ─── 生命周期 ────────────────────────────────────────────────────────────────
 onMounted(() => {
   // 挂载后渲染默认标签页图表
   renderYearlyChart()
-})
-
-onUnmounted(() => {
-  // 断开所有 ResizeObserver 并销毁图表实例，防止内存泄漏
-  yearlyResizeObserver?.disconnect()
-  preferenceResizeObserver?.disconnect()
-  ratingResizeObserver?.disconnect()
-  categoryResizeObserver?.disconnect()
-  yearlyInstance?.dispose()
-  preferenceInstance?.dispose()
-  ratingInstance?.dispose()
-  categoryInstance?.dispose()
 })
 </script>
 
@@ -673,4 +780,131 @@ onUnmounted(() => {
     font-size: 14px;
   }
 }
+/* ─── 热门风格组合：图表变暗效果 ─────────────────────────────────────────── */
+.combo-chart-dimmed {
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+/* ─── 热门风格组合：下钻详情侧边面板 ────────────────────────────────────── */
+.combo-detail-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 320px;
+  background: #fff;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+  border-radius: 10px 0 0 10px;
+  padding: 20px 16px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.combo-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.combo-detail-block {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.combo-detail-title {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-close-detail {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 4px;
+  transition: color 0.2s;
+}
+
+.btn-close-detail:hover {
+  color: #ef4444;
+}
+
+.combo-detail-stats {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 12px;
+}
+
+.detail-anime-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.detail-anime-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.detail-rank {
+  font-size: 14px;
+  font-weight: 700;
+  color: #667eea;
+  min-width: 20px;
+  text-align: center;
+  padding-top: 2px;
+}
+
+.detail-cover {
+  width: 52px;
+  height: 68px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.detail-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.detail-info h5 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-info p {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* 面板滑入/滑出动画 */
+.slide-panel-enter-active,
+.slide-panel-leave-active {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.slide-panel-enter-from,
+.slide-panel-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
 </style>

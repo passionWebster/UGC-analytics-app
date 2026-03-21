@@ -254,3 +254,149 @@ export const getWatchTimeDistribution = async (
 ): Promise<{ success: boolean; data: WatchTimeDistributionData }> => {
   return apiClient.get(`/analytics/animes/${seasonId}/watch-time`)
 }
+
+// ─── 图表专用接口 ─────────────────────────────────────────────────────────────
+
+/** 口碑热度散点图单条数据 */
+export interface ReputationPopularityItem {
+  title: string
+  rating: number
+  ratingRaw: number
+  favorites: number
+  views: number
+  area: string
+}
+
+/** 偏好差异矩形树图单条数据 */
+export interface PreferenceDifferenceItem {
+  style: string
+  preferenceIndex: number
+  regionCount: number
+  globalCount: number
+}
+
+/** 口碑热度指数条形图单条数据 */
+export interface ReputationHeatIndexItem {
+  title: string
+  qualityScore: number
+  rating: number
+  favorites: number
+  views: number
+  area: string
+  cover: string
+}
+
+/** 热门风格组合矩形树图单条代表番剧 */
+export interface ComboAnimeItem {
+  title: string
+  cover: string
+  season_id: number
+  score: number | null
+  favorites: number
+}
+
+/** 热门风格组合矩形树图单条数据 */
+export interface PopularStyleCombinationItem {
+  combination: string
+  totalFavorites: number
+  animeCount: number
+  avgFavorites: number
+  representativeAnimes: ComboAnimeItem[]
+}
+
+/**
+ * 获取番剧类型（风格）分布数据，用于首页饼图（含"其他"下钻功能）。
+ * 返回按数量降序排列的 [name, value] 二元组数组。
+ */
+export const getTypeDistributionChart = async (): Promise<Array<[string, number]>> => {
+  const response = await apiClient.get<any>('/analytics/statistics/styles')
+  const data: Record<string, number> = response.data || {}
+  return Object.entries(data).sort((a, b) => b[1] - a[1]) as Array<[string, number]>
+}
+
+/**
+ * 获取口碑热度散点图数据。
+ * @param areas - 地区列表，逗号分隔（如 "国内,日本"），为空则返回全部地区
+ */
+export const getReputationPopularityChart = async (
+  areas: string = ''
+): Promise<{ success: boolean; total: number; data: ReputationPopularityItem[] }> => {
+  const params: Record<string, string> = {}
+  if (areas) params.areas = areas
+  return apiClient.get('/analytics/charts/reputation-popularity', { params })
+}
+
+/**
+ * 获取地区偏好差异矩形树图数据。
+ * @param region - 地区名称（如 "国内"、"日本"、"美国"），默认 "国内"
+ */
+export const getPreferenceDifferenceChart = async (
+  region: string = '国内'
+): Promise<{ success: boolean; total: number; data: PreferenceDifferenceItem[] }> => {
+  return apiClient.get('/analytics/charts/preference-difference', { params: { region } })
+}
+
+/**
+ * 获取历年番剧上新数量变化数据，用于折线图（多系列，X 轴为季度）。
+ * 将 "/analytics/statistics/trends" 返回的 `{"YYYY-MM": count}` 转换为
+ * `{"YYYY": [Q1, Q2, Q3, Q4]}` 格式。
+ *
+ * @param category - 地区分类（all / china / japan / us），默认 "all"
+ */
+export const getYearlyQuantityChart = async (
+  category: string = 'all'
+): Promise<Record<string, number[]>> => {
+  const categoryToArea: Record<string, string | undefined> = {
+    all: undefined,
+    china: '国内',
+    japan: '日本',
+    us: '美国',
+  }
+  const area = categoryToArea[category]
+  const response = await apiClient.get<any>(
+    '/analytics/statistics/trends',
+    area ? { params: { area } } : {}
+  )
+  const trends: Record<string, number> = response.data || {}
+
+  // 月份 → 季度索引映射（与 B 站上新季度对应）
+  const monthToIdx: Record<string, number> = { '01': 0, '04': 1, '07': 2, '10': 3 }
+  const yearlyData: Record<string, number[]> = {}
+
+  for (const [dateStr, count] of Object.entries(trends)) {
+    const parts = dateStr.split('-')
+    if (parts.length !== 2) continue
+    const [year, month] = parts
+    if (!yearlyData[year]) yearlyData[year] = [0, 0, 0, 0]
+    const idx = monthToIdx[month]
+    if (idx !== undefined) yearlyData[year][idx] = count
+  }
+
+  return yearlyData
+}
+
+/**
+ * 获取综合口碑热度指数条形图数据（前 15 名）。
+ * @param season   - 季节筛选（spring / summer / autumn / winter），为空则全部
+ * @param category - 风格/类型筛选，为空则全部
+ */
+export const getReputationHeatIndexChart = async (
+  season: string = '',
+  category: string = ''
+): Promise<{ success: boolean; total: number; data: ReputationHeatIndexItem[] }> => {
+  const params: Record<string, string> = {}
+  if (season && season !== 'all') params.season = season
+  if (category && category !== 'all') params.category = category
+  return apiClient.get('/analytics/charts/reputation-heat-index', { params })
+}
+
+/**
+ * 获取热门风格组合矩形树图数据（前 20 组合，含代表番剧完整信息）。
+ */
+export const getPopularStyleCombinationChart = async (): Promise<{
+  success: boolean
+  total: number
+  data: PopularStyleCombinationItem[]
+}> => {
+  return apiClient.get('/analytics/charts/popular-style-combination')
+}
