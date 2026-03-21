@@ -35,8 +35,6 @@ logger.add(
         "<level>{message}</level>"
     ),
     colorize=True,
-    # 仅输出非爬虫日志（爬虫日志由独立文件 Handler 处理）
-    filter=lambda record: record["extra"].get("module") != "scraper",
 )
 
 # ──────────────────────────────────────────────────────────────────────────────

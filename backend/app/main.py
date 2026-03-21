@@ -22,7 +22,6 @@ app = FastAPI(
     version=settings.app_version,
     description="Bilibili 番剧数据分析平台 - 统一的 FastAPI 后端服务",
     docs_url="/api/docs",  # Swagger UI 文档地址
-    redoc_url="/api/redoc"  # ReDoc 文档地址
 )
 
 # 配置 CORS 中间件
@@ -39,7 +38,7 @@ app.add_middleware(
 # HTTP 请求日志中间件：记录每条请求的时间、路径、方法、耗时与状态码
 # ──────────────────────────────────────────────────────────────────────────────
 @app.middleware("http")
-async def http_request_logging_middleware(request: Request, call_next):
+async def http(request: Request, call_next):
     """拦截所有 HTTP 请求，统一记录访问日志"""
     start_time = time.perf_counter()
     try:
@@ -109,7 +108,6 @@ async def startup_event():
 
     app_logger.info("✅ 服务器启动成功")
     app_logger.info("📖 API 文档: http://{}:{}/api/docs", settings.host, settings.port)
-    app_logger.info("📖 ReDoc 文档: http://{}:{}/api/redoc", settings.host, settings.port)
     app_logger.info("=" * 60)
 
 
@@ -130,7 +128,6 @@ async def root():
         "version": settings.app_version,
         "status": "running",
         "docs": "/api/docs",
-        "redoc": "/api/redoc"
     }
 
 

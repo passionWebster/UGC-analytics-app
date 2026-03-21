@@ -14,6 +14,7 @@ import asyncio
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from loguru import logger
 from sqlmodel import Session, select
 
 from .database import engine
@@ -30,7 +31,7 @@ def _task_a_update_recent_episodes():
     """
     from .scraper import BilibiliBangumiCrawler
 
-    print("🔄 [任务 A] 开始刷新最新 50 部番剧的剧集在线人数...")
+    logger.info("🔄 [任务 A] 开始刷新最新 50 部番剧的剧集在线人数...")
     with Session(engine) as session:
         # 查出最新 50 部番剧（按 updated_at 倒序）
         recent_animes = session.exec(
@@ -38,7 +39,7 @@ def _task_a_update_recent_episodes():
         ).all()
 
         if not recent_animes:
-            print("  ℹ️  数据库中暂无番剧记录，跳过任务 A")
+            logger.info("ℹ️ 数据库中暂无番剧记录，跳过任务 A")
             return
 
         season_ids = [a.season_id for a in recent_animes]
@@ -49,7 +50,7 @@ def _task_a_update_recent_episodes():
         ).all()
 
         if not episodes:
-            print("  ℹ️  未找到对应的剧集记录，跳过任务 A")
+            logger.info("ℹ️ 未找到对应的剧集记录，跳过任务 A")
             return
 
         crawler = BilibiliBangumiCrawler(session)
@@ -63,7 +64,7 @@ def _task_a_update_recent_episodes():
             time.sleep(0.2)
 
         session.commit()
-        print(f"  ✅ 任务 A 完成：共更新 {updated}/{len(episodes)} 条剧集在线人数记录")
+        logger.success(f"  ✅ 任务 A 完成：共更新 {updated}/{len(episodes)} 条剧集在线人数记录")
 
 
 def _task_b_monthly_snapshot():
@@ -72,7 +73,7 @@ def _task_b_monthly_snapshot():
     统计全量番剧的总追番数和总播放量，生成 JSON 文件保存到 cache 目录。
     文件命名格式：rank_fetcher_{月份}th.json
     """
-    print("🔄 [任务 B] 开始生成月度数据快照...")
+    logger.info("🔄 [任务 B] 开始生成月度数据快照...")
     with Session(engine) as session:
         animes = session.exec(select(Anime)).all()
 
@@ -101,7 +102,7 @@ def _task_b_monthly_snapshot():
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
 
-    print(f"  ✅ 任务 B 完成：月度快照已保存到 {filepath}，共 {len(snapshot)} 条记录")
+    logger.success(f"✅ 任务 B 完成：月度快照已保存到 {filepath}，共 {len(snapshot)} 条记录")
 
 
 def _task_c_tmdb_enrichment():
@@ -114,11 +115,11 @@ def _task_c_tmdb_enrichment():
     """
     from .tmdb_service import run_tmdb_enrichment
 
-    print("🔄 [任务 C] 开始执行 TMDB 数据批量富集...")
+    logger.info("🔄 [任务 C] 开始执行 TMDB 数据批量富集...")
     with Session(engine) as session:
         # 在独立线程内使用 asyncio.run 执行异步 TMDB 富集任务
         result = asyncio.run(run_tmdb_enrichment(session))
-    print(
+    logger.success(
         f"  ✅ 任务 C 完成：{result.get('message', '')} "
         f"（成功 {result.get('success', 0)}，失败 {result.get('failed', 0)}）"
     )
@@ -131,11 +132,11 @@ def _task_d_hourly_online_viewers():
     """
     from .scraper import BilibiliBangumiCrawler
 
-    print("🔄 [任务 D] 开始记录每小时在线人数...")
+    logger.info("🔄 [任务 D] 开始记录每小时在线人数...")
     with Session(engine) as session:
         crawler = BilibiliBangumiCrawler(session)
         crawler.record_hourly_online_viewers()
-    print("  ✅ 任务 D 完成")
+    logger.success("✅ 任务 D 完成")
 
 
 def create_scheduler() -> AsyncIOScheduler:

@@ -8,7 +8,7 @@ from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy import event
 from sqlalchemy.pool import StaticPool
 from typing import Generator
-
+from loguru import logger
 
 # 数据库文件路径
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -53,7 +53,7 @@ def create_db_and_tables():
     在应用启动时调用
     """
     SQLModel.metadata.create_all(engine)
-    print(f"✅ 数据库已初始化: {DATABASE_PATH}")
+    logger.success(f"✅ 数据库已初始化: {DATABASE_PATH}")  # 使用 success 级别，控制台会显示绿色
 
 
 def get_session() -> Generator[Session, None, None]:
@@ -76,9 +76,9 @@ def init_database():
     初始化数据库
     创建所有表结构
     """
-    print("🚀 正在初始化数据库...")
+    logger.info("🚀 正在初始化数据库...")
     create_db_and_tables()
-    print(f"📁 数据库位置: {DATABASE_PATH}")
+    logger.info(f"📁 数据库位置: {DATABASE_PATH}")
 
 
 if __name__ == "__main__":
