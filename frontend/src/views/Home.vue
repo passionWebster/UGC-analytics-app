@@ -181,6 +181,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import type * as echarts from 'echarts'
 import { useEcharts } from '@/composables/useEcharts'
 import { useAnalyticsStore } from '@/stores/analytics'
 import type { AnimeData } from '@/api/analytics'
@@ -389,17 +390,36 @@ const loadScatterChart = async (): Promise<void> => {
     const response = await getReputationPopularityChart(areasQuery)
     const chartData = response.data || []
 
-    const seriesData = chartData.map(item => ({
-      value: [item.rating, item.favorites, item.title, item.views, item.ratingRaw, item.area] as
-        [number, number, string, number, number, string],
-      itemStyle: { color: areaColorMap[item.area] ?? '#cccccc' }
-    }))
-
     const formatNum = (num: number): string => {
       if (num >= 100000000) return (num / 100000000).toFixed(1) + '亿'
       if (num >= 10000) return (num / 10000).toFixed(1) + '万'
       return num.toLocaleString()
     }
+
+    // 按地区分组，每个地区独立为一个 series，使 legend 与 series 一一对应
+    const seriesByArea: Record<string, Array<[number, number, string, number, number, string]>> = {}
+    for (const area of selectedAreas.value) {
+      seriesByArea[area] = []
+    }
+    for (const item of chartData) {
+      if (seriesByArea[item.area]) {
+        seriesByArea[item.area].push([
+          item.rating, item.favorites, item.title, item.views, item.ratingRaw, item.area,
+        ])
+      }
+    }
+
+    const series: echarts.SeriesOption[] = selectedAreas.value.map(area => ({
+      name: area,
+      type: 'scatter',
+      symbolSize: 10,
+      itemStyle: { color: areaColorMap[area] ?? '#cccccc' },
+      data: seriesByArea[area],
+      emphasis: {
+        focus: 'series',
+        label: { show: true, formatter: (p: any) => p.value[2], position: 'top' as const },
+      },
+    }))
 
     setScatterOption({
       tooltip: {
@@ -419,16 +439,7 @@ const loadScatterChart = async (): Promise<void> => {
         data: selectedAreas.value,
         bottom: 0
       },
-      series: [{
-        name: '番剧',
-        type: 'scatter',
-        symbolSize: 10,
-        data: seriesData,
-        emphasis: {
-          focus: 'series',
-          label: { show: true, formatter: (p: any) => p.value[2], position: 'top' }
-        }
-      }]
+      series,
     }, { notMerge: true })
   } catch (error) {
     console.error('加载口碑热度散点图失败:', error)

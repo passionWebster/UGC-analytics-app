@@ -34,6 +34,12 @@ export function useEcharts() {
   const initChart = (option: EChartsOption) => {
     if (!chartRef.value) return
 
+    // 先断开并清理旧的 ResizeObserver，防止多次调用 initChart 时累积监听器
+    if (resizeObserver) {
+      resizeObserver.disconnect()
+      resizeObserver = null
+    }
+
     // 销毁旧实例，防止重复初始化
     if (chartInstance.value) {
       chartInstance.value.dispose()
