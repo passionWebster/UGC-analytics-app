@@ -1,31 +1,22 @@
 # Bilibili 智能分析平台 v2.0
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ## 项目概述
 
-Bilibili 智能分析平台是一个现代化的全栈 Web 应用，提供 B 站番剧数据的深度分析和可视化。本项目已完成从混合架构到统一现代化架构的完全重构。
+Bilibili 智能分析平台是一个现代化的全栈 Web 应用，提供 B 站番剧数据的深度分析和可视化。
 
-## 🎯 架构升级
+## 🎯 技术架构
 
-### 旧架构 (v1.x) - 已归档至 `_legacy_archive/`
-- **后端**: Python Flask + Node.js Express (双服务器)
-- **数据库**: MySQL (用户) + JSON 文件 (数据)
-- **前端**: Vanilla HTML/CSS/JavaScript
-- **问题**: 多服务器、文件存储、缺乏类型安全
-
-### 新架构 (v2.0) ✅
 - **后端**: **FastAPI** 统一后端
 - **数据库**: **SQLite** 统一数据库
 - **前端**: **Vue 3 + TypeScript + Vite + Pinia**
-- **优势**: 单一服务、数据库存储、完整类型系统、组件化开发
 
 ## 📁 项目结构
 
 ```
 bilibili-analytics-app/
-├── _legacy_archive/          # 旧版代码归档
-│   ├── node_server/          # 旧 Node.js 服务器
-│   ├── python_server/        # 旧 Python Flask 服务器
-│   └── public/               # 旧前端静态文件
+├── .github/                  # GitHub Actions CI/CD 工作流
 │
 ├── backend/                  # FastAPI 后端
 │   ├── app/
@@ -69,9 +60,15 @@ bilibili-analytics-app/
 │   ├── package.json
 │   └── vite.config.ts
 │
-├── logs/                     # 日志目录
-├── start_services.sh         # 一键启动脚本
-├── stop_services.sh          # 停止服务脚本
+├── docs/
+│   └── screenshots/          # 应用截图
+├── scripts/
+│   ├── start.sh              # 一键启动脚本
+│   └── stop.sh               # 停止服务脚本
+│
+├── .env.example              # 环境变量模板
+├── .gitignore
+├── LICENSE                   # MIT 开源协议
 └── README.md                 # 本文档
 ```
 
@@ -112,8 +109,8 @@ cd bilibili-analytics-app
 
 #### 2. 一键启动（推荐）
 ```bash
-chmod +x start_services.sh stop_services.sh
-./start_services.sh
+chmod +x scripts/start.sh scripts/stop.sh
+./scripts/start.sh
 ```
 
 这将自动：
@@ -130,7 +127,7 @@ chmod +x start_services.sh stop_services.sh
 
 #### 4. 停止服务
 ```bash
-./stop_services.sh
+./scripts/stop.sh
 ```
 
 ### 手动启动
@@ -249,33 +246,13 @@ npm run build
 
 ### 后端配置
 
-创建 `backend/.env` 文件：
-```env
-# 应用配置
-APP_NAME="Bilibili Analytics Platform"
-APP_VERSION="2.0.0"
-DEBUG=True
+复制根目录的 `.env.example` 为 `backend/.env` 并填写真实配置：
 
-# 服务器配置
-HOST="0.0.0.0"
-PORT=8000
-
-# 数据库配置
-DATABASE_URL="sqlite:///./data/bilibili.db"
-
-# JWT 配置
-SECRET_KEY="your-secret-key-here"
-ALGORITHM="HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES=1440
-
-# CORS 配置
-CORS_ORIGINS=["http://localhost:5173", "http://localhost:3000"]
-
-# AI 服务配置（可选）
-DOUBAO_API_KEY="your-doubao-api-key"
-DOUBAO_API_URL="https://ark.cn-beijing.volces.com/api/v3/chat/completions"
-DOUBAO_MODEL="ep-xxx-xxx"
+```bash
+cp .env.example backend/.env
 ```
+
+> ⚠️ **安全提示**: `backend/.env` 文件已加入 `.gitignore`，请勿将其提交到版本控制。
 
 ### 前端配置
 

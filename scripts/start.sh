@@ -18,22 +18,26 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
+# 项目根目录
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
 # 启动后端服务 (FastAPI)
 echo ""
 echo "📦 启动后端服务..."
-cd "$(dirname "$0")/backend"
+cd "$ROOT_DIR/backend"
 
 # 检查并安装 Python 依赖
-if [ ! -d "../venv" ]; then
+if [ ! -d "$ROOT_DIR/venv" ]; then
     echo "  正在创建 Python 虚拟环境..."
-    python3 -m venv ../venv
+    python3 -m venv "$ROOT_DIR/venv"
 fi
 
-source ../venv/bin/activate
+source "$ROOT_DIR/venv/bin/activate"
 pip install -q -r requirements.txt
 
 # 后台启动 FastAPI
-nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > ../logs/backend.log 2>&1 &
+mkdir -p "$ROOT_DIR/logs"
+nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > "$ROOT_DIR/logs/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo "  ✅ 后端服务已启动 (PID: $BACKEND_PID)"
 echo "  📖 API 文档: http://localhost:8000/api/docs"
@@ -41,7 +45,7 @@ echo "  📖 API 文档: http://localhost:8000/api/docs"
 # 启动前端服务 (Vue 3 + Vite)
 echo ""
 echo "🎨 启动前端服务..."
-cd ../frontend
+cd "$ROOT_DIR/frontend"
 
 # 检查并安装 Node 依赖
 if [ ! -d "node_modules" ]; then
@@ -50,16 +54,14 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # 后台启动 Vite
-nohup npm run dev > ../logs/frontend.log 2>&1 &
+nohup npm run dev > "$ROOT_DIR/logs/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo "  ✅ 前端服务已启动 (PID: $FRONTEND_PID)"
 echo "  🌐 前端地址: http://localhost:5173"
 
 # 保存 PID
-cd ..
-mkdir -p logs
-echo $BACKEND_PID > logs/backend.pid
-echo $FRONTEND_PID > logs/frontend.pid
+echo $BACKEND_PID > "$ROOT_DIR/logs/backend.pid"
+echo $FRONTEND_PID > "$ROOT_DIR/logs/frontend.pid"
 
 echo ""
 echo "======================================"
@@ -72,5 +74,5 @@ echo "查看日志:"
 echo "  后端: tail -f logs/backend.log"
 echo "  前端: tail -f logs/frontend.log"
 echo ""
-echo "停止服务: ./stop_services.sh"
+echo "停止服务: ./scripts/stop.sh"
 echo "======================================"
