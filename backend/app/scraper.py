@@ -4,6 +4,7 @@ B站数据爬虫服务 - 重构版
 将原 scraper.py 和 data_manager.py 的功能整合，数据直接写入 SQLite 数据库
 """
 import json
+import random
 import re
 import threading
 import time
@@ -268,12 +269,9 @@ class BilibiliBangumiCrawler:
             
             # 3. 逐部请求番剧详情 API：补充播放量/追番量/地区/完结状态/版权/互动统计等
             #    （替代原来的 _enrich_area + _enrich_views_and_favorites 两步批量接口）
-            logger.info("\n🔍 正在通过详情 API 补充完整数据...")
+            #    _enrich_details 内部每 50 部落库一次，无需在此再次调用 _save_animes_to_db
+            logger.info("\n🔍 正在通过详情 API 补充完整数据（每 50 部自动落库）...")
             all_animes = self._enrich_details(all_animes)
-            
-            # 4. 入库存储
-            logger.info("\n💾 正在保存到数据库...")
-            self._save_animes_to_db(all_animes)
             
             # 更新爬虫日志
             crawl_log.status = "success"
@@ -461,14 +459,18 @@ class BilibiliBangumiCrawler:
         地区映射规则见类常量 AREA_ID_TO_ENUM。
         """
         total = len(all_animes)
-        logger.info(f"  正在逐部请求番剧详情 API，共 {total} 部（将消耗约 {total * settings.bilibili_request_delay:.0f}s）...")
+        logger.info(f"  正在逐部请求番剧详情 API，共 {total} 部...")
         success_count = 0
+        # 用于每 50 部批量落库的计数器与临时字典
+        FLUSH_BATCH = 50
+        batch: Dict[int, Dict] = {}
 
         for season_id, anime_data in tqdm(all_animes.items(), desc="详情补充", unit="部"):
             try:
                 details = self.get_anime_details(season_id)
                 if not details:
-                    time.sleep(settings.bilibili_request_delay)
+                    delay = random.uniform(0.1, 2.0)
+                    time.sleep(delay)
                     continue
 
                 # ── 播放量 / 追番量（精确值，覆盖估算）──────────────────────────
@@ -519,11 +521,24 @@ class BilibiliBangumiCrawler:
                     except ValueError:
                         pass  # 日期格式异常时保留原值
 
+                batch[season_id] = anime_data
                 success_count += 1
             except Exception as exc:
                 logger.warning(f"  ⚠️ season_id={season_id} 详情获取异常: {exc}")
             finally:
-                time.sleep(settings.bilibili_request_delay)
+                # 随机延迟 0.1~2.0 秒，防止触发 B站反爬
+                time.sleep(random.uniform(0.1, 2.0))
+
+            # 每积累 FLUSH_BATCH 部就落库一次，防止进程意外终止导致数据丢失
+            if len(batch) >= FLUSH_BATCH:
+                logger.info(f"  💾 中间落库：保存已完成的 {len(batch)} 部...")
+                self._save_animes_to_db(batch)
+                batch.clear()
+
+        # 落库剩余不足一批的数据
+        if batch:
+            logger.info(f"  💾 最终落库：保存剩余 {len(batch)} 部...")
+            self._save_animes_to_db(batch)
 
         logger.info(f"  ✅ 番剧详情补充完成：成功 {success_count} / {total} 部")
         return all_animes

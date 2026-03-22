@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # B站 API 配置
     bilibili_api_base_url: str = "https://api.bilibili.com"
     bilibili_request_timeout: int = 15
-    bilibili_request_delay: float = 2.0  # 请求间隔（秒）
+    bilibili_request_delay: float = 2.0  # 保留作为随机延迟上限（实际延迟为 0.1~2.0s 随机数）
     
     # 爬虫配置
     crawler_pages_to_fetch: int = 5  # 每个分类抓取的页数
