@@ -5,7 +5,7 @@
 """
 import os
 from sqlmodel import SQLModel, create_engine, Session
-from sqlalchemy import event
+from sqlalchemy import event, text as sa_text, DDL
 from sqlalchemy.pool import StaticPool
 from typing import Generator
 from loguru import logger
@@ -53,7 +53,56 @@ def create_db_and_tables():
     在应用启动时调用
     """
     SQLModel.metadata.create_all(engine)
+    _add_missing_columns()
     logger.success(f"✅ 数据库已初始化")  # 使用 success 级别，控制台会显示绿色
+
+
+# 新增列的 DDL 定义：(列名, SQLite 类型)
+_NEW_ANIME_COLUMNS: list = [
+    ("total_coins",    "INTEGER"),
+    ("total_danmakus", "INTEGER"),
+    ("total_likes",    "INTEGER"),
+    ("total_reply",    "INTEGER"),
+    ("total_share",    "INTEGER"),
+    ("rating_count",   "INTEGER"),
+    ("is_finish",      "INTEGER"),
+    ("copyright",      "VARCHAR(20)"),
+    ("areas_raw",      "JSON"),
+]
+
+
+def _add_missing_columns():
+    """
+    对已存在的 anime 表执行增量列迁移：只添加尚未存在的列，不影响现有数据。
+    SQLite 不支持 ALTER TABLE … ADD COLUMN IF NOT EXISTS 语法，因此先用
+    PRAGMA table_info 查询已有列，再逐一添加缺失列。
+    若 anime 表尚不存在（首次启动），直接返回，由 create_all 负责建表。
+    """
+    with engine.connect() as conn:
+        # 先检查表是否存在，避免对不存在的表执行 ALTER TABLE
+        table_exists_rows = conn.execute(
+            sa_text("SELECT name FROM sqlite_master WHERE type='table' AND name='anime'")
+        ).fetchall()
+        if not table_exists_rows:
+            return  # 首次启动：表尚未由 create_all 创建，直接跳过
+
+        existing = {
+            row[1]
+            for row in conn.execute(sa_text("PRAGMA table_info(anime)"))
+        }
+
+        for col_name, col_type in _NEW_ANIME_COLUMNS:
+            if col_name not in existing:
+                try:
+                    # col_name and col_type come from the hardcoded _NEW_ANIME_COLUMNS
+                    # list above — not from user input — so interpolation is safe here.
+                    conn.execute(
+                        sa_text(f"ALTER TABLE anime ADD COLUMN {col_name} {col_type} DEFAULT NULL")
+                    )
+                    conn.commit()
+                    logger.info(f"  ✅ 迁移：已向 anime 表添加列 {col_name}")
+                except Exception as exc:
+                    logger.warning(f"  ⚠️ 添加列 {col_name} 失败: {exc}")
 
 
 def get_session() -> Generator[Session, None, None]:

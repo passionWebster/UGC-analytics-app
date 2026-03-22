@@ -60,6 +60,17 @@ class BilibiliBangumiCrawler:
         10029, 10030, 10031, 10033, 10035, 10036, 10037, 10038, 10039, 10040,
         10041, 10042, 10043, 10044, 10045, 10046, 10047, 10048, 10049
     }
+
+    # B站地区 id → AreaEnum 映射表（来自 /pgc/view/web/season areas 数组）
+    # id=1  中国大陆 / id=6 中国香港 / id=7 中国台湾 → 国内
+    # id=2  日本                                    → 日本
+    # id=3  美国                                    → 美国
+    # 其余 id                                       → 其他（保持不变）
+    AREA_ID_TO_ENUM: Dict[int, str] = {
+        1: '国内', 6: '国内', 7: '国内',
+        2: '日本',
+        3: '美国',
+    }
     
     def __init__(self, session: Session):
         """
@@ -248,22 +259,19 @@ class BilibiliBangumiCrawler:
             all_animes = {**domestic_animes, **regular_animes}
             logger.info(f"\n✅ 底库构建完成，共获取 {len(all_animes)} 部番剧")
             
-            # 2. 补充地区信息：按地区再次请求，更新底库中非国产番剧的地区字段
-            logger.info("\n🌍 正在补充地区信息...")
-            all_animes = self._enrich_area(all_animes)
-            
-            # 3. 补充风格信息：遍历风格ID，将匹配的风格追加到底库
+            # 2. 补充风格信息：遍历风格ID，将匹配的风格追加到底库
             logger.info("\n🎨 正在补充风格信息（常规番剧）...")
             all_animes = self._enrich_regular_styles(all_animes)
             
             logger.info("\n🎨 正在补充风格信息（国产番剧）...")
             all_animes = self._enrich_domestic_styles(all_animes)
             
-            # 4. 补充播放量和追番量：使用 order=2/3 重新请求，覆盖底库数据
-            logger.info("\n📈 正在补充播放量和追番量数据...")
-            all_animes = self._enrich_views_and_favorites(all_animes)
+            # 3. 逐部请求番剧详情 API：补充播放量/追番量/地区/完结状态/版权/互动统计等
+            #    （替代原来的 _enrich_area + _enrich_views_and_favorites 两步批量接口）
+            logger.info("\n🔍 正在通过详情 API 补充完整数据...")
+            all_animes = self._enrich_details(all_animes)
             
-            # 5. 入库存储
+            # 4. 入库存储
             logger.info("\n💾 正在保存到数据库...")
             self._save_animes_to_db(all_animes)
             
@@ -322,7 +330,17 @@ class BilibiliBangumiCrawler:
                     'styles': [],
                     'release_date': release_date,
                     'views': 0,
-                    'favorites': 0
+                    'favorites': 0,
+                    # 以下字段由 _enrich_details 阶段填充
+                    'total_coins': None,
+                    'total_danmakus': None,
+                    'total_likes': None,
+                    'total_reply': None,
+                    'total_share': None,
+                    'rating_count': None,
+                    'is_finish': None,
+                    'copyright': None,
+                    'areas_raw': [],
                 }
         
         return animes
@@ -362,23 +380,21 @@ class BilibiliBangumiCrawler:
                         'styles': [],
                         'release_date': f"{year}-{month:02d}",
                         'views': self._convert_order_to_int(item.get('order', '0')),
-                        'favorites': 0
+                        'favorites': 0,
+                        # 以下字段由 _enrich_details 阶段填充
+                        'total_coins': None,
+                        'total_danmakus': None,
+                        'total_likes': None,
+                        'total_reply': None,
+                        'total_share': None,
+                        'rating_count': None,
+                        'is_finish': None,
+                        'copyright': None,
+                        'areas_raw': [],
                     }
         
         return animes
     
-    def _fetch_regular_by_area(self, area: int) -> List[Dict[str, Any]]:
-        """获取指定地区的常规番剧列表 (area=2 日本, area=3 美国)"""
-        logger.info(f"  获取地区 {area} 常规番剧...")
-        params = {
-            'st': 1, 'order': 2, 'season_version': -1,
-            'spoken_language_type': -1, 'area': area, 'is_finish': -1,
-            'copyright': -1, 'season_status': -1, 'season_month': -1,
-            'year': '-1', 'style_id': -1, 'sort': 0,
-            'season_type': 1, 'type': 1
-        }
-        return self._fetch_api_data(params)
-
     def _fetch_regular_by_style(self, style_id: int) -> List[Dict[str, Any]]:
         """获取指定风格的常规番剧列表"""
         params = {
@@ -398,47 +414,6 @@ class BilibiliBangumiCrawler:
             'season_type': 4, 'type': 1
         }
         return self._fetch_api_data(params)
-
-    def _fetch_regular_ranking(self, order: int) -> List[Dict[str, Any]]:
-        """获取常规番剧全量排名数据 (order=2 播放量, order=3 追番量)"""
-        params = {
-            'st': 1, 'order': order, 'season_version': -1,
-            'spoken_language_type': -1, 'area': -1, 'is_finish': -1,
-            'copyright': -1, 'season_status': -1, 'season_month': -1,
-            'year': '-1', 'style_id': -1, 'sort': 0,
-            'season_type': 1, 'type': 1
-        }
-        return self._fetch_api_data(params)
-
-    def _fetch_domestic_ranking(self, order: int) -> List[Dict[str, Any]]:
-        """获取国产番剧全量排名数据 (order=2 播放量, order=3 追番量)"""
-        params = {
-            'season_version': -1, 'is_finish': -1, 'copyright': -1, 'season_status': -1,
-            'year': '-1', 'style_id': -1, 'order': order, 'st': 4, 'sort': 0,
-            'season_type': 4, 'type': 1
-        }
-        return self._fetch_api_data(params)
-
-    def _enrich_area(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
-        """
-        补充地区信息：对非国产番剧，通过 area=2(日本) 和 area=3(美国) 的 API 请求更新地区字段
-        """
-        japan_items = self._fetch_regular_by_area(area=2)
-        usa_items = self._fetch_regular_by_area(area=3)
-
-        japan_ids = {item.get('season_id') for item in japan_items if item.get('season_id')}
-        usa_ids = {item.get('season_id') for item in usa_items if item.get('season_id')}
-
-        for season_id, item in all_animes.items():
-            if item['area'] == '国内':
-                continue
-            if season_id in japan_ids:
-                item['area'] = '日本'
-            elif season_id in usa_ids:
-                item['area'] = '美国'
-
-        logger.info(f"  ✅ 地区标记完成：日本 {len(japan_ids)} 部，美国 {len(usa_ids)} 部")
-        return all_animes
 
     def _enrich_regular_styles(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
         """
@@ -472,30 +447,85 @@ class BilibiliBangumiCrawler:
 
         return all_animes
 
-    def _enrich_views_and_favorites(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
+    def _enrich_details(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
         """
-        补充播放量和追番量：使用 order=2(播放量) 和 order=3(追番量) 重新请求，覆盖底库数据
+        逐部请求番剧详情 API（/pgc/view/web/season），填充以下字段：
+          - 播放量 / 追番量（覆盖底库中的估算值）
+          - 评分及评分人数
+          - 发布日期（更精确的 publish.pub_time 来源）
+          - 地区（来自 areas 数组，替代旧的批量 area 接口）
+          - 完结状态 / 版权类型 / 完整地区 JSON
+          - 全剧互动统计：投币数、弹幕数、点赞数、评论数、分享数
+
+        同时替代已删除的 _enrich_area 和 _enrich_views_and_favorites 方法。
+        地区映射规则见类常量 AREA_ID_TO_ENUM。
         """
-        logger.info("  获取播放量数据 (order=2)...")
-        views_items = self._fetch_regular_ranking(2) + self._fetch_domestic_ranking(2)
+        total = len(all_animes)
+        logger.info(f"  正在逐部请求番剧详情 API，共 {total} 部（将消耗约 {total * settings.bilibili_request_delay:.0f}s）...")
+        success_count = 0
 
-        logger.info("  获取追番量数据 (order=3)...")
-        favorites_items = self._fetch_regular_ranking(3) + self._fetch_domestic_ranking(3)
+        for season_id, anime_data in tqdm(all_animes.items(), desc="详情补充", unit="部"):
+            try:
+                details = self.get_anime_details(season_id)
+                if not details:
+                    time.sleep(settings.bilibili_request_delay)
+                    continue
 
-        views_map = {
-            item['season_id']: self._convert_order_to_int(item.get('order', '0'))
-            for item in views_items if item.get('season_id')
-        }
-        favorites_map = {
-            item['season_id']: self._convert_order_to_int(item.get('order', '0'))
-            for item in favorites_items if item.get('season_id')
-        }
+                # ── 播放量 / 追番量（精确值，覆盖估算）──────────────────────────
+                if details.get('views'):
+                    anime_data['views'] = details['views']
+                if details.get('favorites'):
+                    anime_data['favorites'] = details['favorites']
 
-        for season_id, item in all_animes.items():
-            item['views'] = views_map.get(season_id, item.get('views', 0))
-            item['favorites'] = favorites_map.get(season_id, 0)
+                # ── 评分（detail API 精度更高）──────────────────────────────────
+                if details.get('rating_score') is not None:
+                    anime_data['rating'] = float(details['rating_score'])
 
-        logger.info(f"  ✅ 播放量/追番量补充完成")
+                # ── 互动统计 ────────────────────────────────────────────────────
+                anime_data['total_coins']    = details.get('total_coins')
+                anime_data['total_danmakus'] = details.get('total_danmakus')
+                anime_data['total_likes']    = details.get('total_likes')
+                anime_data['total_reply']    = details.get('total_reply')
+                anime_data['total_share']    = details.get('total_share')
+                anime_data['rating_count']   = details.get('rating_count')
+
+                # ── 完结状态 / 版权 ─────────────────────────────────────────────
+                if details.get('is_finish') is not None:
+                    anime_data['is_finish'] = details['is_finish']
+                if details.get('copyright'):
+                    anime_data['copyright'] = details['copyright']
+
+                # ── 地区（areas 数组，替代旧的批量接口）────────────────────────
+                areas = details.get('areas', [])
+                if areas:
+                    anime_data['areas_raw'] = areas
+                    first_id = areas[0].get('id')
+                    mapped = self.AREA_ID_TO_ENUM.get(first_id)
+                    if mapped:
+                        anime_data['area'] = mapped
+                    # 若不在映射表内且当前仍是 '其他'，保持不变
+
+                # ── 发布日期（使用 publish.pub_time 修正）──────────────────────
+                pub_time: str = details.get('pub_time', '') or ''
+                if pub_time:
+                    try:
+                        pub_dt = datetime.strptime(pub_time[:10], '%Y-%m-%d')
+                        pub_year = pub_dt.year
+                        quarter_month = self._get_quarter_month(pub_dt.month)
+                        if pub_year >= 2015 and quarter_month:
+                            anime_data['release_date'] = f"{pub_year}-{quarter_month:02d}"
+                        elif pub_year < 2015:
+                            anime_data['release_date'] = '更早'
+                    except ValueError:
+                        pass  # 日期格式异常时保留原值
+
+                success_count += 1
+            except Exception as exc:
+                logger.warning(f"  ⚠️ season_id={season_id} 详情获取异常: {exc}")
+            finally:
+                time.sleep(settings.bilibili_request_delay)
+
+        logger.info(f"  ✅ 番剧详情补充完成：成功 {success_count} / {total} 部")
         return all_animes
 
     def _save_animes_to_db(self, animes: Dict[int, Dict]):
@@ -518,9 +548,21 @@ class BilibiliBangumiCrawler:
                 existing_anime.rating = anime_data['rating']
                 existing_anime.styles = json.dumps(anime_data['styles'], ensure_ascii=False)
                 existing_anime.release_date = anime_data['release_date']
+                # 新增互动统计字段
+                existing_anime.total_coins    = anime_data.get('total_coins')
+                existing_anime.total_danmakus = anime_data.get('total_danmakus')
+                existing_anime.total_likes    = anime_data.get('total_likes')
+                existing_anime.total_reply    = anime_data.get('total_reply')
+                existing_anime.total_share    = anime_data.get('total_share')
+                existing_anime.rating_count   = anime_data.get('rating_count')
+                existing_anime.is_finish      = anime_data.get('is_finish')
+                existing_anime.copyright      = anime_data.get('copyright')
+                areas_raw = anime_data.get('areas_raw', [])
+                existing_anime.areas_raw = json.dumps(areas_raw, ensure_ascii=False) if areas_raw else None
                 existing_anime.updated_at = datetime.now()
             else:
                 # 创建新记录
+                areas_raw = anime_data.get('areas_raw', [])
                 new_anime = Anime(
                     season_id=season_id,
                     title=anime_data['title'],
@@ -528,7 +570,16 @@ class BilibiliBangumiCrawler:
                     area=anime_data['area'],
                     rating=anime_data['rating'],
                     styles=json.dumps(anime_data['styles'], ensure_ascii=False),
-                    release_date=anime_data['release_date']
+                    release_date=anime_data['release_date'],
+                    total_coins    = anime_data.get('total_coins'),
+                    total_danmakus = anime_data.get('total_danmakus'),
+                    total_likes    = anime_data.get('total_likes'),
+                    total_reply    = anime_data.get('total_reply'),
+                    total_share    = anime_data.get('total_share'),
+                    rating_count   = anime_data.get('rating_count'),
+                    is_finish      = anime_data.get('is_finish'),
+                    copyright      = anime_data.get('copyright'),
+                    areas_raw      = json.dumps(areas_raw, ensure_ascii=False) if areas_raw else None,
                 )
                 self.session.add(new_anime)
             
@@ -554,31 +605,73 @@ class BilibiliBangumiCrawler:
     
     def get_anime_details(self, season_id: int) -> Optional[Dict]:
         """
-        获取番剧详细信息
-        
+        获取番剧详细信息（/pgc/view/web/season），返回包含完整元数据的字典。
+
+        返回字段（均可能为 None）：
+          title, cover              — 基础信息
+          stat                      — 原始 stat 对象（向后兼容）
+          episodes                  — 剧集列表（向后兼容）
+          areas                     — 地区数组，如 [{"id":2,"name":"日本"}]
+          views, favorites          — 播放量、追番量（来自 stat）
+          total_coins               — 全剧总投币数（来自 stat.coins）
+          total_danmakus            — 全剧总弹幕数（来自 stat.danmakus）
+          total_likes               — 全剧总点赞数（来自 stat.likes）
+          total_reply               — 全剧总评论数（来自 stat.reply）
+          total_share               — 全剧总分享数（来自 stat.share）
+          rating_score              — 评分（来自 rating.score）
+          rating_count              — 评分人数（来自 rating.count）
+          is_finish                 — 完结状态：0 连载 / 1 完结（来自 publish.is_finish）
+          pub_time                  — 首播日期字符串（来自 publish.pub_time）
+          copyright                 — 版权类型：bilibili / dujia（来自 rights.copyright）
+
         Args:
             season_id: 番剧 season_id
-            
+
         Returns:
-            番剧详细信息字典
+            番剧详细信息字典，请求失败时返回 None
         """
         url = f"https://api.bilibili.com/pgc/view/web/season?season_id={season_id}"
         try:
-            response = self.http_session.get(url, timeout=10)
+            response = self.http_session.get(url, timeout=settings.bilibili_request_timeout)
             response.raise_for_status()
             data = response.json()
-            
+
             if data.get('code') == 0 and 'result' in data:
-                result = data['result']
+                result    = data['result']
+                stat      = result.get('stat', {})
+                rating    = result.get('rating', {})
+                publish   = result.get('publish', {})
+                rights    = result.get('rights', {})
+                areas     = result.get('areas', [])
+
                 return {
-                    'title': result.get('title'),
-                    'cover': result.get('cover'),
-                    'stat': result.get('stat', {}),
-                    'episodes': result.get('episodes', [])
+                    # ── 向后兼容字段（fetch_and_save_episodes 等调用方使用）──
+                    'title':    result.get('title'),
+                    'cover':    result.get('cover'),
+                    'stat':     stat,
+                    'episodes': result.get('episodes', []),
+                    # ── 地区 ──────────────────────────────────────────────────
+                    'areas': areas,
+                    # ── stat 对象展开 ─────────────────────────────────────────
+                    'views':          stat.get('views'),
+                    'favorites':      stat.get('favorites'),
+                    'total_coins':    stat.get('coins'),
+                    'total_danmakus': stat.get('danmakus'),
+                    'total_likes':    stat.get('likes'),
+                    'total_reply':    stat.get('reply'),
+                    'total_share':    stat.get('share'),
+                    # ── rating 对象 ───────────────────────────────────────────
+                    'rating_score': rating.get('score'),
+                    'rating_count': rating.get('count'),
+                    # ── publish 对象 ──────────────────────────────────────────
+                    'is_finish': publish.get('is_finish'),
+                    'pub_time':  publish.get('pub_time'),
+                    # ── rights 对象 ───────────────────────────────────────────
+                    'copyright': rights.get('copyright'),
                 }
-        except Exception as e:
-            logger.exception("❌ 获取番剧详情失败")
-        
+        except Exception:
+            logger.exception("❌ 获取番剧详情失败 season_id={}", season_id)
+
         return None
 
     def fetch_and_save_episodes(self, season_id: int) -> bool:

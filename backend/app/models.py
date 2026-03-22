@@ -49,13 +49,29 @@ class Anime(SQLModel, table=True):
     season_id: int = Field(primary_key=True)  # B站番剧 season_id
     title: str = Field(index=True, max_length=255)  # 番剧标题
     cover: Optional[str] = Field(default=None, max_length=500)  # 封面图片 URL
-    area: str = Field(default=AreaEnum.OTHER.value, max_length=20)  # 地区
+    area: str = Field(default=AreaEnum.OTHER.value, max_length=20)  # 地区（映射值：国内/日本/美国/其他）
     rating: Optional[float] = Field(default=None)  # 评分
     styles: Optional[str] = Field(default=None, sa_column=Column(JSON))  # JSON 数组存储风格标签
     release_date: Optional[str] = Field(default=None, max_length=50)  # 发布日期 (格式: "2023-01" 或 "敬请期待")
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
-    
+
+    # ── 由番剧详情 API（/pgc/view/web/season）补充的字段 ──────────────────────
+    # stat 对象
+    total_coins: Optional[int] = Field(default=None)       # 全剧总投币数
+    total_danmakus: Optional[int] = Field(default=None)    # 全剧总弹幕数
+    total_likes: Optional[int] = Field(default=None)       # 全剧总点赞数
+    total_reply: Optional[int] = Field(default=None)       # 全剧总评论数
+    total_share: Optional[int] = Field(default=None)       # 全剧总分享数
+    # rating 对象
+    rating_count: Optional[int] = Field(default=None)      # 参与评分人数
+    # publish 对象
+    is_finish: Optional[int] = Field(default=None)         # 完结状态：0 连载中 / 1 已完结
+    # rights 对象
+    copyright: Optional[str] = Field(default=None, max_length=20)  # 版权类型：bilibili / dujia
+    # areas 数组：存储完整地区列表 JSON，如 [{"id":2,"name":"日本"}]
+    areas_raw: Optional[str] = Field(default=None, sa_column=Column(JSON))
+
     # 关系
     daily_stats: List["DailyStats"] = Relationship(back_populates="anime")
     tmdb_info: Optional["TmdbAnimeInfo"] = Relationship(back_populates="anime")
