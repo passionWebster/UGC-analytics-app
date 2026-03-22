@@ -68,48 +68,46 @@
       <div class="col-md-8">
         <div class="row">
           <div class="col-12 mb-3">
-            <div class="card w-100">
+            <div class="style-unified">
               <div class="card-header-unified">
                 <h5>今日推荐</h5>
               </div>
-              <div class="card-body d-flex align-items-center justify-content-center" style="min-height: 200px;">
+              <div class="d-flex align-items-center justify-content-center" style="min-height: 200px;">
                 <div class="text-muted text-center">
                   <i class="fas fa-magic mb-2 d-block text-primary fs-3"></i>
                   <small>暂无推荐数据</small>
-                  </div>
+                </div>
               </div>
             </div>
           </div>
 
           <div class="col-12 mb-3">
-            <div class="card">
-              <div class="card-header">
-                <div class="d-flex align-items-center justify-content-between flex-wrap gap-1">
-                  <h5 class="mb-0">番剧类型分布</h5>
-                  <div v-if="isTypeDrilledDown" class="d-flex align-items-center gap-2">
-                    <button class="btn btn-sm btn-outline-primary px-1 py-0" @click="backToMainTypeChart">
-                      <i class="fas fa-arrow-left"></i> 返回
-                    </button>
-                    <small class="text-muted">已细分合并的部分</small>
-                  </div>
+            <div class="style-unified">
+              <div class="card-header-unified">
+                <h5>番剧类型分布</h5>
+                <div v-if="isTypeDrilledDown" class="d-flex align-items-center gap-2">
+                  <button class="btn btn-sm btn-outline-secondary px-2 py-0" @click="backToMainTypeChart">
+                    <i class="fas fa-arrow-left me-1"></i>返回
+                  </button>
+                  <small class="text-muted">已细分合并的部分</small>
                 </div>
               </div>
               <div class="chart-wrapper">
-                <div ref="typeChartRef" class="chart"></div>
+                <div ref="typeChartRef" style="height: 380px; width: 100%"></div>
               </div>
             </div>
           </div>
 
           <div class="col-12 mb-3">
-            <div class="card">
-              <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">口碑热度分布</h5>
-                <div class="btn-group btn-group-sm">
+            <div class="style-unified">
+              <div class="card-header-unified">
+                <h5>口碑热度分布</h5>
+                <div class="area-btn-group">
                   <button
                     v-for="area in ['国内', '日本', '美国']"
                     :key="area"
-                    class="btn"
-                    :class="selectedAreas.includes(area) ? 'btn-primary' : 'btn-outline-primary'"
+                    class="area-btn"
+                    :class="{ active: selectedAreas.includes(area) }"
                     @click="toggleArea(area)"
                   >
                     {{ area }}
@@ -117,7 +115,7 @@
                 </div>
               </div>
               <div class="chart-wrapper">
-                <div ref="scatterChartRef" class="chart"></div>
+                <div ref="scatterChartRef" style="height: 380px; width: 100%"></div>
               </div>
             </div>
           </div>
@@ -454,6 +452,21 @@ const loadScatterChart = async (): Promise<void> => {
         data: selectedAreas.value,
         bottom: 0
       },
+      grid: {left: '3%', right: '4%', bottom: '12%', containLabel: true},
+      xAxis: {
+        type: 'value',
+        name: '评分',
+        nameLocation: 'middle',
+        nameGap: 25,
+        splitLine: {lineStyle: {type: 'dashed' as const}},
+        min: 7,
+      },
+      yAxis: {
+        type: 'log',
+        name: '追番人数',
+        splitLine: {lineStyle: {type: 'dashed' as const}},
+        min: 1000,
+      },
       series,
     }, {notMerge: true})
   } catch (error) {
@@ -678,11 +691,59 @@ onMounted(async () => {
 .chart-wrapper {
   padding: 1rem;
   width: 100%;
-  height: 1000px;
 }
 
-.chart {
-  width: 100%;
-  height: 100%;
+/* ── 统一图表容器（参照 Status 页面风格） ── */
+.style-unified {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.card-header-unified {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.9rem 1.25rem;
+  background: transparent;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.card-header-unified h5 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* ── 地区筛选按钮（口碑热度分布） ── */
+.area-btn-group {
+  display: flex;
+  gap: 6px;
+}
+
+.area-btn {
+  padding: 4px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 20px;
+  background: white;
+  font-size: 0.8rem;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.area-btn:hover {
+  border-color: #4facfe;
+  color: #4facfe;
+}
+
+.area-btn.active {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  border-color: transparent;
+  color: white;
+  font-weight: 500;
 }
 </style>
