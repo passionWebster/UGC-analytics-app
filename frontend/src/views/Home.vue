@@ -187,7 +187,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, onMounted, ref, watch} from 'vue'
+import {computed, nextTick, onActivated, onMounted, ref, watch} from 'vue'
 import {useRouter} from 'vue-router'
 import type * as echarts from 'echarts'
 import {useEcharts} from '@/composables/useEcharts'
@@ -360,7 +360,7 @@ const backToMainTypeChart = (): void => {
 }
 
 // ─── 口碑热度散点图逻辑 ────────────────────────────────────────────────────────
-const {chartRef: scatterChartRef, initChart: initScatterChart, setOption: setScatterOption} = useEcharts()
+const {chartRef: scatterChartRef, initChart: initScatterChart, setOption: setScatterOption, chartInstance: scatterChartInstance} = useEcharts()
 
 /** 当前选中的地区列表（用于多选过滤） */
 const selectedAreas = ref<string[]>(['国内', '日本', '美国'])
@@ -533,8 +533,16 @@ watch(sortBy, () => {
 // 组件挂载时初始化所有图表和数据
 onMounted(async () => {
   await loadData()
+  // 等待 DOM 完成渲染（包括布局排版），确保图表容器尺寸正确后再初始化
+  await nextTick()
   await initTypeDistChart()
   await initReputationScatterChart()
+})
+
+// KeepAlive 激活：从缓存恢复时触发图表 resize，避免尺寸错乱
+onActivated(() => {
+  typeChartInstance.value?.resize()
+  scatterChartInstance.value?.resize()
 })
 </script>
 
