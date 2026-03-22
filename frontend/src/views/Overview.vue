@@ -137,6 +137,13 @@
               :class="{ 'combo-chart-dimmed': isComboDetailVisible }"
             ></div>
 
+            <!-- 背景蒙层：点击可关闭侧边面板 -->
+            <div
+              v-if="isComboDetailVisible"
+              class="combo-backdrop"
+              @click="closeComboDetail"
+            ></div>
+
             <!-- 下钻详情侧边面板 -->
             <transition name="slide-panel">
               <div v-if="isComboDetailVisible" class="combo-detail-panel">
@@ -621,32 +628,38 @@ onMounted(() => {
 
 .nav-pills {
   background: white;
-  padding: 15px;
-  border-radius: 10px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  padding: 12px 15px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  gap: 4px;
 }
 
 .nav-pills .nav-link {
-  color: #666;
-  padding: 12px 24px;
+  color: #6b7280;
+  padding: 10px 22px;
   border-radius: 8px;
-  transition: all 0.3s ease;
+  transition: all 0.25s ease;
   font-weight: 500;
+  font-size: 0.95rem;
 }
 
 .nav-pills .nav-link:hover {
-  background: #f0f0f0;
+  background: #f3f4f6;
+  color: #374151;
 }
 
 .nav-pills .nav-link.active {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
 }
 
 .card {
-  border-radius: 10px;
-  border: none;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
   min-height: 600px;
 }
 
@@ -665,66 +678,76 @@ onMounted(() => {
 
 .custom-control-panel {
   width: 200px;
-  border-left: 1px solid #e0e0e0;
+  border-left: 1px solid rgba(0, 0, 0, 0.06);
   padding-left: 20px;
 }
 
 .control-panel-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: #333;
-  margin-bottom: 15px;
+  color: #374151;
+  margin-bottom: 12px;
   padding-bottom: 10px;
   border-bottom: 2px solid #667eea;
+  letter-spacing: 0.3px;
 }
 
 .control-buttons-group {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .control-btn {
-  padding: 10px 15px;
+  padding: 9px 14px;
   background: white;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  color: #666;
-  font-size: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #6b7280;
+  font-size: 13.5px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
   text-align: left;
 }
 
 .control-btn:hover {
-  background: #f8f9fa;
+  background: #f9fafb;
   border-color: #667eea;
+  color: #667eea;
 }
 
 .control-btn.active {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  border-color: #667eea;
+  border-color: transparent;
+  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
 }
 
 .custom-select-wrapper {
   width: 100%;
+  position: relative;
 }
 
 .form-select {
   width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 14px;
+  padding: 8px 32px 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 13.5px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  appearance: none;
+  background-color: white;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  color: #374151;
 }
 
 .form-select:focus {
   outline: none;
   border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
 }
 
 .chart-container {
@@ -785,6 +808,17 @@ onMounted(() => {
   opacity: 0.4;
   pointer-events: none;
   transition: opacity 0.3s ease;
+}
+
+/* ─── 热门风格组合：背景蒙层（点击关闭详情面板） ────────────────────────── */
+.combo-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 9;
+  cursor: pointer;
 }
 
 /* ─── 热门风格组合：下钻详情侧边面板 ────────────────────────────────────── */
