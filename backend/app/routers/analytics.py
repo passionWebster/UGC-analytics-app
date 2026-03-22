@@ -2,6 +2,7 @@
 """
 数据分析相关的 API 路由
 """
+import hashlib
 import json
 import logging
 import os
@@ -92,7 +93,8 @@ def image_proxy(
     ext = os.path.splitext(url_path)[-1].lower()
     if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
         ext = ".jpg"
-    filename = f"{safe_title}_{safe_season_id}{ext}"
+    url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()[:8]
+    filename = f"{safe_title}_{safe_season_id}_{url_hash}{ext}"
     filepath = os.path.join(_COVER_CACHE_DIR, filename)
 
     # 命中本地缓存则直接返回

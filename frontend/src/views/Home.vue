@@ -64,8 +64,67 @@
     </div>
 
     <!-- 排行榜和图表 -->
-    <div class="row">
-      <!-- 热门番剧排行 -->
+<div class="row">
+      <div class="col-md-8">
+        <div class="row">
+          <div class="col-12 mb-3">
+            <div class="card w-100">
+              <div class="card-header-unified">
+                <h5>今日推荐</h5>
+              </div>
+              <div class="card-body d-flex align-items-center justify-content-center" style="min-height: 200px;">
+                <div class="text-muted text-center">
+                  <i class="fas fa-magic mb-2 d-block text-primary fs-3"></i>
+                  <small>暂无推荐数据</small>
+                  </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 mb-3">
+            <div class="card">
+              <div class="card-header">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-1">
+                  <h5 class="mb-0">番剧类型分布</h5>
+                  <div v-if="isTypeDrilledDown" class="d-flex align-items-center gap-2">
+                    <button class="btn btn-sm btn-outline-primary px-1 py-0" @click="backToMainTypeChart">
+                      <i class="fas fa-arrow-left"></i> 返回
+                    </button>
+                    <small class="text-muted">已细分合并的部分</small>
+                  </div>
+                </div>
+              </div>
+              <div class="chart-wrapper">
+                <div ref="typeChartRef" class="chart"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 mb-3">
+            <div class="card">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">口碑热度分布</h5>
+                <div class="btn-group btn-group-sm">
+                  <button
+                    v-for="area in ['国内', '日本', '美国']"
+                    :key="area"
+                    class="btn"
+                    :class="selectedAreas.includes(area) ? 'btn-primary' : 'btn-outline-primary'"
+                    @click="toggleArea(area)"
+                  >
+                    {{ area }}
+                  </button>
+                </div>
+              </div>
+              <div class="chart-wrapper">
+                <div ref="scatterChartRef" class="chart"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
       <div class="col-md-4 mb-3">
         <div class="card h-100">
           <div class="card-header">
@@ -74,40 +133,40 @@
               <button class="btn btn-sm btn-pink" @click="showPreferences">
                 <i class="fas fa-heart me-1"></i>根据偏好推荐
               </button>
-              <div class="btn-group btn-group-sm mt-2">
-                <button 
+              <div class="btn-group btn-group-sm mt-2 w-100">
+                <button
                   class="btn"
                   :class="sortBy === 'rating' ? 'btn-primary' : 'btn-outline-primary'"
                   @click="sortBy = 'rating'"
                 >
                   <i class="fas fa-star me-1"></i>评分
                 </button>
-                <button 
+                <button
                   class="btn"
                   :class="sortBy === 'views' ? 'btn-primary' : 'btn-outline-primary'"
                   @click="sortBy = 'views'"
                 >
-                  <i class="fas fa-play-circle me-1"></i>播放量
+                  <i class="fas fa-play-circle me-1"></i>播放
                 </button>
-                <button 
+                <button
                   class="btn"
                   :class="sortBy === 'favorites' ? 'btn-primary' : 'btn-outline-primary'"
                   @click="sortBy = 'favorites'"
                 >
-                  <i class="fas fa-heart me-1"></i>追番人数
+                  <i class="fas fa-heart me-1"></i>追番
                 </button>
               </div>
             </div>
           </div>
-          <div class="rank-list">
+          <div class="rank-list flex-grow-1">
             <div v-if="isLoading" class="text-center py-5">
               <i class="fas fa-spinner fa-spin"></i> 加载中...
             </div>
             <div v-else-if="rankings.length === 0" class="text-center py-5 text-muted">
               暂无排行榜数据
             </div>
-            <div 
-              v-for="(anime, index) in rankings" 
+            <div
+              v-for="(anime, index) in rankings"
               :key="anime.season_id"
               class="rank-item"
             >
@@ -125,68 +184,19 @@
           </div>
         </div>
       </div>
-
-      <!-- 图表区域 -->
-      <div class="col-md-8">
-        <div class="row h-100">
-          <!-- 番剧类型分布 -->
-          <div class="col-md-6 mb-3">
-            <div class="card h-100">
-              <div class="card-header">
-                <div class="d-flex align-items-center justify-content-between flex-wrap gap-1">
-                  <h5 class="mb-0">番剧类型分布</h5>
-                  <!-- 下钻返回按钮，仅在进入"其他"细分视图时显示 -->
-                  <div v-if="isTypeDrilledDown" class="d-flex align-items-center gap-2">
-                    <button class="btn btn-sm btn-outline-primary" @click="backToMainTypeChart">
-                      <i class="fas fa-arrow-left me-1"></i>返回大类
-                    </button>
-                    <small class="text-muted">已细分合并的部分</small>
-                  </div>
-                </div>
-              </div>
-              <div class="chart-wrapper">
-                <div ref="typeChartRef" class="chart"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 口碑热度分布 -->
-          <div class="col-md-6 mb-3">
-            <div class="card h-100">
-              <div class="card-header">
-                <h5>口碑热度分布</h5>
-                <div class="btn-group btn-group-sm">
-                  <button 
-                    v-for="area in ['国内', '日本', '美国']"
-                    :key="area"
-                    class="btn"
-                    :class="selectedAreas.includes(area) ? 'btn-primary' : 'btn-outline-primary'"
-                    @click="toggleArea(area)"
-                  >
-                    {{ area }}
-                  </button>
-                </div>
-              </div>
-              <div class="chart-wrapper">
-                <div ref="scatterChartRef" class="chart"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import {computed, onMounted, ref, watch} from 'vue'
+import {useRouter} from 'vue-router'
 import type * as echarts from 'echarts'
-import { useEcharts } from '@/composables/useEcharts'
-import { useAnalyticsStore } from '@/stores/analytics'
-import type { AnimeData } from '@/api/analytics'
-import { getTypeDistributionChart, getReputationPopularityChart } from '@/api/analytics'
-import { getProxiedImageUrl } from '@/utils/imageProxy'
+import {useEcharts} from '@/composables/useEcharts'
+import {useAnalyticsStore} from '@/stores/analytics'
+import type {AnimeData} from '@/api/analytics'
+import {getReputationPopularityChart, getTypeDistributionChart} from '@/api/analytics'
+import {getProxiedImageUrl} from '@/utils/imageProxy'
 
 const router = useRouter()
 
@@ -199,17 +209,17 @@ const storeOverview = computed(() => analyticsStore.overview)
 
 // 将 StatisticsOverview 字段映射到模板所需的展示字段
 const overview = computed(() => ({
-  totalAnime:      storeOverview.value?.total_animes   ?? 0,
-  totalViews:      storeOverview.value?.total_views    ?? 0,
-  totalFollowers:  storeOverview.value?.total_favorites ?? 0,
-  averageRating:   storeOverview.value?.last_update
+  totalAnime: storeOverview.value?.total_animes ?? 0,
+  totalViews: storeOverview.value?.total_views ?? 0,
+  totalFollowers: storeOverview.value?.total_favorites ?? 0,
+  averageRating: storeOverview.value?.last_update
     ? new Date(storeOverview.value.last_update).toLocaleDateString('zh-CN')
     : '暂无',
   // 以下增长字段当前 API 暂不提供，保留为 undefined
-  animeGrowth:    undefined as number | undefined,
-  viewsGrowth:    undefined as number | undefined,
+  animeGrowth: undefined as number | undefined,
+  viewsGrowth: undefined as number | undefined,
   followersGrowth: undefined as number | undefined,
-  ratingChange:   '—',
+  ratingChange: '—',
 }))
 
 // 排行榜数据
@@ -218,7 +228,12 @@ const rankings = ref<AnimeData[]>([])
 const sortBy = ref<'views' | 'favorites' | 'rating'>('rating')
 
 // ─── 类型分布饼图逻辑 ──────────────────────────────────────────────────────────
-const { chartRef: typeChartRef, initChart: initTypeChart, setOption: setTypeOption, chartInstance: typeChartInstance } = useEcharts()
+const {
+  chartRef: typeChartRef,
+  initChart: initTypeChart,
+  setOption: setTypeOption,
+  chartInstance: typeChartInstance
+} = useEcharts()
 
 /** 当前是否处于"其他"类别的下钻视图 */
 const isTypeDrilledDown = ref(false)
@@ -237,10 +252,10 @@ const MAX_SLICES = 21
 const initTypeDistChart = async (): Promise<void> => {
   // 初始化空图表占位
   initTypeChart({
-    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    tooltip: {trigger: 'item', formatter: '{b}: {c} ({d}%)'},
     legend: [
-      { orient: 'vertical', left: '5%', top: 'center' },
-      { orient: 'vertical', right: '5%', top: 'center' }
+      {orient: 'vertical', left: '5%', top: 'center'},
+      {orient: 'vertical', right: '5%', top: 'center'}
     ],
     series: [{
       name: '类型分布',
@@ -248,13 +263,13 @@ const initTypeDistChart = async (): Promise<void> => {
       radius: ['35%', '60%'],
       center: ['60%', '50%'],
       avoidLabelOverlap: false,
-      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
-      label: { show: false },
+      itemStyle: {borderRadius: 8, borderColor: '#fff', borderWidth: 2},
+      label: {show: false},
       emphasis: {
-        label: { show: true, fontSize: 16, fontWeight: 'bold' as const },
-        itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.5)' }
+        label: {show: true, fontSize: 16, fontWeight: 'bold' as const},
+        itemStyle: {shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.5)'}
       },
-      labelLine: { show: false },
+      labelLine: {show: false},
       data: []
     }]
   })
@@ -284,7 +299,7 @@ const loadTypeDistribution = async (): Promise<void> => {
 
     if (sortedStyles.length <= MAX_SLICES) {
       // 数量未超过上限，直接全部展示
-      typeTopLevelData = sortedStyles.map(([name, value]) => ({ name, value }))
+      typeTopLevelData = sortedStyles.map(([name, value]) => ({name, value}))
       typeOtherData = []
     } else {
       // 动态确定最优分割点：确保"其他"不超过最小的已显示类别
@@ -300,10 +315,10 @@ const loadTypeDistribution = async (): Promise<void> => {
       const otherItems = sortedStyles.slice(numToShow)
       const otherTotal = otherItems.reduce((acc, [, c]) => acc + c, 0)
 
-      typeTopLevelData = topData.map(([name, value]) => ({ name, value }))
+      typeTopLevelData = topData.map(([name, value]) => ({name, value}))
       if (otherTotal > 0) {
-        typeTopLevelData.push({ name: '其他', value: otherTotal })
-        typeOtherData = otherItems.map(([name, value]) => ({ name, value }))
+        typeTopLevelData.push({name: '其他', value: otherTotal})
+        typeOtherData = otherItems.map(([name, value]) => ({name, value}))
       } else {
         typeOtherData = []
       }
@@ -324,7 +339,7 @@ const loadTypeDistribution = async (): Promise<void> => {
  */
 const renderTypeChart = (dataToShow: { name: string; value: number }[]): void => {
   if (dataToShow.length === 0) {
-    setTypeOption({ series: [{ data: [] }], legend: [{}, {}] }, { replaceMerge: ['legend'] })
+    setTypeOption({series: [{data: []}], legend: [{}, {}]}, {replaceMerge: ['legend']})
     return
   }
 
@@ -333,11 +348,11 @@ const renderTypeChart = (dataToShow: { name: string; value: number }[]): void =>
 
   setTypeOption({
     legend: [
-      { orient: 'vertical', left: '5%', top: 'center', data: legendNames.slice(0, midIndex) },
-      { orient: 'vertical', right: '5%', top: 'center', data: legendNames.slice(midIndex) }
+      {orient: 'vertical', left: '5%', top: 'center', data: legendNames.slice(0, midIndex)},
+      {orient: 'vertical', right: '5%', top: 'center', data: legendNames.slice(midIndex)}
     ],
-    series: [{ data: dataToShow }]
-  }, { replaceMerge: ['legend'] })
+    series: [{data: dataToShow}]
+  }, {replaceMerge: ['legend']})
 }
 
 /** 返回类型分布顶级视图 */
@@ -347,7 +362,7 @@ const backToMainTypeChart = (): void => {
 }
 
 // ─── 口碑热度散点图逻辑 ────────────────────────────────────────────────────────
-const { chartRef: scatterChartRef, initChart: initScatterChart, setOption: setScatterOption } = useEcharts()
+const {chartRef: scatterChartRef, initChart: initScatterChart, setOption: setScatterOption} = useEcharts()
 
 /** 当前选中的地区列表（用于多选过滤） */
 const selectedAreas = ref<string[]>(['国内', '日本', '美国'])
@@ -363,18 +378,18 @@ const areaColorMap: Record<string, string> = {
 const initReputationScatterChart = async (): Promise<void> => {
   // 初始化空图表占位
   initScatterChart({
-    tooltip: { trigger: 'item' },
-    grid: { left: '3%', right: '4%', bottom: '12%', containLabel: true },
+    tooltip: {trigger: 'item'},
+    grid: {left: '3%', right: '4%', bottom: '12%', containLabel: true},
     xAxis: {
       type: 'value',
       name: '评分',
-      splitLine: { lineStyle: { type: 'dashed' as const } },
+      splitLine: {lineStyle: {type: 'dashed' as const}},
       min: 7  // B 站评分普遍 7 分以上，截断低分噪点
     },
     yAxis: {
       type: 'log',
       name: '追番人数',
-      splitLine: { lineStyle: { type: 'dashed' as const } },
+      splitLine: {lineStyle: {type: 'dashed' as const}},
       min: 1000  // 追番不足 1000 的番剧不具代表性
     },
     series: []
@@ -413,11 +428,11 @@ const loadScatterChart = async (): Promise<void> => {
       name: area,
       type: 'scatter',
       symbolSize: 10,
-      itemStyle: { color: areaColorMap[area] ?? '#cccccc' },
+      itemStyle: {color: areaColorMap[area] ?? '#cccccc'},
       data: seriesByArea[area],
       emphasis: {
         focus: 'series',
-        label: { show: true, formatter: (p: any) => p.value[2], position: 'top' as const },
+        label: {show: true, formatter: (p: any) => p.value[2], position: 'top' as const},
       },
     }))
 
@@ -440,7 +455,7 @@ const loadScatterChart = async (): Promise<void> => {
         bottom: 0
       },
       series,
-    }, { notMerge: true })
+    }, {notMerge: true})
   } catch (error) {
     console.error('加载口碑热度散点图失败:', error)
   }
@@ -608,7 +623,9 @@ onMounted(async () => {
 }
 
 .rank-list {
-  max-height: 500px;
+  flex-grow: 1;
+  height: 0;
+  min-height: 100%;
   overflow-y: auto;
   padding: 1rem;
 }
@@ -660,7 +677,8 @@ onMounted(async () => {
 
 .chart-wrapper {
   padding: 1rem;
-  height: 300px;
+  width: 100%;
+  height: 1000px;
 }
 
 .chart {

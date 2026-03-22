@@ -53,7 +53,7 @@ def create_db_and_tables():
     在应用启动时调用
     """
     SQLModel.metadata.create_all(engine)
-    logger.success(f"✅ 数据库已初始化: {DATABASE_PATH}")  # 使用 success 级别，控制台会显示绿色
+    logger.success(f"✅ 数据库已初始化")  # 使用 success 级别，控制台会显示绿色
 
 
 def get_session() -> Generator[Session, None, None]:
@@ -78,7 +78,6 @@ def init_database():
     """
     logger.info("🚀 正在初始化数据库...")
     create_db_and_tables()
-    logger.info(f"📁 数据库位置: {DATABASE_PATH}")
 
 
 if __name__ == "__main__":
