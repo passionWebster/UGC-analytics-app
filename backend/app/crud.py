@@ -644,15 +644,14 @@ class AnalyticsService:
         """
         获取口碑热度指数图数据
 
-        计算每部番剧的综合质量分：rating * log10(favorites) * log10(views)，
-        返回前 15 名。
+        计算每部番剧的综合质量分，融入最新添加的互动指标与评分人数，增强区分度。
 
         Args:
             season: 季节筛选（spring/summer/autumn/winter）
             category: 风格/类型筛选
 
         Returns:
-            前 15 名番剧列表，每项包含 title、qualityScore、rating、favorites、views 字段
+            前 15 名番剧列表
         """
         SEASON_MONTH_MAP = {
             'spring': '04',
@@ -693,10 +692,38 @@ class AnalyticsService:
             if not favorites or not views:
                 continue
 
-            quality_score = anime.rating * math.log10(favorites) * math.log10(views)
+            # 获取新加入的互动与评分数据，容错处理
+            rating_count = anime.rating_count or 1
+            coins = anime.total_coins or 0
+            likes = anime.total_likes or 0
+            danmakus = anime.total_danmakus or 0
+            reply = anime.total_reply or 0
+
+            # 1. 基础热度 (Base Heat)
+            # 使用加权对数和，避免单纯连乘导致的严重数值压缩
+            base_heat = (math.log10(views) * 0.4) + (math.log10(favorites) * 0.6)
+
+            # 2. 深度互动热度 (Interactive Heat) - 核心区分点
+            # 引入投币、点赞、弹幕、评论，赋予硬通货（投币、点赞）更高权重
+            interaction_heat = (
+                    (math.log10(coins + 1) * 0.35) +
+                    (math.log10(likes + 1) * 0.25) +
+                    (math.log10(danmakus + 1) * 0.20) +
+                    (math.log10(reply + 1) * 0.20)
+            )
+
+            # 3. 口碑质量与置信度 (Reputation & Confidence)
+            # - 使用 rating 的平方来非线性放大高分番的优势 (例如 9.8的平方是96，8.0的平方是64)
+            # - 引入 rating_count (评分人数) 作为置信度权重，过滤少数人打高分的偏差
+            confidence = math.log10(rating_count + 1)
+            reputation_score = (anime.rating ** 2) * confidence
+
+            # 最终综合质量分：口碑置信度 驱动 整体综合热度
+            quality_score = reputation_score * (base_heat + interaction_heat)
+
             result.append({
                 'title': anime.title,
-                'qualityScore': round(quality_score, 4),
+                'qualityScore': round(quality_score, 2),  # 分数区间将被拉大至数千至上万分
                 'rating': anime.rating,
                 'favorites': favorites,
                 'views': views,
