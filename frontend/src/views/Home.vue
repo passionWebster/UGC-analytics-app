@@ -104,44 +104,48 @@
               >{{ area }}
               </button>
             </div>
-            <div class="search-bar mb-2 d-flex align-items-center position-relative">
-              <div class="position-relative w-25">
+            <div class="search-bar mb-2 d-flex align-items-center">
+              <div class="scatter-search-wrap">
+                <span class="scatter-search-icon"><i class="fas fa-search"></i></span>
                 <input
+                  ref="scatterSearchInputRef"
                   type="text"
-                  class="form-control w-100"
+                  class="scatter-search-input"
                   placeholder="搜索番剧名称..."
                   v-model="searchQuery"
                   @keyup.enter="handleSearchAnime"
-                  @focus="showSuggestions = searchSuggestions.length > 0"
+                  @focus="onScatterSearchFocus"
                   @blur="hideSuggestions"
                 />
+              </div>
+
+              <Teleport to="body">
                 <ul
                   v-if="showSuggestions"
-                  class="list-group position-absolute w-100 shadow"
-                  style="top: 100%; left: 0; z-index: 1000; max-height: 250px; overflow-y: auto;"
+                  class="scatter-dropdown-popup"
+                  :style="{ top: dropdownPos.top + 'px', left: dropdownPos.left + 'px', width: dropdownPos.width + 'px' }"
                 >
                   <li
                     v-for="item in searchSuggestions"
                     :key="item"
-                    class="list-group-item list-group-item-action py-2 px-3"
-                    style="cursor: pointer; font-size: 0.85rem;"
+                    class="scatter-dropdown-item"
                     @mousedown.prevent="selectSuggestion(item)"
                   >
-                    {{ item }}
+                    <i class="fas fa-film scatter-dropdown-icon"></i>{{ item }}
                   </li>
                 </ul>
-              </div>
+              </Teleport>
 
-              <button class="btn btn-primary ms-2" @click="handleSearchAnime">
-                定位番剧
+              <button class="scatter-locate-btn ms-2" @click="handleSearchAnime">
+                <i class="fas fa-crosshairs me-1"></i>定位番剧
               </button>
 
               <button
-                class="btn btn-outline-secondary ms-2"
+                class="scatter-reset-btn ms-2"
                 v-if="baselineViews"
                 @click="handleResetSearch"
               >
-                <i class="fas fa-undo me-1"></i>重置比例与视图
+                <i class="fas fa-undo me-1"></i>重置视图
               </button>
             </div>
           </div>
@@ -278,11 +282,15 @@ const sortBy = ref<'views' | 'favorites' | 'rating'>('rating')
 const searchQuery = ref('')
 const baselineViews = ref<number | null>(null) // 新增：当前定位的“基准番剧播放量”
 
-// 👇 新增：预搜索（联想）相关的状态
+// 👇 预搜索（联想）相关的状态
 const searchSuggestions = ref<string[]>([])
 const showSuggestions = ref(false)
+const scatterSearchInputRef = ref<HTMLElement>()
+/** 散点图搜索下拉框最小宽度（px） */
+const SCATTER_MIN_DROPDOWN_WIDTH = 240
+const dropdownPos = ref({ top: 0, left: 0, width: SCATTER_MIN_DROPDOWN_WIDTH })
 
-// 👇 新增：监听输入内容，动态生成推荐列表
+// 👇 监听输入内容，动态生成推荐列表
 watch(searchQuery, (newVal: string) => {
   if (!newVal.trim() || !scatterInstance) {
     searchSuggestions.value = []
@@ -312,16 +320,33 @@ watch(searchQuery, (newVal: string) => {
   showSuggestions.value = searchSuggestions.value.length > 0
 })
 
-// 👇 新增：隐藏联想框（当输入框失焦时触发）
+// 👇 隐藏联想框（当输入框失焦时触发）
 const hideSuggestions = () => {
   showSuggestions.value = false
 }
 
-// 👇 新增：点击选中联想列表中的某一项
+// 👇 输入框获焦时计算弹出位置并显示联想框
+const onScatterSearchFocus = () => {
+  updateDropdownPos()
+  if (searchSuggestions.value.length > 0) showSuggestions.value = true
+}
+
+// 👇 计算下拉弹出框的 fixed 定位坐标（相对于视口）
+const updateDropdownPos = () => {
+  if (!scatterSearchInputRef.value) return
+  const rect = scatterSearchInputRef.value.getBoundingClientRect()
+  dropdownPos.value = {
+    top: rect.bottom + 4,
+    left: rect.left,
+    width: Math.max(rect.width, SCATTER_MIN_DROPDOWN_WIDTH),
+  }
+}
+
+// 👇 点击选中联想列表中的某一项
 const selectSuggestion = (title: string) => {
   searchQuery.value = title
   showSuggestions.value = false
-  handleSearchAnime() // 选中后直接触发定位算法
+  handleSearchAnime()
 }
 // 历年趋势筛选
 const yearlyCategory = ref<string>('all')
@@ -1292,7 +1317,97 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-/* ── 其他工具类 ── */
+/* ── 散点图搜索栏 ── */
+.scatter-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 220px;
+  max-width: 320px;
+  background: #f8fafc;
+  border: 1.5px solid #d1d5db;
+  border-radius: 24px;
+  padding: 0 0.75rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.scatter-search-wrap:focus-within {
+  border-color: #4facfe;
+  box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.15);
+  background: #fff;
+}
+
+.scatter-search-icon {
+  color: #9ca3af;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  margin-right: 0.4rem;
+  transition: color 0.2s;
+}
+
+.scatter-search-wrap:focus-within .scatter-search-icon {
+  color: #4facfe;
+}
+
+.scatter-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 0.85rem;
+  color: #1f2937;
+  padding: 0.45rem 0;
+  min-width: 0;
+}
+
+.scatter-search-input::placeholder {
+  color: #b0b7c3;
+}
+
+/* 定位按钮 */
+.scatter-locate-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.42rem 0.9rem;
+  border-radius: 20px;
+  border: none;
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(79, 172, 254, 0.35);
+  transition: box-shadow 0.2s, transform 0.15s;
+  white-space: nowrap;
+}
+
+.scatter-locate-btn:hover {
+  box-shadow: 0 4px 16px rgba(79, 172, 254, 0.5);
+  transform: translateY(-1px);
+}
+
+/* 重置按钮 */
+.scatter-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.42rem 0.9rem;
+  border-radius: 20px;
+  border: 1.5px solid #d1d5db;
+  background: transparent;
+  color: #6b7280;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+  white-space: nowrap;
+}
+
+.scatter-reset-btn:hover {
+  border-color: #9ca3af;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+
 .gap-2 {
   gap: 0.5rem;
 }
@@ -1332,5 +1447,53 @@ onUnmounted(() => {
     flex-direction: column;
     align-items: flex-start;
   }
+}
+</style>
+
+<style>
+/* ── 全局：散点图搜索弹出下拉列表（Teleport 到 body，scoped 样式无效） ── */
+.scatter-dropdown-popup {
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid rgba(79, 172, 254, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(79, 172, 254, 0.08);
+  padding: 0.4rem 0;
+  max-height: 280px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+}
+
+.scatter-dropdown-popup::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scatter-dropdown-popup::-webkit-scrollbar-thumb {
+  background: rgba(79, 172, 254, 0.3);
+  border-radius: 4px;
+}
+
+.scatter-dropdown-item {
+  padding: 0.45rem 1rem;
+  font-size: 0.85rem;
+  color: #374151;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background 0.15s;
+}
+
+.scatter-dropdown-item:hover {
+  background: linear-gradient(90deg, rgba(79, 172, 254, 0.08) 0%, rgba(0, 242, 254, 0.05) 100%);
+  color: #2563eb;
+}
+
+.scatter-dropdown-icon {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  flex-shrink: 0;
 }
 </style>

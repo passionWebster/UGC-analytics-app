@@ -3,26 +3,52 @@
     <!-- 搜索区域 -->
     <div class="row mb-4">
       <div class="col-md-8 mx-auto">
-        <div class="input-group">
-          <input
-            v-model="keyword"
-            class="form-control form-control-lg"
-            placeholder="输入番剧名搜索..."
-            type="text"
-            @keyup.enter="handleSearch"
-          />
-          <button class="btn btn-primary btn-lg" @click="handleSearch">
+        <div class="status-search-group">
+          <div class="status-search-wrap">
+            <span class="status-search-icon"><i class="fas fa-search"></i></span>
+            <input
+              ref="statusSearchInputRef"
+              v-model="keyword"
+              class="status-search-input"
+              placeholder="输入番剧名搜索..."
+              type="text"
+              autocomplete="off"
+              @keyup.enter="handleSearch"
+              @focus="onStatusSearchFocus"
+              @blur="hideStatusSuggestions"
+              @input="onStatusSearchInput"
+            />
+          </div>
+          <button class="status-search-btn" @click="handleSearch">
             <i class="fas fa-search me-1"></i>搜索
           </button>
           <button
             v-if="animeData"
-            class="btn btn-secondary btn-lg"
+            class="status-detail-btn"
             @click="toggleEpisodeDetails"
           >
             <i class="fas fa-list me-1"></i>剧集详情
           </button>
         </div>
-        <div v-if="statusMessage" class="form-text mt-2">{{ statusMessage }}</div>
+
+        <Teleport to="body">
+          <ul
+            v-if="showStatusSuggestions && statusSuggestions.length > 0"
+            class="status-dropdown-popup"
+            :style="{ top: statusDropdownPos.top + 'px', left: statusDropdownPos.left + 'px', width: statusDropdownPos.width + 'px' }"
+          >
+            <li
+              v-for="item in statusSuggestions"
+              :key="item"
+              class="status-dropdown-item"
+              @mousedown.prevent="selectStatusSuggestion(item)"
+            >
+              <i class="fas fa-film status-dropdown-icon"></i>{{ item }}
+            </li>
+          </ul>
+        </Teleport>
+
+        <div v-if="statusMessage" class="status-form-text mt-2">{{ statusMessage }}</div>
       </div>
     </div>
 
@@ -197,6 +223,17 @@ defineOptions({ name: 'StatusView' })
 // ─── 状态管理 ───────────────────────────────────────────────────────────────
 const keyword = ref('')
 const statusMessage = ref('')
+
+// 搜索自动补全相关状态
+const statusSuggestions = ref<string[]>([])
+const showStatusSuggestions = ref(false)
+const statusSearchInputRef = ref<HTMLElement>()
+/** 状态页搜索下拉框最小宽度（px） */
+const STATUS_MIN_DROPDOWN_WIDTH = 320
+/** 搜索联想防抖延迟（ms） */
+const SUGGESTION_DEBOUNCE_MS = 300
+const statusDropdownPos = ref({ top: 0, left: 0, width: STATUS_MIN_DROPDOWN_WIDTH })
+let suggestionDebounceTimer: ReturnType<typeof setTimeout> | null = null
 const animeData = ref<any>(null)
 /** 剧集列表（来自 API 或回退至空数组） */
 const episodes = ref<Array<{ title: string; views: number; peakTime: string | null; peakOnline: number | null }>>([])
@@ -333,6 +370,74 @@ const stopHourlyFetch = () => {
 }
 
 // ─── 搜索逻辑 ────────────────────────────────────────────────────────────────
+
+// 计算下拉弹出框的 fixed 定位坐标（相对于视口）
+const updateStatusDropdownPos = () => {
+  if (!statusSearchInputRef.value) return
+  const rect = statusSearchInputRef.value.getBoundingClientRect()
+  statusDropdownPos.value = {
+    top: rect.bottom + 4,
+    left: rect.left,
+    width: Math.max(rect.width, STATUS_MIN_DROPDOWN_WIDTH),
+  }
+}
+
+// 输入框获焦时显示已有建议
+const onStatusSearchFocus = () => {
+  updateStatusDropdownPos()
+  if (statusSuggestions.value.length > 0) showStatusSuggestions.value = true
+}
+
+// 隐藏联想框
+const hideStatusSuggestions = () => {
+  showStatusSuggestions.value = false
+}
+
+// 输入时防抖查询联想建议
+const onStatusSearchInput = () => {
+  if (suggestionDebounceTimer !== null) {
+    clearTimeout(suggestionDebounceTimer)
+  }
+  const val = keyword.value.trim()
+  if (!val) {
+    statusSuggestions.value = []
+    showStatusSuggestions.value = false
+    return
+  }
+  suggestionDebounceTimer = setTimeout(async () => {
+    try {
+      const response = await searchAnimes(val)
+      if (response.list && response.list.length > 0) {
+        // 优先精确匹配排在前面，其余追加
+        const exact: string[] = []
+        const fuzzy: string[] = []
+        const lowerVal = val.toLowerCase()
+        response.list.forEach((item: any) => {
+          if (item.title) {
+            if (item.title.toLowerCase() === lowerVal) exact.push(item.title)
+            else fuzzy.push(item.title)
+          }
+        })
+        statusSuggestions.value = [...exact, ...fuzzy].slice(0, 10)
+        updateStatusDropdownPos()
+        showStatusSuggestions.value = statusSuggestions.value.length > 0
+      } else {
+        statusSuggestions.value = []
+        showStatusSuggestions.value = false
+      }
+    } catch {
+      statusSuggestions.value = []
+    }
+  }, SUGGESTION_DEBOUNCE_MS)
+}
+
+// 点击联想列表中的某一项：填入精确名称并立即搜索
+const selectStatusSuggestion = (title: string) => {
+  keyword.value = title
+  showStatusSuggestions.value = false
+  handleSearch()
+}
+
 const handleSearch = async () => {
   if (!keyword.value.trim()) {
     statusMessage.value = '请输入番剧名称'
@@ -962,16 +1067,100 @@ onDeactivated(() => {
 }
 
 /* ── 搜索栏 ── */
-.form-control-lg {
-  border-radius: 8px 0 0 8px;
+.status-search-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-.btn-lg {
-  border-radius: 0 8px 8px 0;
-  padding: 0.75rem 1.5rem;
+.status-search-wrap {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  background: #f8fafc;
+  border: 1.5px solid #d1d5db;
+  border-radius: 28px;
+  padding: 0 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.form-text {
+.status-search-wrap:focus-within {
+  border-color: #4facfe;
+  box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.15);
+  background: #fff;
+}
+
+.status-search-icon {
+  color: #9ca3af;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  margin-right: 0.5rem;
+  transition: color 0.2s;
+}
+
+.status-search-wrap:focus-within .status-search-icon {
+  color: #4facfe;
+}
+
+.status-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 1rem;
+  color: #1f2937;
+  padding: 0.65rem 0;
+  min-width: 0;
+}
+
+.status-search-input::placeholder {
+  color: #b0b7c3;
+}
+
+.status-search-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.65rem 1.4rem;
+  border-radius: 28px;
+  border: none;
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(79, 172, 254, 0.35);
+  transition: box-shadow 0.2s, transform 0.15s;
+  white-space: nowrap;
+}
+
+.status-search-btn:hover {
+  box-shadow: 0 4px 18px rgba(79, 172, 254, 0.5);
+  transform: translateY(-1px);
+}
+
+.status-detail-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.65rem 1.2rem;
+  border-radius: 28px;
+  border: 1.5px solid #d1d5db;
+  background: transparent;
+  color: #6b7280;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+  white-space: nowrap;
+}
+
+.status-detail-btn:hover {
+  border-color: #9ca3af;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.status-form-text {
   color: #6c757d;
   font-size: 0.9rem;
 }
@@ -999,5 +1188,53 @@ onDeactivated(() => {
   .metric-value {
     font-size: 1.4rem;
   }
+}
+</style>
+
+<style>
+/* ── 全局：番剧状态页搜索弹出下拉列表（Teleport 到 body，scoped 样式无效） ── */
+.status-dropdown-popup {
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid rgba(79, 172, 254, 0.25);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(79, 172, 254, 0.08);
+  padding: 0.4rem 0;
+  max-height: 300px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+}
+
+.status-dropdown-popup::-webkit-scrollbar {
+  width: 4px;
+}
+
+.status-dropdown-popup::-webkit-scrollbar-thumb {
+  background: rgba(79, 172, 254, 0.3);
+  border-radius: 4px;
+}
+
+.status-dropdown-item {
+  padding: 0.55rem 1.2rem;
+  font-size: 0.9rem;
+  color: #374151;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  transition: background 0.15s;
+}
+
+.status-dropdown-item:hover {
+  background: linear-gradient(90deg, rgba(79, 172, 254, 0.08) 0%, rgba(0, 242, 254, 0.05) 100%);
+  color: #2563eb;
+}
+
+.status-dropdown-icon {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  flex-shrink: 0;
 }
 </style>
