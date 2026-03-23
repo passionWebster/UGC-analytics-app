@@ -388,8 +388,12 @@ const onStatusSearchFocus = () => {
   if (statusSuggestions.value.length > 0) showStatusSuggestions.value = true
 }
 
-// 隐藏联想框
+// 隐藏联想框，并取消尚未触发的防抖请求，防止失焦后重新弹出
 const hideStatusSuggestions = () => {
+  if (suggestionDebounceTimer !== null) {
+    clearTimeout(suggestionDebounceTimer)
+    suggestionDebounceTimer = null
+  }
   showStatusSuggestions.value = false
 }
 
@@ -405,8 +409,12 @@ const onStatusSearchInput = () => {
     return
   }
   suggestionDebounceTimer = setTimeout(async () => {
+    // 防止过期响应：若用户在等待期间已修改输入，则丢弃本次结果
+    if (keyword.value.trim() !== val) return
     try {
       const response = await searchAnimes(val)
+      // 二次校验：异步返回后输入可能已发生变化
+      if (keyword.value.trim() !== val) return
       if (response.list && response.list.length > 0) {
         // 优先精确匹配排在前面，其余追加
         const exact: string[] = []
@@ -439,6 +447,13 @@ const selectStatusSuggestion = (title: string) => {
 }
 
 const handleSearch = async () => {
+  // 清除未触发的防抖请求，防止搜索后下拉框又重新弹出
+  if (suggestionDebounceTimer !== null) {
+    clearTimeout(suggestionDebounceTimer)
+    suggestionDebounceTimer = null
+  }
+  showStatusSuggestions.value = false
+
   if (!keyword.value.trim()) {
     statusMessage.value = '请输入番剧名称'
     return

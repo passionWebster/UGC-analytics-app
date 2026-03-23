@@ -285,13 +285,18 @@ const baselineViews = ref<number | null>(null) // 新增：当前定位的“基
 // 👇 预搜索（联想）相关的状态
 const searchSuggestions = ref<string[]>([])
 const showSuggestions = ref(false)
-const scatterSearchInputRef = ref<HTMLElement>()
+const scatterSearchInputRef = ref<HTMLInputElement | null>(null)
 /** 散点图搜索下拉框最小宽度（px） */
 const SCATTER_MIN_DROPDOWN_WIDTH = 240
 const dropdownPos = ref({ top: 0, left: 0, width: SCATTER_MIN_DROPDOWN_WIDTH })
+/** 正在通过点击联想项选择，抑制 watch(searchQuery) 重新打开下拉框 */
+let isSelectingSuggestion = false
 
 // 👇 监听输入内容，动态生成推荐列表
 watch(searchQuery, (newVal: string) => {
+  // 若当前是通过点击联想项触发的赋值，跳过本次更新，避免下拉框重新弹出
+  if (isSelectingSuggestion) return
+
   if (!newVal.trim() || !scatterInstance) {
     searchSuggestions.value = []
     showSuggestions.value = false
@@ -344,8 +349,14 @@ const updateDropdownPos = () => {
 
 // 👇 点击选中联想列表中的某一项
 const selectSuggestion = (title: string) => {
+  // 设置标志位，抑制 watch(searchQuery) 在赋值后重新打开下拉框
+  isSelectingSuggestion = true
   searchQuery.value = title
   showSuggestions.value = false
+  // 用 nextTick 等 Vue 清空 watch 队列后再重置标志位
+  nextTick(() => {
+    isSelectingSuggestion = false
+  })
   handleSearchAnime()
 }
 // 历年趋势筛选
