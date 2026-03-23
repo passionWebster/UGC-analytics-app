@@ -330,6 +330,11 @@ const hideSuggestions = () => {
   showSuggestions.value = false
 }
 
+// 👇 页面滚动时同步更新下拉框位置（仅在下拉框可见时执行，减少无效计算）
+const onWindowScrollForScatter = () => {
+  if (showSuggestions.value) updateDropdownPos()
+}
+
 // 👇 输入框获焦时计算弹出位置并显示联想框
 const onScatterSearchFocus = () => {
   updateDropdownPos()
@@ -1037,6 +1042,8 @@ onMounted(async () => {
   // 等待 DOM 完成渲染（包括布局排版），确保容器尺寸正确后再初始化 ECharts
   await nextTick()
   renderAllCharts()
+  // 注册滚动监听，使散点图搜索下拉框跟随输入框位置
+  window.addEventListener('scroll', onWindowScrollForScatter, { passive: true, capture: true })
 })
 
 // KeepAlive 激活：从缓存恢复时触发所有图表 resize
@@ -1060,6 +1067,7 @@ onUnmounted(() => {
   scatterInstance?.dispose()
   heatIndexInstance?.dispose()
   typePieInstance?.dispose()
+  window.removeEventListener('scroll', onWindowScrollForScatter, { capture: true })
 })
 </script>
 

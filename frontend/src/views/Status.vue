@@ -198,7 +198,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, onActivated, onDeactivated, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
 import {
@@ -395,6 +395,11 @@ const hideStatusSuggestions = () => {
     suggestionDebounceTimer = null
   }
   showStatusSuggestions.value = false
+}
+
+// 页面滚动时同步更新下拉框位置（仅在下拉框可见时执行，减少无效计算）
+const onWindowScrollForStatus = () => {
+  if (showStatusSuggestions.value) updateStatusDropdownPos()
 }
 
 // 输入时防抖查询联想建议
@@ -885,6 +890,11 @@ const renderWatchTimeChart = () => {
 }
 
 // ─── 生命周期 ────────────────────────────────────────────────────────────────
+onMounted(() => {
+  // 注册滚动监听，使状态页搜索下拉框跟随输入框位置
+  window.addEventListener('scroll', onWindowScrollForStatus, { passive: true, capture: true })
+})
+
 onUnmounted(() => {
   // 断开所有 ResizeObserver，销毁所有 ECharts 实例，防止内存泄漏
   playTrendResizeObserver?.disconnect()
@@ -895,6 +905,8 @@ onUnmounted(() => {
   radarInstance?.dispose()
   // 清除轮询定时器
   stopHourlyFetch()
+  // 移除滚动监听
+  window.removeEventListener('scroll', onWindowScrollForStatus, { capture: true })
 })
 
 // KeepAlive 激活：从缓存恢复时触发图表 resize，并根据当前番剧恢复小时轮询
@@ -903,6 +915,9 @@ onActivated(() => {
   playTrendInstance?.resize()
   watchTimeInstance?.resize()
   radarInstance?.resize()
+
+  // 重新注册滚动监听（onDeactivated 中已移除）
+  window.addEventListener('scroll', onWindowScrollForStatus, { passive: true, capture: true })
 
   // 根据当前 animeData / season_id 重新启动小时轮询（避免从其它路由返回后不再自动刷新）
   let seasonId: any | undefined
@@ -922,6 +937,8 @@ onActivated(() => {
 // KeepAlive 失活：页面切走时停止轮询，避免后台持续请求
 onDeactivated(() => {
   stopHourlyFetch()
+  // 移除滚动监听，失活期间不需要更新位置
+  window.removeEventListener('scroll', onWindowScrollForStatus, { capture: true })
 })
 </script>
 
