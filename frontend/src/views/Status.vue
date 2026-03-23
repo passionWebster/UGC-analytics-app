@@ -227,10 +227,10 @@ const statusMessage = ref('')
 // 搜索自动补全相关状态
 const statusSuggestions = ref<string[]>([])
 const showStatusSuggestions = ref(false)
-const statusSearchInputRef = ref<HTMLElement>()
+const statusSearchInputRef = ref<HTMLInputElement | null>(null)
 /** 状态页搜索下拉框最小宽度（px） */
 const STATUS_MIN_DROPDOWN_WIDTH = 320
-/** 搜索联想防抖延迟（ms） */
+/** 搜索联想防抄延迟（ms） */
 const SUGGESTION_DEBOUNCE_MS = 300
 const statusDropdownPos = ref({ top: 0, left: 0, width: STATUS_MIN_DROPDOWN_WIDTH })
 let suggestionDebounceTimer: ReturnType<typeof setTimeout> | null = null
