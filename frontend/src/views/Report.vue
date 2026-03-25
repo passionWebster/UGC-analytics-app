@@ -328,9 +328,11 @@ const exportPDF = async () => {
   const html2pdf = (await import('html2pdf.js')).default
   const element = document.getElementById('report-content')
   if (!element) return
+  // 过滤掉文件系统不安全字符，防止非法文件名
+  const safeTitle = String(animeData.value?.title ?? 'report').replace(/[/\\:*?"<>|]/g, '_')
   const opt = {
     margin: 10,
-    filename: `${animeData.value?.title ?? 'report'}_分析报告.pdf`,
+    filename: `${safeTitle}_分析报告.pdf`,
     image: { type: 'jpeg' as const, quality: 0.95 },
     html2canvas: { scale: 2, useCORS: true },
     jsPDF: { unit: 'mm' as const, format: 'a4', orientation: 'portrait' as const },

@@ -21,6 +21,8 @@ ai_service = AIService()
 
 # SQL 语句安全白名单：只允许 SELECT，禁止 DDL / DML
 _SAFE_SQL_RE = re.compile(r"^\s*SELECT\b", re.IGNORECASE)
+# 检测多语句注入（分号分隔的多条 SQL）
+_MULTI_STMT_RE = re.compile(r";(?!\s*$)", re.IGNORECASE)
 
 
 class ChatMessage(BaseModel):
@@ -134,6 +136,12 @@ def text_to_sql(req: TextToSQLRequest, session: Session = Depends(get_session)):
         raise HTTPException(
             status_code=400,
             detail="AI 生成了非 SELECT 语句，已被安全策略拒绝。请重新描述您的查询需求。",
+        )
+    # 安全检查：拒绝多语句（防止 SELECT ...; DROP TABLE 之类的注入）
+    if _MULTI_STMT_RE.search(sql):
+        raise HTTPException(
+            status_code=400,
+            detail="检测到多语句 SQL，已被安全策略拒绝。请描述单次查询需求。",
         )
 
     try:

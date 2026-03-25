@@ -1123,7 +1123,9 @@ class BilibiliBangumiCrawler:
             self.__class__._wbi_keys_fetched_at = now
             return img_key, sub_key
         except Exception as exc:
-            logger.warning("⚠️ 获取 Wbi 密钥失败: {}", exc)
+            logger.error(
+                "❌ 获取 Wbi 密钥失败（后续 API 请求的签名将无效，建议检查网络连接与 Cookie）: {}", exc
+            )
             # 降级：返回空字符串，后续签名会失败但不会崩溃
             return '', ''
 
