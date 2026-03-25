@@ -143,6 +143,7 @@
 import { ref, onMounted, nextTick, watch } from 'vue'
 import { chatWithAI, checkAIServiceStatus, textToSQL } from '@/api/ai'
 import type { TextToSQLResponse } from '@/api/ai'
+import { getApiErrorMessage } from '@/utils/errorHandling'
 
 // ——— 状态 ———
 const isOpen = ref(false)                          // 聊天窗口是否展开
@@ -222,23 +223,35 @@ const sendMessage = async () => {
     // ── Text-to-SQL 模式 ──────────────────────────────────────────────
     try {
       const res = await textToSQL({ query: message })
+      if (!res?.success) {
+        throw new Error('后端未返回成功状态')
+      }
       sqlResult.value = res
       messages.value.push({
         role: 'bot',
         content: `✅ 已执行查询，共返回 ${res.rows.length} 条记录。`,
       })
-    } catch {
+    } catch (error: unknown) {
       sqlResult.value = null
-      messages.value.push({ role: 'error', content: '查询失败，请重新描述您的需求。' })
+      messages.value.push({
+        role: 'error',
+        content: `查询失败：${getApiErrorMessage(error, '请重新描述您的需求。')}`,
+      })
     }
   } else {
     // ── 普通问答模式 ──────────────────────────────────────────────────
     try {
       const response = await chatWithAI(message)
+      if (!response?.success) {
+        throw new Error('后端未返回成功状态')
+      }
       messages.value.push({ role: 'bot', content: response.reply })
-    } catch {
+    } catch (error: unknown) {
       // 将错误作为 error 角色消息显示，样式独立于普通 bot 消息
-      messages.value.push({ role: 'error', content: '抱歉，我暂时无法回答您的问题。请稍后再试。' })
+      messages.value.push({
+        role: 'error',
+        content: `回答失败：${getApiErrorMessage(error, '请稍后再试。')}`,
+      })
     }
   }
 

@@ -184,6 +184,7 @@ import {
   getTopComments,
 } from '@/api/ai'
 import type { SentimentPoint, CommentItem } from '@/api/ai'
+import { getApiErrorMessage } from '@/utils/errorHandling'
 
 defineOptions({ name: 'ReportView' })
 
@@ -312,11 +313,14 @@ const generateReport = async () => {
       data: contextData,
       context_hint: d.title,
     })
+    if (!res?.success) {
+      throw new Error('后端未返回成功状态')
+    }
     insightText.value = res.insight || ''
     generatedAt.value = new Date().toLocaleString('zh-CN')
     reportReady.value = true
-  } catch {
-    insightText.value = '洞察生成失败，请检查 AI 服务配置后重试。'
+  } catch (error: unknown) {
+    insightText.value = `洞察生成失败：${getApiErrorMessage(error, '请检查 AI 服务配置后重试。')}`
     reportReady.value = true
   } finally {
     generating.value = false

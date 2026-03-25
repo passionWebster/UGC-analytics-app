@@ -65,6 +65,8 @@ export interface TopCommentsResponse {
   comments: CommentItem[]
 }
 
+const AI_REQUEST_TIMEOUT = 60000
+
 /**
  * 获取 AI 服务状态
  */
@@ -76,21 +78,21 @@ export const checkAIServiceStatus = async (): Promise<AIServiceStatus> => {
  * 发送聊天消息
  */
 export const chatWithAI = async (message: string): Promise<ChatResponse> => {
-  return apiClient.post('/chat', { message })
+  return apiClient.post('/chat', { message }, { timeout: AI_REQUEST_TIMEOUT })
 }
 
 /**
  * Auto-EDA：生成数据洞察报告
  */
 export const generateInsight = async (req: InsightRequest): Promise<InsightResponse> => {
-  return apiClient.post('/ai/generate-insight', req)
+  return apiClient.post('/ai/generate-insight', req, { timeout: AI_REQUEST_TIMEOUT })
 }
 
 /**
  * Text-to-SQL：自然语言转 SQL 并执行
  */
 export const textToSQL = async (req: TextToSQLRequest): Promise<TextToSQLResponse> => {
-  return apiClient.post('/ai/text-to-sql', req)
+  return apiClient.post('/ai/text-to-sql', req, { timeout: AI_REQUEST_TIMEOUT })
 }
 
 /**

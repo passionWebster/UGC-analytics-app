@@ -5,7 +5,7 @@ FastAPI 应用主入口
 """
 import time
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -79,6 +79,23 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={"code": 500, "msg": "服务器内部错误，请稍后重试", "data": None},
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """统一处理 HTTPException，避免前端拿到不一致错误结构。"""
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    app_logger.warning(
+        "HTTPException [{method} {path}] status={status} detail={detail}",
+        method=request.method,
+        path=request.url.path,
+        status=exc.status_code,
+        detail=detail,
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": exc.status_code, "msg": detail, "detail": detail, "data": None},
     )
 
 # 注册路由
