@@ -51,6 +51,15 @@
                 <i class="fas fa-star me-1"></i>番剧推荐
               </router-link>
             </li>
+            <li class="nav-item">
+              <router-link
+                class="nav-link"
+                to="/report"
+                active-class="active"
+              >
+                <i class="fas fa-file-chart-line me-1"></i>分析报告
+              </router-link>
+            </li>
           </ul>
         </nav>
 

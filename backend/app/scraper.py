@@ -3,18 +3,21 @@
 B站数据爬虫服务 - 重构版
 将原 scraper.py 和 data_manager.py 的功能整合，数据直接写入 SQLite 数据库
 """
+import hashlib
 import json
 import random
 import re
 import threading
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
+from functools import reduce
 from typing import Tuple, List, Dict, Any, Optional
 import requests
 from sqlmodel import Session, select
 from tqdm import tqdm
 
-from .models import Anime, DailyStats, EpisodeStats, CrawlLog
+from .models import Anime, DailyStats, EpisodeStats, CrawlLog, DanmuRecord, CommentRecord
 from .config import settings
 from .logger import scraper_logger as logger
 
@@ -1070,6 +1073,275 @@ class BilibiliBangumiCrawler:
         ).first()
         
         return anime.season_id if anime else None
+
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Wbi 签名 (B站新版 API 防爬机制)
+    # 参考: https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/misc/sign/wbi.md
+    # ──────────────────────────────────────────────────────────────────────────
+
+    # Mixin 密钥混淆表（固定顺序）
+    _MIXIN_KEY_ENC_TAB = [
+        46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
+        27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
+        37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
+        22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
+    ]
+    # Wbi 密钥缓存 (img_key, sub_key)
+    _wbi_keys_cache: Optional[Tuple[str, str]] = None
+    _wbi_keys_fetched_at: Optional[float] = None
+    _WBI_CACHE_TTL = 3600  # 缓存 1 小时
+
+    def _get_mixin_key(self, img_key: str, sub_key: str) -> str:
+        """根据 img_key 和 sub_key 生成混淆后的 mixin key（取前 32 位）"""
+        raw = img_key + sub_key
+        return reduce(lambda s, i: s + raw[i], self._MIXIN_KEY_ENC_TAB, '')[:32]
+
+    def _get_wbi_keys(self) -> Tuple[str, str]:
+        """
+        获取 Wbi 签名所需的 img_key 和 sub_key。
+        每小时刷新一次，减少重复请求。
+        """
+        now = time.time()
+        if (
+            self._wbi_keys_cache is not None
+            and self._wbi_keys_fetched_at is not None
+            and now - self._wbi_keys_fetched_at < self._WBI_CACHE_TTL
+        ):
+            return self._wbi_keys_cache
+
+        url = "https://api.bilibili.com/x/web-interface/nav"
+        try:
+            resp = self.http_session.get(url, timeout=settings.bilibili_request_timeout)
+            resp.raise_for_status()
+            nav = resp.json().get('data', {})
+            img_url: str = nav.get('wbi_img', {}).get('img_url', '')
+            sub_url: str = nav.get('wbi_img', {}).get('sub_url', '')
+            img_key = img_url.rsplit('/', 1)[-1].split('.')[0]
+            sub_key = sub_url.rsplit('/', 1)[-1].split('.')[0]
+            self.__class__._wbi_keys_cache = (img_key, sub_key)
+            self.__class__._wbi_keys_fetched_at = now
+            return img_key, sub_key
+        except Exception as exc:
+            logger.warning("⚠️ 获取 Wbi 密钥失败: {}", exc)
+            # 降级：返回空字符串，后续签名会失败但不会崩溃
+            return '', ''
+
+    def _sign_wbi_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        对请求参数进行 Wbi 签名，自动附加 wts 和 w_rid 字段。
+
+        Args:
+            params: 原始请求参数字典
+
+        Returns:
+            含有 wts、w_rid 签名字段的新参数字典
+        """
+        img_key, sub_key = self._get_wbi_keys()
+        mixin_key = self._get_mixin_key(img_key, sub_key)
+        wts = int(time.time())
+        signed = dict(params)
+        signed['wts'] = wts
+        # 字母序排序，过滤特殊字符
+        query = '&'.join(
+            f"{k}={re.sub(r'[!#$&+,/:;=?@\\[\\]]', '', str(v))}"
+            for k, v in sorted(signed.items())
+        )
+        w_rid = hashlib.md5((query + mixin_key).encode()).hexdigest()
+        signed['w_rid'] = w_rid
+        return signed
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # 弹幕抓取（XML 格式，按 cid 拉取）
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def fetch_danmaku_xml(self, cid: str) -> List[Dict[str, Any]]:
+        """
+        通过 B站弹幕 XML 接口获取当前弹幕池。
+
+        Args:
+            cid: 分 P 的弹幕 ID
+
+        Returns:
+            弹幕记录列表，每条包含 content（文字）和 video_time（出现时间，秒）
+        """
+        url = f"https://comment.bilibili.com/{cid}.xml"
+        danmaku_list: List[Dict[str, Any]] = []
+        try:
+            resp = self.http_session.get(url, timeout=settings.bilibili_request_timeout)
+            resp.raise_for_status()
+            resp.encoding = 'utf-8'
+            root = ET.fromstring(resp.text)
+            for d in root.findall('d'):
+                attrs = d.get('p', '')
+                text = (d.text or '').strip()
+                if not text:
+                    continue
+                # p 属性格式: 时间,类型,大小,颜色,时间戳,弹幕池,用户ID,弹幕ID
+                parts = attrs.split(',')
+                video_time = float(parts[0]) if parts else 0.0
+                ts_unix = int(parts[4]) if len(parts) > 4 else 0
+                timestamp = datetime.fromtimestamp(ts_unix) if ts_unix else None
+                danmaku_list.append({
+                    'content': text,
+                    'video_time': video_time,
+                    'timestamp': timestamp,
+                })
+        except ET.ParseError as exc:
+            logger.warning("⚠️ 解析弹幕 XML 失败 cid={}: {}", cid, exc)
+        except Exception as exc:
+            logger.exception("❌ 获取弹幕失败 cid={}: {}", cid, exc)
+        return danmaku_list
+
+    def fetch_comments(self, avid: int, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        通过 B站评论接口（/x/v2/reply/main）获取高赞评论。
+
+        Args:
+            avid:  视频 avid（即 oid）
+            limit: 最多返回评论条数（按热门排序）
+
+        Returns:
+            评论列表，每条包含 content、likes、replies 字段
+        """
+        url = "https://api.bilibili.com/x/v2/reply/main"
+        params = self._sign_wbi_params({
+            'type': 1,
+            'oid': avid,
+            'mode': 3,  # 3 = 热门模式（按点赞数排序）
+            'ps': min(limit, 20),
+            'pn': 1,
+        })
+        comment_list: List[Dict[str, Any]] = []
+        try:
+            resp = self.http_session.get(url, params=params, timeout=settings.bilibili_request_timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get('code') == 0:
+                replies = (data.get('data') or {}).get('replies') or []
+                for r in replies[:limit]:
+                    content = r.get('content', {}).get('message', '').strip()
+                    if not content:
+                        continue
+                    comment_list.append({
+                        'content': content,
+                        'likes': r.get('like', 0),
+                        'replies': r.get('rcount', 0),
+                    })
+            else:
+                logger.warning("⚠️ 评论 API 返回错误 avid={}: code={}", avid, data.get('code'))
+        except Exception as exc:
+            logger.exception("❌ 获取评论失败 avid={}: {}", avid, exc)
+        return comment_list
+
+    def scrape_danmaku_and_comments(
+        self,
+        season_id: int,
+        max_episodes: int = 3,
+        comment_limit: int = 50,
+        sentiment_fn: Optional[Any] = None,
+    ) -> Dict[str, int]:
+        """
+        对指定番剧抓取弹幕和评论，进行初步清洗后写入数据库。
+
+        流程：
+          1. 从 EpisodeStats 表查出该番剧前 max_episodes 集的 cid / bvid
+          2. 使用 fetch_danmaku_xml 获取弹幕，去除重复刷屏内容
+          3. 使用 fetch_comments 获取高赞评论
+          4. 若提供 sentiment_fn，对每条文本打分后写入 sentiment_score
+          5. 批量写入 DanmuRecord / CommentRecord
+
+        Args:
+            season_id:     目标番剧 season_id
+            max_episodes:  最多抓取前 N 集弹幕，默认 3
+            comment_limit: 每集最多抓取评论数，默认 50
+            sentiment_fn:  可选的情感打分函数，签名为 (text: str) -> float
+
+        Returns:
+            统计字典 {"danmu_saved": int, "comment_saved": int}
+        """
+        logger.info(f"🎯 开始抓取弹幕/评论 season_id={season_id}（最多 {max_episodes} 集）")
+        episodes = self.session.exec(
+            select(EpisodeStats)
+            .where(EpisodeStats.season_id == season_id)
+            .limit(max_episodes)
+        ).all()
+
+        if not episodes:
+            logger.warning(f"  ⚠️ season_id={season_id} 尚无剧集数据，请先执行 fetch_and_save_episodes")
+            return {"danmu_saved": 0, "comment_saved": 0}
+
+        danmu_saved = 0
+        comment_saved = 0
+
+        for ep_index, ep in enumerate(episodes, start=1):
+            # ── 弹幕 ───────────────────────────────────────────────────────
+            if ep.cid:
+                raw_danmaku = self.fetch_danmaku_xml(ep.cid)
+                # 去重：同一集中完全相同的弹幕文本只保留一条
+                seen_texts: set = set()
+                dedup: List[Dict] = []
+                for d in raw_danmaku:
+                    t = d['content']
+                    if t not in seen_texts:
+                        seen_texts.add(t)
+                        dedup.append(d)
+
+                records = []
+                for d in dedup:
+                    score = sentiment_fn(d['content']) if sentiment_fn else None
+                    records.append(DanmuRecord(
+                        season_id=season_id,
+                        episode_number=ep_index,
+                        cid=ep.cid,
+                        content=d['content'],
+                        video_time=d.get('video_time'),
+                        timestamp=d.get('timestamp'),
+                        sentiment_score=score,
+                    ))
+
+                with sqlite_write_lock:
+                    for r in records:
+                        self.session.add(r)
+                    self.session.commit()
+                danmu_saved += len(records)
+                logger.info(f"  ✅ 弹幕已写入 episode={ep_index} cid={ep.cid} count={len(records)}")
+                time.sleep(settings.bilibili_request_delay)
+
+            # ── 评论 ───────────────────────────────────────────────────────
+            # 将 bvid 转换为 avid；B站不提供直接转换 API，使用 /x/web-interface/view
+            if ep.bvid:
+                try:
+                    view_data = self.get_episode_stat_details(ep.bvid)
+                    avid: Optional[int] = view_data.get('aid')
+                except Exception:
+                    avid = None
+
+                if avid:
+                    raw_comments = self.fetch_comments(avid, limit=comment_limit)
+                    c_records = []
+                    for c in raw_comments:
+                        score = sentiment_fn(c['content']) if sentiment_fn else None
+                        c_records.append(CommentRecord(
+                            season_id=season_id,
+                            avid=avid,
+                            content=c['content'],
+                            likes=c.get('likes', 0),
+                            replies=c.get('replies', 0),
+                            sentiment_score=score,
+                        ))
+                    with sqlite_write_lock:
+                        for r in c_records:
+                            self.session.add(r)
+                        self.session.commit()
+                    comment_saved += len(c_records)
+                    logger.info(f"  ✅ 评论已写入 episode={ep_index} avid={avid} count={len(c_records)}")
+                    time.sleep(settings.bilibili_request_delay)
+
+        logger.info(
+            f"🎉 弹幕/评论抓取完成 season_id={season_id} danmu={danmu_saved} comments={comment_saved}"
+        )
+        return {"danmu_saved": danmu_saved, "comment_saved": comment_saved}
 
 
 def create_crawler(session: Session = None) -> BilibiliBangumiCrawler:

@@ -9,6 +9,20 @@
     <div class="chat-container" :class="{ 'show': isOpen }">
       <div class="chat-header">
         <h3><i class="fas fa-robot"></i> AI助手</h3>
+        <div class="header-tabs">
+          <button
+            class="tab-btn"
+            :class="{ active: mode === 'chat' }"
+            @click="mode = 'chat'"
+            title="普通问答"
+          >普通问答</button>
+          <button
+            class="tab-btn"
+            :class="{ active: mode === 'sql' }"
+            @click="mode = 'sql'"
+            title="数据查询 Text-to-SQL"
+          >数据查询</button>
+        </div>
         <button class="close-btn" @click="toggleChat" title="关闭">
           <i class="fas fa-times"></i>
         </button>
@@ -80,6 +94,29 @@
             <div class="typing-dot"></div>
           </div>
         </div>
+
+        <!-- SQL 查询结果表格 -->
+        <div v-if="sqlResult && mode === 'sql'" class="sql-result-panel">
+          <div class="sql-badge">SQL: <code>{{ sqlResult.sql }}</code></div>
+          <div v-if="sqlResult.rows.length === 0" class="sql-empty">查询结果为空</div>
+          <div v-else class="sql-table-wrap">
+            <table class="sql-table">
+              <thead>
+                <tr>
+                  <th v-for="col in sqlResult.columns" :key="col">{{ col }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, i) in sqlResult.rows.slice(0, 20)" :key="i">
+                  <td v-for="col in sqlResult.columns" :key="col">{{ row[col] }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="sqlResult.rows.length > 20" class="sql-truncated">
+              仅展示前 20 条，共 {{ sqlResult.rows.length }} 条
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="input-area">
@@ -87,7 +124,7 @@
           v-model="userInput"
           @keyup.enter="sendMessage"
           :disabled="!serviceAvailable || isTyping"
-          placeholder="输入您的问题..."
+          :placeholder="mode === 'sql' ? '用中文描述查询需求，如：播放量前5的番剧' : '输入您的问题...'"
           type="text"
         />
         <button
@@ -104,7 +141,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick, watch } from 'vue'
-import { chatWithAI, checkAIServiceStatus } from '@/api/ai'
+import { chatWithAI, checkAIServiceStatus, textToSQL } from '@/api/ai'
+import type { TextToSQLResponse } from '@/api/ai'
 
 // ——— 状态 ———
 const isOpen = ref(false)                          // 聊天窗口是否展开
@@ -115,6 +153,8 @@ const userInput = ref('')
 const messages = ref<Array<{ role: string; content: string }>>([])
 const messagesContainer = ref<HTMLElement | null>(null)
 const sampleQuestionsVisible = ref(false)         // 服务在线后是否显示示例问题
+const mode = ref<'chat' | 'sql'>('chat')          // 当前交互模式
+const sqlResult = ref<TextToSQLResponse | null>(null) // Text-to-SQL 查询结果
 
 // 挂载后延迟检查服务的等待时间（给后端启动留出时间，单位毫秒）
 const SERVICE_CHECK_DELAY = 1000
@@ -178,17 +218,33 @@ const sendMessage = async () => {
   await nextTick()
   scrollToBottom()
 
-  try {
-    const response = await chatWithAI(message)
-    messages.value.push({ role: 'bot', content: response.reply })
-  } catch {
-    // 将错误作为 error 角色消息显示，样式独立于普通 bot 消息
-    messages.value.push({ role: 'error', content: '抱歉，我暂时无法回答您的问题。请稍后再试。' })
-  } finally {
-    isTyping.value = false
-    await nextTick()
-    scrollToBottom()
+  if (mode.value === 'sql') {
+    // ── Text-to-SQL 模式 ──────────────────────────────────────────────
+    try {
+      const res = await textToSQL({ query: message })
+      sqlResult.value = res
+      messages.value.push({
+        role: 'bot',
+        content: `✅ 已执行查询，共返回 ${res.rows.length} 条记录。`,
+      })
+    } catch {
+      sqlResult.value = null
+      messages.value.push({ role: 'error', content: '查询失败，请重新描述您的需求。' })
+    }
+  } else {
+    // ── 普通问答模式 ──────────────────────────────────────────────────
+    try {
+      const response = await chatWithAI(message)
+      messages.value.push({ role: 'bot', content: response.reply })
+    } catch {
+      // 将错误作为 error 角色消息显示，样式独立于普通 bot 消息
+      messages.value.push({ role: 'error', content: '抱歉，我暂时无法回答您的问题。请稍后再试。' })
+    }
   }
+
+  isTyping.value = false
+  await nextTick()
+  scrollToBottom()
 }
 
 // 将消息区域滚动到最底部，确保新消息可见
@@ -278,16 +334,107 @@ onMounted(() => {
 .chat-header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 1rem;
+  padding: 0.75rem 1rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
+  gap: 0.5rem;
 }
 
 .chat-header h3 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+/* ── 模式切换 Tab ── */
+.header-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  justify-content: center;
+}
+
+.tab-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.8);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.tab-btn.active {
+  background: rgba(255, 255, 255, 0.3);
+  color: white;
+  font-weight: 600;
+}
+
+.tab-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ── SQL 结果 ── */
+.sql-result-panel {
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.sql-badge {
+  background: #e8eaf6;
+  padding: 6px 10px;
+  color: #3949ab;
+  overflow: auto;
+  white-space: nowrap;
+}
+
+.sql-badge code {
+  font-size: 11px;
+}
+
+.sql-empty {
+  padding: 8px 10px;
+  color: #9ca3af;
+}
+
+.sql-table-wrap {
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.sql-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: max-content;
+}
+
+.sql-table th,
+.sql-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sql-table th {
+  background: #f3f4f6;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+
+.sql-truncated {
+  padding: 4px 10px;
+  color: #9ca3af;
+  font-size: 11px;
+  border-top: 1px solid #e5e7eb;
 }
 
 .close-btn {

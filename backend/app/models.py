@@ -196,6 +196,39 @@ class TmdbAnimeInfo(SQLModel, table=True):
     anime: Optional["Anime"] = Relationship(back_populates="tmdb_info")
 
 
+class DanmuRecord(SQLModel, table=True):
+    """
+    弹幕记录表 - 存储从 B站抓取的弹幕文本及情感分析结果
+    """
+    __tablename__ = "danmu_records"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    season_id: int = Field(foreign_key="anime.season_id", index=True)  # 关联番剧
+    episode_number: int = Field(default=1)  # 集数
+    cid: Optional[str] = Field(default=None, max_length=20)  # 弹幕 CID
+    content: str = Field(max_length=500)  # 弹幕文字内容
+    video_time: Optional[float] = Field(default=None)  # 弹幕出现的视频时间点（秒）
+    timestamp: Optional[datetime] = Field(default=None)  # 弹幕发送时间
+    sentiment_score: Optional[float] = Field(default=None)  # 情感得分（0=消极，1=积极）
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class CommentRecord(SQLModel, table=True):
+    """
+    评论记录表 - 存储从 B站抓取的热评及情感分析结果
+    """
+    __tablename__ = "comment_records"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    season_id: int = Field(foreign_key="anime.season_id", index=True)  # 关联番剧
+    avid: Optional[int] = Field(default=None, index=True)  # 视频 avid（oid）
+    content: str  # 评论文字内容
+    likes: Optional[int] = Field(default=0)  # 点赞数
+    replies: Optional[int] = Field(default=0)  # 回复数
+    sentiment_score: Optional[float] = Field(default=None)  # 情感得分（0=消极，1=积极）
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
 # Pydantic 模型用于 API 请求/响应
 class UserCreate(SQLModel):
     """用户注册请求模型"""
