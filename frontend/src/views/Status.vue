@@ -643,6 +643,15 @@ const handleSearch = async () => {
 
       selectedEpisodeIndex.value = -1
       watchTimeSubtitle.value = '所有剧集总计'
+      // 清空情感时间线前，先销毁旧的情感图表实例和 ResizeObserver，避免内存泄漏和旧数据残留
+      if (typeof sentimentResizeObserver !== 'undefined' && sentimentResizeObserver) {
+        sentimentResizeObserver.disconnect()
+        sentimentResizeObserver = null
+      }
+      if (typeof sentimentInstance !== 'undefined' && sentimentInstance) {
+        sentimentInstance.dispose()
+        sentimentInstance = null
+      }
       sentimentTimeline.value = []
 
       // 等待 DOM 更新后渲染所有图表
