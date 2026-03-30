@@ -476,9 +476,13 @@ const renderCharts = () => {
 }
 
 const renderSentimentChart = () => {
-  if (!sentimentChartRef.value || sentimentTimeline.value.length === 0) return
+  // 始终先清理上一次渲染的实例和观察器，避免残留旧 DOM 引用
   sentimentInstance?.dispose()
+  sentimentInstance = null
   sentimentObserver?.disconnect()
+  sentimentObserver = null
+
+  if (!sentimentChartRef.value || sentimentTimeline.value.length === 0) return
   sentimentInstance = echarts.init(sentimentChartRef.value)
 
   const labels = sentimentTimeline.value.map((p) => `第${p.episode_number}集`)
