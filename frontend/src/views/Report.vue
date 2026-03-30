@@ -403,6 +403,11 @@ const handleSearch = async () => {
       renderCharts()
     } else {
       statusMsg.value = '未找到相关番剧'
+      // 清理图表与相关数据，避免持有已卸载 DOM 的引用
+      disposeCharts && disposeCharts()
+      episodes.value = []
+      sentimentTimeline.value = []
+      topComments.value = []
       animeData.value = null
     }
   } catch {
