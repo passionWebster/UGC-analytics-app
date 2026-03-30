@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import Optional
 from sqlmodel import Session
 
-from ..database import get_session
+from ..database import get_session, engine
 from ..scraper import BilibiliBangumiCrawler
 from ..analytics import batch_score_danmaku, batch_score_comments
 
@@ -18,7 +18,6 @@ router = APIRouter(prefix="/api/crawler", tags=["爬虫"])
 @router.post("/update", response_model=dict)
 def trigger_update(
     background_tasks: BackgroundTasks,
-    session: Session = Depends(get_session)
 ):
     """
     触发数据更新
@@ -30,9 +29,8 @@ def trigger_update(
     Returns:
         触发结果
     """
-    # 在后台执行爬虫任务
-    crawler = BilibiliBangumiCrawler(session)
-    background_tasks.add_task(crawler.update_anime_database)
+    # 在后台执行爬虫任务（任务内自行创建独立 Session）
+    background_tasks.add_task(_run_update_task)
     
     return {
         "success": True,
@@ -118,30 +116,36 @@ def _scrape_and_score(
     max_episodes: int,
     comment_limit: int,
     run_sentiment: bool,
-    session: Session,
 ) -> None:
     """后台任务：抓取弹幕/评论，并可选地进行情感分析打分"""
     from ..analytics import score_sentiment
 
-    crawler = BilibiliBangumiCrawler(session)
-    sentiment_fn = score_sentiment if run_sentiment else None
-    crawler.scrape_danmaku_and_comments(
-        season_id=season_id,
-        max_episodes=max_episodes,
-        comment_limit=comment_limit,
-        sentiment_fn=sentiment_fn,
-    )
-    # 对已有但未打分的历史记录补分
-    if run_sentiment:
-        batch_score_danmaku(session, season_id)
-        batch_score_comments(session, season_id)
+    with Session(engine) as session:
+        crawler = BilibiliBangumiCrawler(session)
+        sentiment_fn = score_sentiment if run_sentiment else None
+        crawler.scrape_danmaku_and_comments(
+            season_id=season_id,
+            max_episodes=max_episodes,
+            comment_limit=comment_limit,
+            sentiment_fn=sentiment_fn,
+        )
+        # 对已有但未打分的历史记录补分
+        if run_sentiment:
+            batch_score_danmaku(session, season_id)
+            batch_score_comments(session, season_id)
+
+
+def _run_update_task() -> None:
+    """后台任务：更新番剧基础数据（使用独立 Session）"""
+    with Session(engine) as session:
+        crawler = BilibiliBangumiCrawler(session)
+        crawler.update_anime_database()
 
 
 @router.post("/scrape-danmaku", response_model=dict)
 def trigger_danmaku_scrape(
     req: ScrapeDanmakuRequest,
     background_tasks: BackgroundTasks,
-    session: Session = Depends(get_session),
 ):
     """
     触发指定番剧的弹幕与评论抓取（后台异步执行）。
@@ -158,7 +162,6 @@ def trigger_danmaku_scrape(
         max_episodes=req.max_episodes,
         comment_limit=req.comment_limit,
         run_sentiment=req.run_sentiment,
-        session=session,
     )
     return {
         "success": True,
