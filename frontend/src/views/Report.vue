@@ -239,11 +239,129 @@ const kpiCards = computed(() => {
 
 const formattedInsight = computed(() => {
   if (!insightText.value) return ''
-  // 将换行转换为 <br>，并高亮数字
-  return insightText.value
-    .replace(/\n/g, '<br/>')
-    .replace(/(\d+(?:\.\d+)?[%亿万个条次]?)/g, '<strong>$1</strong>')
+  return renderMarkdown(insightText.value)
 })
+
+const escapeHtml = (text: string): string =>
+  text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+const sanitizeUrl = (url: string): string | null => {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.toString()
+    }
+  } catch {
+    // 忽略非法 URL，按普通文本渲染
+  }
+  return null
+}
+
+const renderInlineMarkdown = (text: string): string => {
+  const tokens: string[] = []
+  const addToken = (html: string) => {
+    const token = `\u0000${tokens.length}\u0000`
+    tokens.push(html)
+    return token
+  }
+
+  let working = text
+
+  working = working.replace(/`([^`]+?)`/g, (_, code: string) =>
+    addToken(`<code>${escapeHtml(code)}</code>`),
+  )
+
+  working = working.replace(
+    /\[([^\]]+?)\]\((https?:\/\/[^\s)]+)\)/g,
+    (full: string, label: string, rawUrl: string) => {
+      const safeUrl = sanitizeUrl(rawUrl)
+      if (!safeUrl) return full
+      return addToken(
+        `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`,
+      )
+    },
+  )
+
+  working = escapeHtml(working)
+    .replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_\n]+?)__/g, '<strong>$1</strong>')
+    .replace(/(^|[^\*])\*([^*\n]+?)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/(^|[^_])_([^_\n]+?)_(?!_)/g, '$1<em>$2</em>')
+
+  return working.replace(/\u0000(\d+)\u0000/g, (_, index: string) => tokens[Number(index)] || '')
+}
+
+const renderMarkdown = (text: string): string => {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const html: string[] = []
+  let inUl = false
+  let inOl = false
+
+  const closeLists = () => {
+    if (inUl) {
+      html.push('</ul>')
+      inUl = false
+    }
+    if (inOl) {
+      html.push('</ol>')
+      inOl = false
+    }
+  }
+
+  for (const line of lines) {
+    if (!line.trim()) {
+      closeLists()
+      continue
+    }
+
+    const headingMatch = line.match(/^(#{1,6})\s*(.+)$/)
+    if (headingMatch) {
+      closeLists()
+      const level = headingMatch[1].length
+      html.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`)
+      continue
+    }
+
+    const ulMatch = line.match(/^\s*[-*+]\s+(.+)$/)
+    if (ulMatch) {
+      if (inOl) {
+        html.push('</ol>')
+        inOl = false
+      }
+      if (!inUl) {
+        html.push('<ul>')
+        inUl = true
+      }
+      html.push(`<li>${renderInlineMarkdown(ulMatch[1])}</li>`)
+      continue
+    }
+
+    const olMatch = line.match(/^\s*\d+\.\s+(.+)$/)
+    if (olMatch) {
+      if (inUl) {
+        html.push('</ul>')
+        inUl = false
+      }
+      if (!inOl) {
+        html.push('<ol>')
+        inOl = true
+      }
+      html.push(`<li>${renderInlineMarkdown(olMatch[1])}</li>`)
+      continue
+    }
+
+    closeLists()
+    html.push(`<p>${renderInlineMarkdown(line)}</p>`)
+  }
+
+  closeLists()
+  return html.join('')
+}
 
 // ─── 方法 ─────────────────────────────────────────────────────────────────────
 const handleSearch = async () => {
@@ -636,6 +754,44 @@ onUnmounted(() => {
   color: #374151;
   max-height: 320px;
   overflow-y: auto;
+}
+
+.insight-text :deep(h1),
+.insight-text :deep(h2),
+.insight-text :deep(h3),
+.insight-text :deep(h4),
+.insight-text :deep(h5),
+.insight-text :deep(h6) {
+  margin: 0.6rem 0 0.4rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.insight-text :deep(p) {
+  margin: 0 0 0.5rem;
+}
+
+.insight-text :deep(ul),
+.insight-text :deep(ol) {
+  margin: 0 0 0.6rem;
+  padding-left: 1.2rem;
+}
+
+.insight-text :deep(li) {
+  margin: 0.2rem 0;
+}
+
+.insight-text :deep(code) {
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 0.08rem 0.35rem;
+  font-size: 0.82rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.insight-text :deep(a) {
+  color: #4f46e5;
+  text-decoration: underline;
 }
 
 /* ── 图表占位 ── */
