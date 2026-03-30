@@ -1140,6 +1140,12 @@ class BilibiliBangumiCrawler:
             含有 wts、w_rid 签名字段的新参数字典
         """
         img_key, sub_key = self._get_wbi_keys()
+        # 如果获取 Wbi 密钥失败（降级返回空字符串），则跳过签名，避免后续崩溃
+        if not img_key or not sub_key:
+            logger.warning(
+                "⚠️ Wbi 密钥为空，本次请求将不进行 Wbi 签名，直接使用原始参数。"
+            )
+            return dict(params)
         mixin_key = self._get_mixin_key(img_key, sub_key)
         wts = int(time.time())
         signed = dict(params)
