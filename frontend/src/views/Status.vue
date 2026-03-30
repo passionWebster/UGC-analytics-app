@@ -319,13 +319,16 @@ const fetchSentimentTimeline = async () => {
   }
 }
 
-const renderSentimentChart = () => {
-  if (!sentimentChartRef.value || sentimentTimeline.value.length === 0) return
+const clearSentimentChart = () => {
+  sentimentResizeObserver?.disconnect()
+  sentimentResizeObserver = null
+  sentimentInstance?.dispose()
+  sentimentInstance = null
+}
 
-  if (sentimentInstance) {
-    sentimentInstance.dispose()
-    sentimentResizeObserver?.disconnect()
-  }
+const renderSentimentChart = () => {
+  clearSentimentChart()
+  if (!sentimentChartRef.value || sentimentTimeline.value.length === 0) return
 
   sentimentInstance = echarts.init(sentimentChartRef.value)
 
@@ -643,15 +646,8 @@ const handleSearch = async () => {
 
       selectedEpisodeIndex.value = -1
       watchTimeSubtitle.value = '所有剧集总计'
-      // 清空情感时间线前，先销毁旧的情感图表实例和 ResizeObserver，避免内存泄漏和旧数据残留
-      if (typeof sentimentResizeObserver !== 'undefined' && sentimentResizeObserver) {
-        sentimentResizeObserver.disconnect()
-        sentimentResizeObserver = null
-      }
-      if (typeof sentimentInstance !== 'undefined' && sentimentInstance) {
-        sentimentInstance.dispose()
-        sentimentInstance = null
-      }
+      // 清空情感时间线前先销毁旧图表和观察器，避免内存泄漏与旧数据残留
+      clearSentimentChart()
       sentimentTimeline.value = []
 
       // 等待 DOM 更新后渲染所有图表
@@ -670,6 +666,7 @@ const handleSearch = async () => {
       lifecycleData.value = null
       competitiveData.value = null
       watchTimeDistributionData.value = null
+      clearSentimentChart()
       sentimentTimeline.value = []
       stopHourlyFetch()
     }
