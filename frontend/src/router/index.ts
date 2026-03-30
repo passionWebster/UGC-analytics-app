@@ -58,6 +58,12 @@ const router = createRouter({
       name: 'DataScreen',
       component: () => import('@/views/DataScreen.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/report',
+      name: 'Report',
+      component: () => import('@/views/Report.vue'),
+      meta: { requiresAuth: true }
     }
   ]
 })

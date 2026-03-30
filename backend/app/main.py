@@ -4,8 +4,9 @@ FastAPI 应用主入口
 整合所有路由和中间件，启动应用服务
 """
 import time
+import logging
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -81,6 +82,23 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"code": 500, "msg": "服务器内部错误，请稍后重试", "data": None},
     )
 
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """统一处理 HTTPException，避免前端拿到不一致错误结构。"""
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    app_logger.warning(
+        "HTTPException [{method} {path}] status={status} detail={detail}",
+        method=request.method,
+        path=request.url.path,
+        status=exc.status_code,
+        detail=detail,
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": exc.status_code, "msg": detail, "detail": detail, "data": None},
+    )
+
 # 注册路由
 app.include_router(auth.router)
 app.include_router(analytics.router)
@@ -92,6 +110,11 @@ app.include_router(crawler.router)
 @app.on_event("startup")
 async def startup_event():
     """应用启动事件"""
+    # 关闭 uvicorn 默认 access 日志，避免与自定义中间件日志重复输出
+    uvicorn_access_logger = logging.getLogger("uvicorn.access")
+    uvicorn_access_logger.handlers.clear()
+    uvicorn_access_logger.disabled = True
+
     app_logger.info("=" * 60)
     app_logger.info("🚀 {} v{}", settings.app_name, settings.app_version)
     app_logger.info("=" * 60)

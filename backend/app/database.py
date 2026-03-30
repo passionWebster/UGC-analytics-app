@@ -85,12 +85,12 @@ def _add_missing_columns():
         ).fetchall()
         if not table_exists_rows:
             return  # 首次启动：表尚未由 create_all 创建，直接跳过
-        
+
         existing = {
             row[1]
             for row in conn.execute(sa_text("PRAGMA table_info(anime)"))
         }
-        
+
         for col_name, col_type in _NEW_ANIME_COLUMNS:
             if col_name not in existing:
                 try:
