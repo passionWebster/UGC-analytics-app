@@ -1187,8 +1187,12 @@ class BilibiliBangumiCrawler:
                     continue
                 # p 属性格式: 时间,类型,大小,颜色,时间戳,弹幕池,用户ID,弹幕ID
                 parts = attrs.split(',')
-                video_time = float(parts[0]) if parts else 0.0
-                ts_unix = int(parts[4]) if len(parts) > 4 else 0
+                try:
+                    video_time = float(parts[0]) if parts and parts[0] else 0.0
+                    ts_unix = int(parts[4]) if len(parts) > 4 and parts[4] else 0
+                except (TypeError, ValueError):
+                    logger.debug("跳过异常弹幕元数据 cid={} attrs={}", cid, attrs)
+                    continue
                 timestamp = datetime.fromtimestamp(ts_unix) if ts_unix else None
                 danmaku_list.append({
                     'content': text,
