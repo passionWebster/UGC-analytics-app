@@ -1266,6 +1266,7 @@ class BilibiliBangumiCrawler:
         episodes = self.session.exec(
             select(EpisodeStats)
             .where(EpisodeStats.season_id == season_id)
+            .order_by(EpisodeStats.id)
             .limit(max_episodes)
         ).all()
 
