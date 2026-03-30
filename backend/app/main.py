@@ -4,6 +4,7 @@ FastAPI 应用主入口
 整合所有路由和中间件，启动应用服务
 """
 import time
+import logging
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,6 +110,11 @@ app.include_router(crawler.router)
 @app.on_event("startup")
 async def startup_event():
     """应用启动事件"""
+    # 关闭 uvicorn 默认 access 日志，避免与自定义中间件日志重复输出
+    uvicorn_access_logger = logging.getLogger("uvicorn.access")
+    uvicorn_access_logger.handlers.clear()
+    uvicorn_access_logger.disabled = True
+
     app_logger.info("=" * 60)
     app_logger.info("🚀 {} v{}", settings.app_name, settings.app_version)
     app_logger.info("=" * 60)
