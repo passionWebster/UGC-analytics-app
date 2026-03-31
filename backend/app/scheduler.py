@@ -2,15 +2,13 @@
 """
 定时任务调度器
 使用 APScheduler AsyncIOScheduler 实现：
-- 任务 A：每 1 小时刷新最新 50 部番剧的剧集在线人数
-- 任务 B：每月 1 日凌晨 2:00 生成月度数据快照
+- 任务 B：每月 1 日凌晨 2:00 生成月度数据快照并存入 SQLite
+- 任务 C：每天凌晨 3:00 执行 TMDB 数据批量富集
+- 任务 D：每小时第 5 分钟记录剧集在线人数
 """
-import json
-import os
-import time
+import asyncio
 from datetime import datetime
 
-import asyncio
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -18,66 +16,22 @@ from loguru import logger
 from sqlmodel import Session, select
 
 from .database import engine
-from .models import Anime, DailyStats, EpisodeStats
-
-# 项目根目录（backend/app/ 的上上级目录）
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-def _task_a_update_recent_episodes():
-    """
-    任务 A：从数据库中查出最新的 50 部番剧的 season_id，
-    调用 scraper 获取在线观看人数，更新到 EpisodeStats 表中。
-    """
-    from .scraper import BilibiliBangumiCrawler
-
-    logger.info("🔄 [任务 A] 开始刷新最新 50 部番剧的剧集在线人数...")
-    with Session(engine) as session:
-        # 查出最新 50 部番剧（按 updated_at 倒序）
-        recent_animes = session.exec(
-            select(Anime).order_by(Anime.updated_at.desc()).limit(50)
-        ).all()
-
-        if not recent_animes:
-            logger.info("ℹ️ 数据库中暂无番剧记录，跳过任务 A")
-            return
-
-        season_ids = [a.season_id for a in recent_animes]
-
-        # 取出这些番剧对应的所有剧集记录
-        episodes = session.exec(
-            select(EpisodeStats).where(EpisodeStats.season_id.in_(season_ids))
-        ).all()
-
-        if not episodes:
-            logger.info("ℹ️ 未找到对应的剧集记录，跳过任务 A")
-            return
-
-        crawler = BilibiliBangumiCrawler(session)
-        updated = 0
-        for ep in episodes:
-            online = crawler.get_online_viewers(ep.bvid, ep.cid)
-            if online is not None:
-                ep.online_viewers = online
-                ep.updated_at = datetime.now()
-                updated += 1
-            time.sleep(0.2)
-
-        session.commit()
-        logger.success(f"  ✅ 任务 A 完成：共更新 {updated}/{len(episodes)} 条剧集在线人数记录")
+from .models import Anime, DailyStats, MonthlySnapshot
 
 
 def _task_b_monthly_snapshot():
     """
     任务 B：月度快照聚合。
-    统计全量番剧的总追番数和总播放量，生成 JSON 文件保存到 cache 目录。
-    文件命名格式：rank_fetcher_{月份}th.json
+    统计全量番剧的最新追番数和播放量，写入 MonthlySnapshot 表。
+    同一番剧、同一月份若已存在记录则覆盖（upsert）。
     """
     logger.info("🔄 [任务 B] 开始生成月度数据快照...")
+    month = datetime.now().strftime("%Y-%m")
+
     with Session(engine) as session:
         animes = session.exec(select(Anime)).all()
 
-        snapshot = {}
+        upserted = 0
         for anime in animes:
             latest_stats = session.exec(
                 select(DailyStats)
@@ -86,23 +40,41 @@ def _task_b_monthly_snapshot():
                 .limit(1)
             ).first()
 
-            snapshot[str(anime.season_id)] = {
-                "title": anime.title,
-                "favorites": latest_stats.favorites if latest_stats else 0,
-                "views": latest_stats.views if latest_stats else 0,
-            }
+            favorites = latest_stats.favorites if latest_stats else 0
+            views = latest_stats.views if latest_stats else 0
 
-    cache_dir = os.path.join(_BASE_DIR, "cache")
-    os.makedirs(cache_dir, exist_ok=True)
+            # 查询是否已存在本月快照，有则更新，无则插入
+            existing = session.exec(
+                select(MonthlySnapshot)
+                .where(
+                    MonthlySnapshot.season_id == anime.season_id,
+                    MonthlySnapshot.month == month,
+                )
+            ).first()
 
-    month = datetime.now().month
-    filename = f"rank_fetcher_{month}th.json"
-    filepath = os.path.join(cache_dir, filename)
+            if existing:
+                existing.title = anime.title
+                existing.favorites = favorites
+                existing.views = views
+                existing.updated_at = datetime.now()
+                session.add(existing)
+            else:
+                session.add(
+                    MonthlySnapshot(
+                        season_id=anime.season_id,
+                        month=month,
+                        title=anime.title,
+                        favorites=favorites,
+                        views=views,
+                    )
+                )
+            upserted += 1
 
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+        session.commit()
 
-    logger.success(f"✅ 任务 B 完成：月度快照已保存到 {filepath}，共 {len(snapshot)} 条记录")
+    logger.success(
+        f"✅ 任务 B 完成：月度快照（{month}）已存入数据库，共 {upserted} 条记录"
+    )
 
 
 def _task_c_tmdb_enrichment():
@@ -154,15 +126,6 @@ def create_scheduler() -> AsyncIOScheduler:
         }
     )
 
-    # 任务 A：每 1 小时执行一次
-    scheduler.add_job(
-        _task_a_update_recent_episodes,
-        trigger="interval",
-        hours=1,
-        id="task_a_update_recent_episodes",
-        replace_existing=True,
-    )
-
     # 任务 B：每月 1 号凌晨 2:00 执行
     scheduler.add_job(
         _task_b_monthly_snapshot,
@@ -172,6 +135,7 @@ def create_scheduler() -> AsyncIOScheduler:
         minute=0,
         id="task_b_monthly_snapshot",
         replace_existing=True,
+        executor="blocking",
     )
 
     # 任务 C：每天凌晨 3:00 执行 TMDB 富集，自动补全未处理的番剧
@@ -182,6 +146,7 @@ def create_scheduler() -> AsyncIOScheduler:
         minute=0,
         id="task_c_tmdb_enrichment",
         replace_existing=True,
+        executor="blocking",
     )
 
     # 任务 D：每小时第 5 分钟记录剧集在线人数分布
@@ -195,3 +160,4 @@ def create_scheduler() -> AsyncIOScheduler:
     )
 
     return scheduler
+
