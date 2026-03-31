@@ -1150,11 +1150,14 @@ class BilibiliBangumiCrawler:
         wts = int(time.time())
         signed = dict(params)
         signed['wts'] = wts
-        # 字母序排序，过滤特殊字符
+        
+        pattern = r'[!#$&+,/:;=?@\\[\\]]'
+        
         query = '&'.join(
-            f"{k}={re.sub(r'[!#$&+,/:;=?@\\[\\]]', '', str(v))}"
+            f"{k}={re.sub(pattern, '', str(v))}"
             for k, v in sorted(signed.items())
         )
+        
         w_rid = hashlib.md5((query + mixin_key).encode()).hexdigest()
         signed['w_rid'] = w_rid
         return signed
