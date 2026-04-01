@@ -229,7 +229,9 @@ import {
   fetchCrawlerLogs,
   triggerCrawlerUpdate,
   fetchOverview,
-  fetchAiStats
+  fetchAiStats,
+  fetchRecommendationStrategy,
+  updateRecommendationStrategy
 } from '@/api/admin'
 import { useEcharts } from '@/composables/useEcharts'
 
@@ -327,6 +329,8 @@ const overview = reactive<any>({
 const aiStats = reactive<any>({
   ai_enabled: false,
   call_stats: {},
+  by_api_type: [],
+  top_errors: [],
   message: ''
 })
 const loadingOverview = ref(false)
@@ -381,6 +385,39 @@ const loadOverview = async () => {
   }
 }
 
+const strategyForm = reactive({
+  views_weight: 0.35,
+  ai_weight: 0.35,
+  tmdb_weight: 0.2,
+  diversity_weight: 0.1,
+  enabled: true
+})
+const savingStrategy = ref(false)
+
+const loadStrategy = async () => {
+  try {
+    const res = await fetchRecommendationStrategy()
+    if (res.success) {
+      Object.assign(strategyForm, res.data)
+    }
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || '加载推荐策略失败')
+  }
+}
+
+const saveStrategy = async () => {
+  try {
+    savingStrategy.value = true
+    await updateRecommendationStrategy(strategyForm as any)
+    ElMessage.success('推荐策略已更新')
+    await loadStrategy()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || '保存推荐策略失败')
+  } finally {
+    savingStrategy.value = false
+  }
+}
+
 const handleMenuSelect = (key: string) => {
   activeMenu.value = key
   if (key === 'users') {
@@ -388,7 +425,7 @@ const handleMenuSelect = (key: string) => {
   } else if (key === 'crawler') {
     loadCrawler()
   } else {
-    loadOverview()
+    Promise.all([loadOverview(), loadStrategy()])
   }
 }
 

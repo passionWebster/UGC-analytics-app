@@ -5,16 +5,16 @@
 from collections import Counter
 import json
 from typing import List
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
-from sqlalchemy import desc, func
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Query
+from sqlalchemy import desc, func, case
 from sqlmodel import Session, select
 
 from ..auth import get_current_admin_user
 from ..database import get_session, engine
-from ..models import User, CrawlLog, Anime
-from ..schemas import UserStatusUpdate, ResetPasswordRequest
+from ..models import User, CrawlLog, Anime, RecommendationStrategyConfig, AITelemetry
+from ..schemas import UserStatusUpdate, ResetPasswordRequest, RecommendationStrategyUpdate
 from ..scraper import BilibiliBangumiCrawler
 from ..config import settings
 
@@ -110,6 +110,11 @@ def get_crawler_logs(
                 "status": log.status,
                 "items_count": log.items_count,
                 "error_message": log.error_message,
+                "total_scraped": log.total_scraped,
+                "cleaned_filtered": log.cleaned_filtered,
+                "final_inserted": log.final_inserted,
+                "failed_reason": log.failed_reason,
+                "duration": log.duration,
                 "started_at": log.started_at.isoformat(),
                 "completed_at": log.completed_at.isoformat() if log.completed_at else None,
             }
@@ -193,12 +198,70 @@ def admin_overview(
 
 @router.get("/ai/stats", response_model=dict)
 def ai_stats(
+    days: int = Query(default=7, ge=1, le=90),
+    session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
 ):
-    """
-    AI 服务调用监控占位接口。
-    目前未持久化调用量，可按需在 ai_service 中增加埋点。
-    """
+    """AI 服务调用监控接口（基于 ai_telemetry_logs 聚合）。"""
+    end_time = datetime.now()
+    start_time = end_time - timedelta(days=days)
+    logs = session.exec(
+        select(AITelemetry).where(
+            AITelemetry.timestamp >= start_time,
+            AITelemetry.timestamp <= end_time,
+        )
+    ).all()
+
+    call_count = len(logs)
+    latency_values = [item.latency_ms for item in logs if item.latency_ms is not None]
+    avg_latency = round(sum(latency_values) / len(latency_values), 2) if latency_values else None
+    last_error_log = next((item for item in reversed(logs) if not item.is_success and item.error_code), None)
+
+    success_count = sum(1 for item in logs if item.is_success)
+    success_rate = round(success_count / call_count * 100, 2) if call_count else None
+    token_values = [item.token_usage for item in logs if item.token_usage is not None]
+    total_tokens = sum(token_values) if token_values else 0
+
+    by_api_type_rows = session.exec(
+        select(
+            AITelemetry.api_type,
+            func.count(AITelemetry.id).label("count"),
+            func.avg(AITelemetry.latency_ms).label("avg_latency"),
+            func.sum(case((AITelemetry.is_success.is_(True), 1), else_=0)).label("success_count"),
+        )
+        .where(
+            AITelemetry.timestamp >= start_time,
+            AITelemetry.timestamp <= end_time,
+        )
+        .group_by(AITelemetry.api_type)
+    ).all()
+
+    by_api_type = []
+    for api_type, count, avg_latency, success_count in by_api_type_rows:
+        success_rate_item = round(success_count / count * 100, 2) if count else None
+        by_api_type.append({
+            "api_type": api_type,
+            "call_count": count,
+            "avg_latency_ms": round(float(avg_latency), 2) if avg_latency is not None else None,
+            "success_rate": success_rate_item,
+        })
+
+    error_distribution_rows = session.exec(
+        select(AITelemetry.error_code, func.count(AITelemetry.id))
+        .where(
+            AITelemetry.timestamp >= start_time,
+            AITelemetry.timestamp <= end_time,
+            AITelemetry.error_code.is_not(None),
+        )
+        .group_by(AITelemetry.error_code)
+        .order_by(desc(func.count(AITelemetry.id)))
+        .limit(5)
+    ).all()
+    error_distribution = [
+        {"error_code": error_code, "count": count}
+        for error_code, count in error_distribution_rows
+    ]
+
     return {
         "success": True,
         "ai_enabled": bool(settings.doubao_api_key),
@@ -206,8 +269,88 @@ def ai_stats(
             "AI 接口已启用" if settings.doubao_api_key else "未配置 AI API Key，已降级为本地规则"
         ),
         "call_stats": {
-            "call_count": 0,
-            "avg_latency_ms": None,
-            "last_error": None,
+            "call_count": call_count,
+            "avg_latency_ms": avg_latency,
+            "last_error": last_error_log.error_code if last_error_log else None,
+            "success_rate": success_rate,
+            "total_tokens": total_tokens,
+            "period_days": days,
+        },
+        "by_api_type": by_api_type,
+        "top_errors": error_distribution,
+    }
+
+
+@router.get("/recommendation-strategy", response_model=dict)
+def get_recommendation_strategy(
+    session: Session = Depends(get_session),
+    _admin=Depends(get_current_admin_user),
+):
+    """获取当前推荐策略配置。"""
+    strategy = session.exec(
+        select(RecommendationStrategyConfig).order_by(desc(RecommendationStrategyConfig.updated_at)).limit(1)
+    ).first()
+
+    if not strategy:
+        strategy = RecommendationStrategyConfig()
+        session.add(strategy)
+        session.commit()
+        session.refresh(strategy)
+
+    return {
+        "success": True,
+        "data": {
+            "id": strategy.id,
+            "views_weight": strategy.views_weight,
+            "ai_weight": strategy.ai_weight,
+            "tmdb_weight": strategy.tmdb_weight,
+            "diversity_weight": strategy.diversity_weight,
+            "enabled": strategy.enabled,
+            "updated_at": strategy.updated_at.isoformat(),
+        },
+    }
+
+
+@router.put("/recommendation-strategy", response_model=dict)
+def update_recommendation_strategy(
+    payload: RecommendationStrategyUpdate,
+    session: Session = Depends(get_session),
+    _admin=Depends(get_current_admin_user),
+):
+    """更新推荐策略配置。"""
+    total_weight = payload.views_weight + payload.ai_weight + payload.tmdb_weight + payload.diversity_weight
+    if total_weight <= 0:
+        raise HTTPException(status_code=400, detail="权重总和必须大于 0")
+
+    strategy = session.exec(
+        select(RecommendationStrategyConfig).order_by(desc(RecommendationStrategyConfig.updated_at)).limit(1)
+    ).first()
+    if not strategy:
+        strategy = RecommendationStrategyConfig()
+        session.add(strategy)
+        session.flush()
+
+    strategy.views_weight = payload.views_weight
+    strategy.ai_weight = payload.ai_weight
+    strategy.tmdb_weight = payload.tmdb_weight
+    strategy.diversity_weight = payload.diversity_weight
+    strategy.enabled = payload.enabled
+    strategy.updated_at = datetime.now()
+
+    session.add(strategy)
+    session.commit()
+    session.refresh(strategy)
+
+    return {
+        "success": True,
+        "message": "推荐策略已更新",
+        "data": {
+            "id": strategy.id,
+            "views_weight": strategy.views_weight,
+            "ai_weight": strategy.ai_weight,
+            "tmdb_weight": strategy.tmdb_weight,
+            "diversity_weight": strategy.diversity_weight,
+            "enabled": strategy.enabled,
+            "updated_at": strategy.updated_at.isoformat(),
         },
     }

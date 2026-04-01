@@ -213,3 +213,12 @@ class PersonalizedRecommendationsResponse(BaseModel):
     username: str
     preferences: List[str]
     recommendations: List[PersonalizedRecommendationItem]
+
+
+class RecommendationStrategyUpdate(BaseModel):
+    """推荐策略权重更新请求"""
+    views_weight: float = Field(ge=0)
+    ai_weight: float = Field(ge=0)
+    tmdb_weight: float = Field(ge=0)
+    diversity_weight: float = Field(ge=0)
+    enabled: bool = True

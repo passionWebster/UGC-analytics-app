@@ -46,3 +46,26 @@ export const triggerCrawlerUpdate = async (): Promise<any> => {
 export const fetchAiStats = async (): Promise<any> => {
   return apiClient.get('/admin/ai/stats')
 }
+
+export interface RecommendationStrategyConfig {
+  id?: number
+  views_weight: number
+  ai_weight: number
+  tmdb_weight: number
+  diversity_weight: number
+  enabled: boolean
+  updated_at?: string
+}
+
+export const fetchRecommendationStrategy = async (): Promise<{
+  success: boolean
+  data: RecommendationStrategyConfig
+}> => {
+  return apiClient.get('/admin/recommendation-strategy')
+}
+
+export const updateRecommendationStrategy = async (
+  payload: RecommendationStrategyConfig
+): Promise<{ success: boolean; message: string; data: RecommendationStrategyConfig }> => {
+  return apiClient.put('/admin/recommendation-strategy', payload)
+}
