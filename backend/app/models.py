@@ -33,6 +33,8 @@ class User(SQLModel, table=True):
     username: str = Field(unique=True, index=True, max_length=50)
     email: str = Field(unique=True, index=True, max_length=100)
     password: str = Field(max_length=255)  # 实际应用中应该使用哈希密码
+    is_admin: bool = Field(default=False)  # 是否为管理员
+    is_active: bool = Field(default=True)  # 账户是否启用/封禁
     preferences: Optional[str] = Field(default=None, sa_column=Column(JSON))  # JSON 字符串存储偏好
     created_at: datetime = Field(default_factory=datetime.now)
     

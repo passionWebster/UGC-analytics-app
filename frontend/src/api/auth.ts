@@ -26,6 +26,8 @@ export interface LoginResponse {
     id: number
     username: string
     email: string
+    is_admin: boolean
+    is_active: boolean
     preferences: string | null
     created_at: string
   }
@@ -37,6 +39,8 @@ export interface UserInfoResponse {
     id: number
     username: string
     email: string
+    is_admin: boolean
+    is_active: boolean
     preferences: string[]
     created_at: string
   }

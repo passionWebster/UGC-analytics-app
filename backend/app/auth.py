@@ -7,11 +7,13 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from sqlmodel import Session, select
-from fastapi import HTTPException, status
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from .models import User
 from .schemas import UserCreate, UserLogin, UserResponse
 from .config import settings
+from .database import get_session
 
 
 class AuthService:
@@ -115,6 +117,8 @@ class AuthService:
             id=new_user.id,
             username=new_user.username,
             email=new_user.email,
+            is_admin=new_user.is_admin,
+            is_active=new_user.is_active,
             preferences=new_user.preferences,
             created_at=new_user.created_at
         )
@@ -158,9 +162,17 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="用户名或密码错误"
             )
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="账户已被停用，请联系管理员"
+            )
         
         # 创建访问令牌
-        access_token = self.create_access_token(data={"sub": user.username})
+        access_token = self.create_access_token(
+            data={"sub": user.username, "is_admin": user.is_admin}
+        )
         
         # 检查是否有偏好设置
         has_preferences = bool(
@@ -180,6 +192,8 @@ class AuthService:
                 id=user.id,
                 username=user.username,
                 email=user.email,
+                is_admin=user.is_admin,
+                is_active=user.is_active,
                 preferences=user.preferences,
                 created_at=user.created_at
             )
@@ -226,3 +240,59 @@ class AuthService:
         self.session.commit()
         
         return True
+
+
+# ─────────────────────────────────────────────────────────
+# 依赖函数：获取当前登录用户 / 管理员
+# ─────────────────────────────────────────────────────────
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    session: Session = Depends(get_session),
+) -> User:
+    """
+    基于 JWT 的当前用户获取依赖。若 token 无效或用户被禁用则抛出 HTTP 401/403。
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="缺少认证凭证"
+        )
+
+    username = AuthService.verify_token(credentials.credentials)
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效或过期的认证凭证"
+        )
+
+    user = session.exec(select(User).where(User.username == username)).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被停用，请联系管理员"
+        )
+
+    return user
+
+
+def get_current_admin_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    仅管理员可访问的依赖。
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="仅管理员可执行此操作"
+        )
+    return current_user

@@ -83,6 +83,8 @@ def get_user_info(username: str, session: Session = Depends(get_session)):
             "id": user.id,
             "username": user.username,
             "email": user.email,
+            "is_admin": user.is_admin,
+            "is_active": user.is_active,
             "preferences": preferences,
             "created_at": user.created_at.isoformat()
         }

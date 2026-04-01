@@ -26,6 +26,8 @@ class UserResponse(BaseModel):
     id: int
     username: str
     email: str
+    is_admin: bool = False
+    is_active: bool = True
     preferences: Optional[str] = None
     created_at: datetime
 
@@ -37,6 +39,16 @@ class PreferenceUpdate(BaseModel):
     """偏好设置更新模型"""
     username: str
     preferences: List[str]  # 风格偏好列表
+
+
+class UserStatusUpdate(BaseModel):
+    """管理员修改用户状态"""
+    is_active: bool
+
+
+class ResetPasswordRequest(BaseModel):
+    """管理员重置用户密码"""
+    new_password: str = Field(min_length=6, max_length=255)
 
 
 class AnimeResponse(BaseModel):

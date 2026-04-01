@@ -70,6 +70,12 @@ _NEW_ANIME_COLUMNS: list = [
     ("areas_raw", "JSON"),
 ]
 
+# 用户表新增列
+_NEW_USER_COLUMNS: list = [
+    ("is_admin", "BOOLEAN DEFAULT 0"),
+    ("is_active", "BOOLEAN DEFAULT 1"),
+]
+
 
 def _add_missing_columns():
     """
@@ -101,6 +107,22 @@ def _add_missing_columns():
                     logger.info(f"  ✅ 迁移：已向 anime 表添加列 {col_name}")
                 except Exception as exc:
                     logger.warning(f"  ⚠️ 添加列 {col_name} 失败: {exc}")
+
+        # 用户表增量列迁移
+        user_existing = {
+            row[1]
+            for row in conn.execute(sa_text("PRAGMA table_info(users)"))
+        }
+        for col_name, col_type in _NEW_USER_COLUMNS:
+            if col_name not in user_existing:
+                try:
+                    conn.execute(
+                        sa_text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+                    )
+                    conn.commit()
+                    logger.info(f"  ✅ 迁移：已向 users 表添加列 {col_name}")
+                except Exception as exc:
+                    logger.warning(f"  ⚠️ 向 users 表添加列 {col_name} 失败: {exc}")
 
 
 def get_session() -> Generator[Session, None, None]:
