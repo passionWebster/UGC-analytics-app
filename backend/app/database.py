@@ -76,6 +76,15 @@ _NEW_USER_COLUMNS: list = [
     ("is_active", "BOOLEAN DEFAULT 1"),
 ]
 
+# 爬虫日志表新增列
+_NEW_CRAWL_LOG_COLUMNS: list = [
+    ("total_scraped", "INTEGER"),
+    ("cleaned_filtered", "INTEGER"),
+    ("final_inserted", "INTEGER"),
+    ("failed_reason", "VARCHAR(1000)"),
+    ("duration", "REAL"),
+]
+
 
 def _add_missing_columns():
     """
@@ -123,6 +132,22 @@ def _add_missing_columns():
                     logger.info(f"  ✅ 迁移：已向 users 表添加列 {col_name}")
                 except Exception as exc:
                     logger.warning(f"  ⚠️ 向 users 表添加列 {col_name} 失败: {exc}")
+
+        # 爬虫日志表增量列迁移
+        crawl_log_existing = {
+            row[1]
+            for row in conn.execute(sa_text("PRAGMA table_info(crawl_logs)"))
+        }
+        for col_name, col_type in _NEW_CRAWL_LOG_COLUMNS:
+            if col_name not in crawl_log_existing:
+                try:
+                    conn.execute(
+                        sa_text(f"ALTER TABLE crawl_logs ADD COLUMN {col_name} {col_type}")
+                    )
+                    conn.commit()
+                    logger.info(f"  ✅ 迁移：已向 crawl_logs 表添加列 {col_name}")
+                except Exception as exc:
+                    logger.warning(f"  ⚠️ 向 crawl_logs 表添加列 {col_name} 失败: {exc}")
 
 
 def get_session() -> Generator[Session, None, None]:

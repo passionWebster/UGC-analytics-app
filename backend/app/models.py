@@ -158,8 +158,46 @@ class CrawlLog(SQLModel, table=True):
     status: str = Field(max_length=20)  # 状态: "success", "failed", "running"
     items_count: int = Field(default=0)  # 抓取数据条数
     error_message: Optional[str] = Field(default=None, max_length=1000)  # 错误信息
+    total_scraped: Optional[int] = Field(default=None)  # 原始抓取条数
+    cleaned_filtered: Optional[int] = Field(default=None)  # 清洗过滤后条数
+    final_inserted: Optional[int] = Field(default=None)  # 最终入库条数
+    failed_reason: Optional[str] = Field(default=None, max_length=1000)  # 失败原因
+    duration: Optional[float] = Field(default=None)  # 任务耗时（秒）
     started_at: datetime = Field(default_factory=datetime.now)
     completed_at: Optional[datetime] = Field(default=None)
+
+
+class RecommendationStrategyConfig(SQLModel, table=True):
+    """
+    推荐策略配置表
+    用于管理可实时调整的多信号融合权重，并支持启停策略。
+    """
+    __tablename__ = "recommendation_strategy_configs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    views_weight: float = Field(default=0.35)
+    ai_weight: float = Field(default=0.35)
+    tmdb_weight: float = Field(default=0.2)
+    diversity_weight: float = Field(default=0.1)
+    enabled: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class AITelemetry(SQLModel, table=True):
+    """
+    AI 调用遥测表
+    记录 AI 服务调用的稳定性、时延与资源消耗指标。
+    """
+    __tablename__ = "ai_telemetry_logs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    timestamp: datetime = Field(default_factory=datetime.now, index=True)
+    api_type: str = Field(max_length=50, index=True)
+    latency_ms: Optional[int] = Field(default=None)
+    is_success: bool = Field(default=True, index=True)
+    token_usage: Optional[int] = Field(default=None)
+    error_code: Optional[str] = Field(default=None, max_length=100, index=True)
 
 
 class TmdbAnimeInfo(SQLModel, table=True):

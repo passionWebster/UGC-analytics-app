@@ -243,10 +243,11 @@ class BilibiliBangumiCrawler:
         logger.info("🚀 [任务开始] 更新番剧数据库")
         
         # 创建爬虫日志
+        start_time = datetime.now()
         crawl_log = CrawlLog(
             task_type="full_update",
             status="running",
-            started_at=datetime.now()
+            started_at=start_time
         )
         self.session.add(crawl_log)
         self.session.commit()
@@ -261,6 +262,7 @@ class BilibiliBangumiCrawler:
             
             all_animes = {**domestic_animes, **regular_animes}
             logger.info(f"✅ 底库构建完成，共获取 {len(all_animes)} 部番剧")
+            crawl_log.total_scraped = len(all_animes)
             
             # 2. 补充风格信息：遍历风格ID，将匹配的风格追加到底库
             logger.info("🎨 正在补充风格信息（常规番剧）...")
@@ -268,15 +270,18 @@ class BilibiliBangumiCrawler:
             
             logger.info("🎨 正在补充风格信息（国产番剧）...")
             all_animes = self._enrich_domestic_styles(all_animes)
+            crawl_log.cleaned_filtered = len(all_animes)
             
             # 3. 逐部请求番剧详情 API：补充播放量/追番量/地区/完结状态/版权/互动统计等
             logger.info("🔍 正在通过详情 API 补充完整数据（每 50 部自动落库）...")
             all_animes = self._enrich_details(all_animes)
+            crawl_log.final_inserted = len(all_animes)
             
             # 更新爬虫日志
             crawl_log.status = "success"
             crawl_log.items_count = len(all_animes)
             crawl_log.completed_at = datetime.now()
+            crawl_log.duration = (crawl_log.completed_at - start_time).total_seconds()
             self.session.commit()
             
             logger.info(f"🎉 数据库更新成功！共保存 {len(all_animes)} 部番剧")
@@ -286,7 +291,9 @@ class BilibiliBangumiCrawler:
             logger.exception("\n❌ 更新失败")
             crawl_log.status = "failed"
             crawl_log.error_message = str(e)
+            crawl_log.failed_reason = str(e)
             crawl_log.completed_at = datetime.now()
+            crawl_log.duration = (crawl_log.completed_at - start_time).total_seconds()
             self.session.commit()
             return False
     
