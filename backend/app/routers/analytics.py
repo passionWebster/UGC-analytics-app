@@ -827,3 +827,26 @@ def get_personalized_recommendations(
         "total": len(data.get("recommendations", [])),
         "data": data,
     }
+
+
+@router.get(
+    "/users/{username}/recommendations/{season_id}/explanation",
+    response_model=dict,
+    summary="推荐解释详情",
+)
+def get_recommendation_explanation(
+    username: str,
+    season_id: int,
+    session: Session = Depends(get_session),
+):
+    """获取用户对指定番剧的可解释推荐明细。"""
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_recommendation_explanation(username, season_id)
+
+    if data is None:
+        raise HTTPException(status_code=404, detail="用户或番剧不存在")
+
+    return {
+        "success": True,
+        "data": data,
+    }

@@ -14,6 +14,11 @@ export interface AnimeData {
   release_date: string
   views: number
   favorites: number
+  explainability?: {
+    jaccard_similarity: number
+    combo_bonus_score: number
+    reasoning: string
+  }
 }
 
 export interface AnimeListResponse {
@@ -399,4 +404,48 @@ export const getPopularStyleCombinationChart = async (): Promise<{
   data: PopularStyleCombinationItem[]
 }> => {
   return apiClient.get('/analytics/charts/popular-style-combination')
+}
+
+export interface PersonalizedRecommendationsResponse {
+  success: boolean
+  total: number
+  data: {
+    username: string
+    preferences: string[]
+    recommendations: AnimeData[]
+  }
+}
+
+export const getPersonalizedRecommendations = async (
+  username: string
+): Promise<PersonalizedRecommendationsResponse> => {
+  return apiClient.get(`/analytics/users/${username}/recommendations`)
+}
+
+export interface RecommendationExplanationResponse {
+  success: boolean
+  data: {
+    username: string
+    season_id: number
+    title: string
+    match_score: number
+    explainability: {
+      jaccard_similarity: number
+      combo_bonus_score: number
+      views_percentile: number
+      matched_styles: string[]
+      reasoning: string
+    }
+    stats: {
+      views: number
+      favorites: number
+    }
+  }
+}
+
+export const getRecommendationExplanation = async (
+  username: string,
+  seasonId: number
+): Promise<RecommendationExplanationResponse> => {
+  return apiClient.get(`/analytics/users/${username}/recommendations/${seasonId}/explanation`)
 }

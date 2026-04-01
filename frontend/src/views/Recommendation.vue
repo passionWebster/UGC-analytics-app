@@ -141,6 +141,20 @@
                   </p>
                 </div>
 
+                <div v-if="selectedExplanation" class="explainability-box">
+                  <h5>推荐解释</h5>
+                  <p class="explain-reason">{{ selectedExplanation.explainability.reasoning }}</p>
+                  <div class="explain-metrics">
+                    <span>匹配分：{{ selectedExplanation.match_score.toFixed(2) }}</span>
+                    <span>Jaccard：{{ selectedExplanation.explainability.jaccard_similarity.toFixed(2) }}</span>
+                    <span>组合奖励：{{ selectedExplanation.explainability.combo_bonus_score.toFixed(2) }}</span>
+                    <span>热度分位：{{ (selectedExplanation.explainability.views_percentile * 100).toFixed(1) }}%</span>
+                  </div>
+                  <div v-if="selectedExplanation.explainability.matched_styles?.length" class="matched-styles">
+                    匹配风格：{{ selectedExplanation.explainability.matched_styles.join('、') }}
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>
@@ -153,7 +167,15 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
-import { getRankings, getAnimeDetail, type AnimeData, type AnimeDetailData } from '@/api/analytics'
+import {
+  getRankings,
+  getAnimeDetail,
+  getPersonalizedRecommendations,
+  getRecommendationExplanation,
+  type RecommendationExplanationResponse,
+  type AnimeData,
+  type AnimeDetailData
+} from '@/api/analytics'
 import { getProxiedImageUrl, getProxiedUrl } from '@/utils/imageProxy'
 import { useAuthStore } from '@/stores/auth'
 
@@ -181,6 +203,7 @@ const selectedDetail = ref<AnimeDetailData | null>(null)
 const logoError = ref(false)
 // 海报降级标记（TMDB 海报失败时回退到 B站封面）
 const posterFallback = ref(false)
+const selectedExplanation = ref<RecommendationExplanationResponse['data'] | null>(null)
 
 let scrollObserver: IntersectionObserver | null = null
 
@@ -251,15 +274,22 @@ const selectAnime = async (anime: AnimeData) => {
   detailLoading.value = true
   selectedAnime.value = anime
   selectedDetail.value = null
+  selectedExplanation.value = null
   logoError.value = false
   posterFallback.value = false
   try {
-    const resp = await getAnimeDetail(anime.season_id)
+    const detailPromise = getAnimeDetail(anime.season_id)
+    const explainPromise = authStore.username
+      ? getRecommendationExplanation(authStore.username, anime.season_id)
+      : Promise.resolve(null)
+
+    const [resp, explainResp] = await Promise.all([detailPromise, explainPromise])
     // 如果期间发起了新的详情请求，则丢弃本次结果
     if (currentToken !== detailRequestToken) {
       return
     }
     selectedDetail.value = resp.data
+    selectedExplanation.value = explainResp?.data || null
   } catch (error) {
     // 如果期间发起了新的详情请求，则不覆盖最新错误/数据状态
     if (currentToken !== detailRequestToken) {
@@ -293,18 +323,24 @@ const loadRecommendations = async () => {
     visibleCount.value = PAGE_SIZE
     selectedAnime.value = null
     selectedDetail.value = null
+    selectedExplanation.value = null
 
-    let sortBy = currentSort.value
-    if (sortBy === 'followers') sortBy = 'favorites'
-    if (sortBy === 'score') sortBy = 'rating'
+    if (authStore.username) {
+      const response = await getPersonalizedRecommendations(authStore.username)
+      allAnimes.value = response.data?.recommendations || []
+    } else {
+      let sortBy = currentSort.value
+      if (sortBy === 'followers') sortBy = 'favorites'
+      if (sortBy === 'score') sortBy = 'rating'
 
-    const stylesFilter =
-      showPreferencesTooltip.value && authStore.preferences.length > 0
-        ? authStore.preferences.join(',')
-        : undefined
+      const stylesFilter =
+        showPreferencesTooltip.value && authStore.preferences.length > 0
+          ? authStore.preferences.join(',')
+          : undefined
 
-    const response = await getRankings(sortBy, BATCH_SIZE, undefined, stylesFilter)
-    allAnimes.value = response.list || []
+      const response = await getRankings(sortBy, BATCH_SIZE, undefined, stylesFilter)
+      allAnimes.value = response.list || []
+    }
   } catch (error) {
     console.error('加载推荐失败:', error)
   } finally {
@@ -711,6 +747,40 @@ onUnmounted(() => {
 .overview-empty {
   color: #bbb;
   font-style: italic;
+}
+
+.explainability-box {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.explainability-box h5 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.explain-reason {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.explain-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.matched-styles {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #111827;
 }
 
 /* ── 动画 ──────────────────────────────────── */

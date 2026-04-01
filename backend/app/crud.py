@@ -20,6 +20,88 @@ class AnalyticsService:
     
     def __init__(self, session: Session):
         self.session = session
+
+    def _build_recommendation_items(
+        self,
+        user_prefs_set: set[str],
+        animes: List[Anime],
+        target_season_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """构建推荐结果（未截断）。"""
+        global_combo_counts: Dict[str, int] = {}
+        for anime in animes:
+            if not anime.styles:
+                continue
+            styles = json.loads(anime.styles)
+            for s1, s2 in combinations(sorted(styles), 2):
+                key = f"{s1}+{s2}"
+                global_combo_counts[key] = global_combo_counts.get(key, 0) + 1
+
+        max_combo_count = max(global_combo_counts.values(), default=1)
+        recommendations: List[Dict[str, Any]] = []
+
+        for anime in animes:
+            latest_stats = self.session.exec(
+                select(DailyStats)
+                .where(DailyStats.season_id == anime.season_id)
+                .order_by(desc(DailyStats.date))
+                .limit(1)
+            ).first()
+            views = latest_stats.views if latest_stats else 0
+            favorites = latest_stats.favorites if latest_stats else 0
+            anime_styles = set(json.loads(anime.styles)) if anime.styles else set()
+
+            if not user_prefs_set:
+                match_score = min(
+                    100.0,
+                    (favorites / 1_000_000 * 50) + (views / 10_000_000 * 50)
+                )
+                explainability = {
+                    'jaccard_similarity': 0.0,
+                    'combo_bonus_score': 0.0,
+                    'reasoning': "用户未设置偏好，按全站热度推荐",
+                }
+            else:
+                intersection = len(user_prefs_set & anime_styles)
+                union = len(user_prefs_set | anime_styles)
+                jaccard = intersection / union if union else 0.0
+
+                raw_combo_bonus = 0.0
+                user_style_list = sorted(user_prefs_set)
+                for s1, s2 in combinations(user_style_list, 2):
+                    key = f"{s1}+{s2}"
+                    if key in global_combo_counts:
+                        raw_combo_bonus += global_combo_counts[key] / max_combo_count
+                combo_bonus = min(1.0, raw_combo_bonus)
+
+                match_score = min(100.0, jaccard * 80.0 + combo_bonus * 20.0)
+                explainability = {
+                    'jaccard_similarity': round(jaccard, 4),
+                    'combo_bonus_score': round(combo_bonus, 4),
+                    'reasoning': (
+                        f"匹配风格 {len(user_prefs_set & anime_styles)} 个，"
+                        f"Jaccard={jaccard:.2f}，组合奖励={combo_bonus:.2f}"
+                    ),
+                }
+
+            item = {
+                'season_id': anime.season_id,
+                'title': anime.title,
+                'cover': anime.cover,
+                'area': anime.area,
+                'rating': anime.rating,
+                'styles': sorted(anime_styles),
+                'match_score': round(match_score, 2),
+                'views': views,
+                'favorites': favorites,
+                'explainability': explainability,
+            }
+            if target_season_id is None or anime.season_id == target_season_id:
+                recommendations.append(item)
+
+        if target_season_id is None:
+            recommendations.sort(key=lambda x: (x['match_score'], x['favorites']), reverse=True)
+        return recommendations
     
     def get_all_animes(self, limit: Optional[int] = None, offset: int = 0) -> List[Dict]:
         """
@@ -1179,75 +1261,63 @@ class AnalyticsService:
         user_prefs_set = set(user_prefs)
 
         animes = self.session.exec(select(Anime)).all()
-
-        # 统计全局热门风格两两组合（用于奖励分计算）
-        global_combo_counts: Dict[str, int] = {}
-        for anime in animes:
-            if not anime.styles:
-                continue
-            styles = json.loads(anime.styles)
-            for s1, s2 in combinations(sorted(styles), 2):
-                key = f"{s1}+{s2}"
-                global_combo_counts[key] = global_combo_counts.get(key, 0) + 1
-
-        # 全局最大组合出现次数（用于归一化）
-        max_combo_count = max(global_combo_counts.values(), default=1)
-
-        recommendations = []
-
-        for anime in animes:
-            latest_stats = self.session.exec(
-                select(DailyStats)
-                .where(DailyStats.season_id == anime.season_id)
-                .order_by(desc(DailyStats.date))
-                .limit(1)
-            ).first()
-            views = latest_stats.views if latest_stats else 0
-            favorites = latest_stats.favorites if latest_stats else 0
-
-            anime_styles = set(json.loads(anime.styles)) if anime.styles else set()
-
-            if not user_prefs_set:
-                # 无偏好时：纯热度分（播放量+追番数各占50%，上限100分）
-                match_score = min(
-                    100.0,
-                    (favorites / 1_000_000 * 50) + (views / 10_000_000 * 50)
-                )
-            else:
-                # Jaccard 相似度（基础分，权重80）
-                intersection = len(user_prefs_set & anime_styles)
-                union = len(user_prefs_set | anime_styles)
-                jaccard = intersection / union if union else 0.0
-
-                # 用户偏好风格组合在全局中的热度奖励（归一化到0~1，再乘以权重20）
-                raw_combo_bonus = 0.0
-                user_style_list = sorted(user_prefs_set)
-                for s1, s2 in combinations(user_style_list, 2):
-                    key = f"{s1}+{s2}"
-                    if key in global_combo_counts:
-                        raw_combo_bonus += global_combo_counts[key] / max_combo_count
-                # 整体奖励分上限为1.0，确保权重分配不超过文档所述的20%
-                combo_bonus = min(1.0, raw_combo_bonus)
-
-                match_score = min(100.0, jaccard * 80.0 + combo_bonus * 20.0)
-
-            recommendations.append({
-                'season_id': anime.season_id,
-                'title': anime.title,
-                'cover': anime.cover,
-                'area': anime.area,
-                'rating': anime.rating,
-                'styles': sorted(anime_styles),
-                'match_score': round(match_score, 2),
-                'views': views,
-                'favorites': favorites,
-            })
-
-        # 按匹配度降序，相同匹配度时以追番数降序作为次级排序
-        recommendations.sort(key=lambda x: (x['match_score'], x['favorites']), reverse=True)
+        recommendations = self._build_recommendation_items(user_prefs_set, animes)
 
         return {
             'username': username,
             'preferences': user_prefs,
             'recommendations': recommendations[:50],
+        }
+
+    def get_recommendation_explanation(self, username: str, season_id: int) -> Optional[Dict]:
+        """
+        获取用户对指定番剧的推荐解释（可解释推荐拆解）。
+
+        Args:
+            username: 用户名
+            season_id: 番剧 ID
+
+        Returns:
+            推荐解释字典；用户或番剧不存在时返回 None
+        """
+        from .models import User
+
+        user = self.session.exec(
+            select(User).where(User.username == username)
+        ).first()
+        if not user:
+            return None
+
+        user_prefs = json.loads(user.preferences) if user.preferences else []
+        user_prefs_set = set(user_prefs)
+        animes = self.session.exec(select(Anime)).all()
+        recommendations = self._build_recommendation_items(
+            user_prefs_set,
+            animes,
+            target_season_id=season_id,
+        )
+        target = next((item for item in recommendations if item["season_id"] == season_id), None)
+        if not target:
+            return None
+
+        all_views = [item["views"] for item in recommendations]
+        lower_or_equal = sum(1 for v in all_views if v <= target["views"])
+        views_percentile = (lower_or_equal / len(all_views)) if all_views else 0.0
+
+        return {
+            "username": username,
+            "season_id": season_id,
+            "title": target["title"],
+            "match_score": target["match_score"],
+            "explainability": {
+                "jaccard_similarity": target["explainability"]["jaccard_similarity"],
+                "combo_bonus_score": target["explainability"]["combo_bonus_score"],
+                "views_percentile": round(views_percentile, 4),
+                "matched_styles": sorted(list(user_prefs_set & set(target["styles"]))),
+                "reasoning": target["explainability"]["reasoning"],
+            },
+            "stats": {
+                "views": target["views"],
+                "favorites": target["favorites"],
+            },
         }
