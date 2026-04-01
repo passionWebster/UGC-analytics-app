@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from sqlmodel import Session, select, func, and_
 from sqlalchemy import desc
 
-from .models import Anime, DailyStats, EpisodeStats, Ranking, TmdbAnimeInfo
+from .models import Anime, DailyStats, EpisodeStats, Ranking, TmdbAnimeInfo, RecommendationStrategyConfig
 
 
 class AnalyticsService:
@@ -20,6 +20,27 @@ class AnalyticsService:
     
     def __init__(self, session: Session):
         self.session = session
+
+    def _get_recommendation_strategy(self) -> Dict[str, Any]:
+        """获取推荐策略配置；无配置时返回默认值。"""
+        strategy = self.session.exec(
+            select(RecommendationStrategyConfig).order_by(desc(RecommendationStrategyConfig.updated_at)).limit(1)
+        ).first()
+        if not strategy:
+            return {
+                "enabled": False,
+                "views_weight": 0.35,
+                "ai_weight": 0.35,
+                "tmdb_weight": 0.2,
+                "diversity_weight": 0.1,
+            }
+        return {
+            "enabled": strategy.enabled,
+            "views_weight": strategy.views_weight,
+            "ai_weight": strategy.ai_weight,
+            "tmdb_weight": strategy.tmdb_weight,
+            "diversity_weight": strategy.diversity_weight,
+        }
 
     def _build_recommendation_items(
         self,
@@ -29,6 +50,14 @@ class AnalyticsService:
     ) -> List[Dict[str, Any]]:
         """构建推荐结果（未截断）。"""
         global_combo_counts: Dict[str, int] = {}
+        strategy = self._get_recommendation_strategy()
+        weight_sum = (
+            strategy["views_weight"]
+            + strategy["ai_weight"]
+            + strategy["tmdb_weight"]
+            + strategy["diversity_weight"]
+        ) or 1.0
+
         for anime in animes:
             if not anime.styles:
                 continue
@@ -50,17 +79,19 @@ class AnalyticsService:
             views = latest_stats.views if latest_stats else 0
             favorites = latest_stats.favorites if latest_stats else 0
             anime_styles = set(json.loads(anime.styles)) if anime.styles else set()
+            jaccard = 0.0
+            combo_bonus = 0.0
+            ai_signal = 0.0
+            diversity_signal = 0.0
+
+            popularity_signal = min(
+                1.0,
+                (favorites / 1_000_000 * 0.5) + (views / 10_000_000 * 0.5)
+            )
+            tmdb_signal = min(1.0, max(0.0, (anime.rating or 0.0) / 10.0))
 
             if not user_prefs_set:
-                match_score = min(
-                    100.0,
-                    (favorites / 1_000_000 * 50) + (views / 10_000_000 * 50)
-                )
-                explainability = {
-                    'jaccard_similarity': 0.0,
-                    'combo_bonus_score': 0.0,
-                    'reasoning': "用户未设置偏好，按全站热度推荐",
-                }
+                pass
             else:
                 intersection = len(user_prefs_set & anime_styles)
                 union = len(user_prefs_set | anime_styles)
@@ -73,16 +104,54 @@ class AnalyticsService:
                     if key in global_combo_counts:
                         raw_combo_bonus += global_combo_counts[key] / max_combo_count
                 combo_bonus = min(1.0, raw_combo_bonus)
+                ai_signal = min(1.0, jaccard * 0.8 + combo_bonus * 0.2)
+                diversity_signal = 1.0 - jaccard
 
-                match_score = min(100.0, jaccard * 80.0 + combo_bonus * 20.0)
-                explainability = {
-                    'jaccard_similarity': round(jaccard, 4),
-                    'combo_bonus_score': round(combo_bonus, 4),
-                    'reasoning': (
+            if strategy["enabled"]:
+                score_0_1 = (
+                    strategy["views_weight"] * popularity_signal
+                    + strategy["ai_weight"] * ai_signal
+                    + strategy["tmdb_weight"] * tmdb_signal
+                    + strategy["diversity_weight"] * diversity_signal
+                ) / weight_sum
+                match_score = min(100.0, max(0.0, score_0_1 * 100.0))
+                reasoning = (
+                    f"策略加权(views/ai/tmdb/diversity)="
+                    f"{strategy['views_weight']:.2f}/{strategy['ai_weight']:.2f}/"
+                    f"{strategy['tmdb_weight']:.2f}/{strategy['diversity_weight']:.2f}"
+                )
+            else:
+                if not user_prefs_set:
+                    match_score = min(
+                        100.0,
+                        (favorites / 1_000_000 * 50) + (views / 10_000_000 * 50)
+                    )
+                    reasoning = "用户未设置偏好，按全站热度推荐"
+                else:
+                    match_score = min(100.0, jaccard * 80.0 + combo_bonus * 20.0)
+                    reasoning = (
                         f"匹配风格 {len(user_prefs_set & anime_styles)} 个，"
                         f"Jaccard={jaccard:.2f}，组合奖励={combo_bonus:.2f}"
-                    ),
-                }
+                    )
+
+            explainability = {
+                'jaccard_similarity': round(jaccard, 4),
+                'combo_bonus_score': round(combo_bonus, 4),
+                'reasoning': reasoning,
+                'strategy_enabled': strategy["enabled"],
+                'strategy_weights': {
+                    'views_weight': strategy["views_weight"],
+                    'ai_weight': strategy["ai_weight"],
+                    'tmdb_weight': strategy["tmdb_weight"],
+                    'diversity_weight': strategy["diversity_weight"],
+                },
+                'component_scores': {
+                    'views_signal': round(popularity_signal, 4),
+                    'ai_signal': round(ai_signal, 4),
+                    'tmdb_signal': round(tmdb_signal, 4),
+                    'diversity_signal': round(diversity_signal, 4),
+                },
+            }
 
             item = {
                 'season_id': anime.season_id,
@@ -1291,16 +1360,12 @@ class AnalyticsService:
         user_prefs = json.loads(user.preferences) if user.preferences else []
         user_prefs_set = set(user_prefs)
         animes = self.session.exec(select(Anime)).all()
-        recommendations = self._build_recommendation_items(
-            user_prefs_set,
-            animes,
-            target_season_id=season_id,
-        )
-        target = next((item for item in recommendations if item["season_id"] == season_id), None)
+        all_items = self._build_recommendation_items(user_prefs_set, animes)
+        target = next((item for item in all_items if item["season_id"] == season_id), None)
         if not target:
             return None
 
-        all_views = [item["views"] for item in recommendations]
+        all_views = [item["views"] for item in all_items]
         lower_or_equal = sum(1 for v in all_views if v <= target["views"])
         views_percentile = (lower_or_equal / len(all_views)) if all_views else 0.0
 
