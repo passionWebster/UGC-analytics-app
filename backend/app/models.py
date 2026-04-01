@@ -10,6 +10,7 @@
 from datetime import datetime
 from typing import Optional, List
 from sqlmodel import SQLModel, Field, Relationship, Column, JSON
+from sqlalchemy import UniqueConstraint
 from enum import Enum
 
 
@@ -194,6 +195,26 @@ class TmdbAnimeInfo(SQLModel, table=True):
 
     # 反向关系：关联到 Anime 主表
     anime: Optional["Anime"] = Relationship(back_populates="tmdb_info")
+
+
+class MonthlySnapshot(SQLModel, table=True):
+    """
+    月度快照表 - 存储每月月初汇总的番剧追番数与播放量数据
+    替代原 cache/rank_fetcher_{月份}th.json 文件存储方案
+    """
+    __tablename__ = "monthly_snapshots"
+    __table_args__ = (
+        UniqueConstraint("season_id", "month", name="uq_monthly_snapshot_season_month"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    season_id: int = Field(foreign_key="anime.season_id", index=True)  # 关联番剧
+    month: str = Field(max_length=7, index=True)  # 快照月份，格式 "YYYY-MM"
+    title: str = Field(max_length=255)  # 番剧标题（冗余存储，方便查询）
+    favorites: int = Field(default=0)  # 当月最新追番数
+    views: int = Field(default=0)  # 当月最新播放量
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)  # 最近更新时间
 
 
 class DanmuRecord(SQLModel, table=True):
