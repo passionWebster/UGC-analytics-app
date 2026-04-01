@@ -143,10 +143,10 @@ def admin_overview(
     """运营/监控大盘"""
     total_users = session.exec(select(func.count()).select_from(User)).one()
     active_users = session.exec(
-        select(func.count()).select_from(User).where(User.is_active == True)  # noqa: E712
+        select(func.count()).select_from(User).where(User.is_active.is_(True))
     ).one()
     admin_users = session.exec(
-        select(func.count()).select_from(User).where(User.is_admin == True)  # noqa: E712
+        select(func.count()).select_from(User).where(User.is_admin.is_(True))
     ).one()
     total_anime = session.exec(select(func.count()).select_from(Anime)).one()
 

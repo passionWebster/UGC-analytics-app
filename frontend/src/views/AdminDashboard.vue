@@ -266,12 +266,12 @@ const toggleUser = async (row: AdminUser) => {
 
 const resetPassword = async (row: AdminUser) => {
   try {
-    const result = await ElMessageBox.prompt('请输入新密码', `重置密码：${row.username}`, {
+    const result = await ElMessageBox.prompt('请输入新密码（至少8位，需包含字母和数字）', `重置密码：${row.username}`, {
       confirmButtonText: '确认',
       cancelButtonText: '取消',
       inputType: 'password',
-      inputPattern: /^.{6,}$/,
-      inputErrorMessage: '密码长度至少 6 位'
+      inputPattern: /^(?=.*[A-Za-z])(?=.*\d).{8,}$/,
+      inputErrorMessage: '需包含字母和数字，长度至少 8 位'
     })
     const newPassword = (result as any).value as string
     await resetUserPassword(row.id, newPassword)
