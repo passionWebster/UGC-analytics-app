@@ -435,6 +435,19 @@ export interface RecommendationExplanationResponse {
       views_percentile: number
       matched_styles: string[]
       reasoning: string
+      strategy_enabled?: boolean
+      strategy_weights?: {
+        views_weight: number
+        ai_weight: number
+        tmdb_weight: number
+        diversity_weight: number
+      }
+      component_scores?: {
+        views_signal: number
+        ai_signal: number
+        tmdb_signal: number
+        diversity_signal: number
+      }
     }
     stats: {
       views: number

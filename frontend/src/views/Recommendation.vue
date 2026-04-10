@@ -153,6 +153,26 @@
                   <div v-if="selectedExplanation.explainability.matched_styles?.length" class="matched-styles">
                     匹配风格：{{ selectedExplanation.explainability.matched_styles.join('、') }}
                   </div>
+                  <div v-if="selectedExplanation.explainability.strategy_weights" class="strategy-block">
+                    <div class="strategy-title">
+                      策略状态：{{ selectedExplanation.explainability.strategy_enabled ? '已启用' : '未启用' }}
+                    </div>
+                    <div class="explain-metrics">
+                      <span>Views 权重：{{ formatExplainabilityNumber(selectedExplanation.explainability.strategy_weights?.views_weight) }}</span>
+                      <span>AI 权重：{{ formatExplainabilityNumber(selectedExplanation.explainability.strategy_weights?.ai_weight) }}</span>
+                      <span>TMDB 权重：{{ formatExplainabilityNumber(selectedExplanation.explainability.strategy_weights?.tmdb_weight) }}</span>
+                      <span>Diversity 权重：{{ formatExplainabilityNumber(selectedExplanation.explainability.strategy_weights?.diversity_weight) }}</span>
+                    </div>
+                  </div>
+                  <div v-if="selectedExplanation.explainability.component_scores" class="strategy-block">
+                    <div class="strategy-title">分项信号</div>
+                    <div class="explain-metrics">
+                      <span>Views 信号：{{ formatExplainabilityNumber(selectedExplanation.explainability.component_scores?.views_signal) }}</span>
+                      <span>AI 信号：{{ formatExplainabilityNumber(selectedExplanation.explainability.component_scores?.ai_signal) }}</span>
+                      <span>TMDB 信号：{{ formatExplainabilityNumber(selectedExplanation.explainability.component_scores?.tmdb_signal) }}</span>
+                      <span>Diversity 信号：{{ formatExplainabilityNumber(selectedExplanation.explainability.component_scores?.diversity_signal) }}</span>
+                    </div>
+                  </div>
                 </div>
 
               </div>
@@ -384,6 +404,9 @@ const triggerSentinelCheck = () => {
     scrollObserver.observe(sentinel.value)
   }
 }
+
+const formatExplainabilityNumber = (value?: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '--'
 
 onMounted(async () => {
   await loadRecommendations()
@@ -781,6 +804,19 @@ onUnmounted(() => {
   margin-top: 8px;
   font-size: 12px;
   color: #111827;
+}
+
+.strategy-block {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #d1d5db;
+}
+
+.strategy-title {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2937;
 }
 
 /* ── 动画 ──────────────────────────────────── */
