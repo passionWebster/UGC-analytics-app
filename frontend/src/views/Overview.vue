@@ -652,13 +652,17 @@ const closeComboDetail = () => {
 const setYearlyView = (value: YearlyViewValue) => {
   yearlyView.value = value
   renderedTabs.value.delete('yearly')
-  void renderByTab('yearly', true)
+  void renderByTab('yearly', true).catch(error => {
+    console.error('刷新历年趋势失败:', error)
+  })
 }
 
 const setPrefArea = (value: AreaValue) => {
   selectedPrefArea.value = value
   renderedTabs.value.delete('preference')
-  void renderByTab('preference', true)
+  void renderByTab('preference', true).catch(error => {
+    console.error('刷新地区偏好差异失败:', error)
+  })
 }
 
 const resizeTabChart = (tab: OverviewTab) => {
@@ -706,7 +710,11 @@ const switchTab = async (tab: OverviewTab) => {
   if (activeTab.value === tab) return
   activeTab.value = tab
   await nextTick()
-  await renderByTab(tab)
+  try {
+    await renderByTab(tab)
+  } catch (error) {
+    console.error(`切换标签 ${tab} 渲染失败:`, error)
+  }
 }
 
 onMounted(async () => {
