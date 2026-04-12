@@ -8,15 +8,29 @@
     <div class="mb-3">
       <ul class="nav nav-pills overview-tabs" role="tablist">
         <li v-for="tab in tabs" :key="tab.id" class="nav-item">
-          <button class="nav-link" :class="{ active: activeTab === tab.id }" @click="switchTab(tab.id)">
+          <button
+            class="nav-link"
+            :id="`overview-tab-${tab.id}`"
+            role="tab"
+            :aria-selected="activeTab === tab.id"
+            :aria-controls="`overview-panel-${tab.id}`"
+            :class="{ active: activeTab === tab.id }"
+            @click="switchTab(tab.id)"
+          >
             {{ tab.label }}
           </button>
         </li>
       </ul>
     </div>
 
-    <div class="tab-content">
-      <div v-show="activeTab === 'yearly'" class="tab-pane">
+    <div class="tab-content" role="presentation">
+      <div
+        v-show="activeTab === 'yearly'"
+        class="tab-pane"
+        role="tabpanel"
+        id="overview-panel-yearly"
+        aria-labelledby="overview-tab-yearly"
+      >
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>历年上新趋势（季度对比）</h5>
@@ -47,7 +61,13 @@
         </div>
       </div>
 
-      <div v-show="activeTab === 'seasonal'" class="tab-pane">
+      <div
+        v-show="activeTab === 'seasonal'"
+        class="tab-pane"
+        role="tabpanel"
+        id="overview-panel-seasonal"
+        aria-labelledby="overview-tab-seasonal"
+      >
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>题材季节性规律</h5>
@@ -72,7 +92,13 @@
         </div>
       </div>
 
-      <div v-show="activeTab === 'preference'" class="tab-pane">
+      <div
+        v-show="activeTab === 'preference'"
+        class="tab-pane"
+        role="tabpanel"
+        id="overview-panel-preference"
+        aria-labelledby="overview-tab-preference"
+      >
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>地区受众偏好差异</h5>
@@ -107,7 +133,13 @@
         </div>
       </div>
 
-      <div v-show="activeTab === 'category'" class="tab-pane">
+      <div
+        v-show="activeTab === 'category'"
+        class="tab-pane"
+        role="tabpanel"
+        id="overview-panel-category"
+        aria-labelledby="overview-tab-category"
+      >
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>爆款风格组合库（黄金搭档）</h5>
@@ -695,14 +727,14 @@ const getTabStatus = (tab: OverviewTab): LoadState => {
   }
 }
 
-const shouldSkipRender = (tab: OverviewTab, force: boolean): boolean => {
+const canReuseRender = (tab: OverviewTab, force: boolean): boolean => {
   if (force || !renderedTabs.value.has(tab)) return false
   const status = getTabStatus(tab)
   return status === 'success' || status === 'empty'
 }
 
 const renderByTab = async (tab: OverviewTab, force = false) => {
-  if (shouldSkipRender(tab, force)) {
+  if (canReuseRender(tab, force)) {
     resizeTabChart(tab)
     return
   }
@@ -754,6 +786,7 @@ onMounted(async () => {
 <style scoped>
 .overview-view {
   padding: 20px;
+  /* 固定常规图表与组合图容器宽度，避免图表首次渲染时容器尺寸漂移导致布局困惑 */
   --overview-chart-frame-width: 1000px;
   --overview-chart-frame-wide-width: 1080px;
 }
