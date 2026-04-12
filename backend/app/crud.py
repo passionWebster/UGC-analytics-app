@@ -1368,6 +1368,21 @@ class AnalyticsService:
         all_views = [item["views"] for item in all_items]
         lower_or_equal = sum(1 for v in all_views if v <= target["views"])
         views_percentile = (lower_or_equal / len(all_views)) if all_views else 0.0
+        target_explainability = target.get("explainability") or {}
+        strategy_defaults = self._get_recommendation_strategy()
+        strategy_weights = target_explainability.get("strategy_weights") or {
+            "views_weight": strategy_defaults["views_weight"],
+            "ai_weight": strategy_defaults["ai_weight"],
+            "tmdb_weight": strategy_defaults["tmdb_weight"],
+            "diversity_weight": strategy_defaults["diversity_weight"],
+        }
+        component_scores = target_explainability.get("component_scores") or {
+            "views_signal": 0.0,
+            "ai_signal": 0.0,
+            "tmdb_signal": 0.0,
+            "diversity_signal": 0.0,
+        }
+        target_styles = set(target.get("styles") or [])
 
         return {
             "username": username,
@@ -1375,11 +1390,24 @@ class AnalyticsService:
             "title": target["title"],
             "match_score": target["match_score"],
             "explainability": {
-                "jaccard_similarity": target["explainability"]["jaccard_similarity"],
-                "combo_bonus_score": target["explainability"]["combo_bonus_score"],
+                "jaccard_similarity": target_explainability.get("jaccard_similarity", 0.0),
+                "combo_bonus_score": target_explainability.get("combo_bonus_score", 0.0),
                 "views_percentile": round(views_percentile, 4),
-                "matched_styles": sorted(list(user_prefs_set & set(target["styles"]))),
-                "reasoning": target["explainability"]["reasoning"],
+                "matched_styles": sorted(list(user_prefs_set & target_styles)),
+                "reasoning": target_explainability.get("reasoning", "暂无解释信息"),
+                "strategy_enabled": target_explainability.get("strategy_enabled", strategy_defaults["enabled"]),
+                "strategy_weights": {
+                    "views_weight": strategy_weights.get("views_weight", strategy_defaults["views_weight"]),
+                    "ai_weight": strategy_weights.get("ai_weight", strategy_defaults["ai_weight"]),
+                    "tmdb_weight": strategy_weights.get("tmdb_weight", strategy_defaults["tmdb_weight"]),
+                    "diversity_weight": strategy_weights.get("diversity_weight", strategy_defaults["diversity_weight"]),
+                },
+                "component_scores": {
+                    "views_signal": component_scores.get("views_signal", 0.0),
+                    "ai_signal": component_scores.get("ai_signal", 0.0),
+                    "tmdb_signal": component_scores.get("tmdb_signal", 0.0),
+                    "diversity_signal": component_scores.get("diversity_signal", 0.0),
+                },
             },
             "stats": {
                 "views": target["views"],
