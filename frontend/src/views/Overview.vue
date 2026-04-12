@@ -683,7 +683,6 @@ const closeComboDetail = () => {
 
 const setYearlyView = (value: YearlyViewValue) => {
   yearlyView.value = value
-  renderedTabs.value.delete('yearly')
   void renderByTab('yearly', true).catch(error => {
     console.error('刷新历年趋势失败:', error)
   })
@@ -691,7 +690,6 @@ const setYearlyView = (value: YearlyViewValue) => {
 
 const setPrefArea = (value: AreaValue) => {
   selectedPrefArea.value = value
-  renderedTabs.value.delete('preference')
   void renderByTab('preference', true).catch(error => {
     console.error('刷新地区偏好差异失败:', error)
   })
@@ -727,14 +725,14 @@ const getTabStatus = (tab: OverviewTab): LoadState => {
   }
 }
 
-const canReuseRender = (tab: OverviewTab, force: boolean): boolean => {
+const shouldRenderFromCache = (tab: OverviewTab, force: boolean): boolean => {
   if (force || !renderedTabs.value.has(tab)) return false
   const status = getTabStatus(tab)
   return status === 'success' || status === 'empty'
 }
 
 const renderByTab = async (tab: OverviewTab, force = false) => {
-  if (canReuseRender(tab, force)) {
+  if (shouldRenderFromCache(tab, force)) {
     resizeTabChart(tab)
     return
   }
@@ -786,7 +784,7 @@ onMounted(async () => {
 <style scoped>
 .overview-view {
   padding: 20px;
-  /* 固定常规图表与组合图容器宽度，避免图表首次渲染时容器尺寸漂移导致布局抖动 */
+  /* 1000px 适配常规分析图（趋势/热力/偏好），1080px 预留给组合图与右侧下钻面板，减少 CLS */
   --overview-chart-frame-width: 1000px;
   --overview-chart-frame-wide-width: 1080px;
 }
