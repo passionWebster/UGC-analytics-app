@@ -68,14 +68,34 @@ class AnalyticsService:
 
         max_combo_count = max(global_combo_counts.values(), default=1)
         recommendations: List[Dict[str, Any]] = []
+        season_ids = list({anime.season_id for anime in animes if anime.season_id is not None})
+        latest_stats_by_season: Dict[int, DailyStats] = {}
+        if season_ids:
+            latest_dates_subquery = (
+                select(
+                    DailyStats.season_id.label("season_id"),
+                    func.max(DailyStats.date).label("max_date"),
+                )
+                .where(DailyStats.season_id.in_(season_ids))
+                .group_by(DailyStats.season_id)
+            ).subquery()
+            latest_stats_rows = self.session.exec(
+                select(DailyStats).join(
+                    latest_dates_subquery,
+                    and_(
+                        DailyStats.season_id == latest_dates_subquery.c.season_id,
+                        DailyStats.date == latest_dates_subquery.c.max_date,
+                    ),
+                )
+            ).all()
+            latest_stats_by_season = {
+                stats.season_id: stats
+                for stats in latest_stats_rows
+                if stats.season_id is not None
+            }
 
         for anime in animes:
-            latest_stats = self.session.exec(
-                select(DailyStats)
-                .where(DailyStats.season_id == anime.season_id)
-                .order_by(desc(DailyStats.date))
-                .limit(1)
-            ).first()
+            latest_stats = latest_stats_by_season.get(anime.season_id)
             views = latest_stats.views if latest_stats else 0
             favorites = latest_stats.favorites if latest_stats else 0
             anime_styles = set(json.loads(anime.styles)) if anime.styles else set()
@@ -160,6 +180,7 @@ class AnalyticsService:
                 'area': anime.area,
                 'rating': anime.rating,
                 'styles': sorted(anime_styles),
+                'release_date': anime.release_date or '',
                 'match_score': round(match_score, 2),
                 'views': views,
                 'favorites': favorites,

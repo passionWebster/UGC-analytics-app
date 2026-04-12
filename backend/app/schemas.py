@@ -48,7 +48,11 @@ class UserStatusUpdate(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     """管理员重置用户密码"""
-    new_password: str = Field(min_length=6, max_length=255)
+    new_password: str = Field(
+        min_length=8,
+        max_length=255,
+        pattern=r"^(?=.*[A-Za-z])(?=.*\d).+$",
+    )
 
 
 class AnimeResponse(BaseModel):
@@ -203,6 +207,7 @@ class PersonalizedRecommendationItem(BaseModel):
     area: str
     rating: Optional[float]
     styles: List[str]
+    release_date: Optional[str] = None
     match_score: float  # 双向匹配度（0-100）
     views: int
     favorites: int
@@ -217,8 +222,8 @@ class PersonalizedRecommendationsResponse(BaseModel):
 
 class RecommendationStrategyUpdate(BaseModel):
     """推荐策略权重更新请求"""
-    views_weight: float = Field(ge=0)
-    ai_weight: float = Field(ge=0)
-    tmdb_weight: float = Field(ge=0)
-    diversity_weight: float = Field(ge=0)
+    views_weight: float = Field(ge=0, le=1)
+    ai_weight: float = Field(ge=0, le=1)
+    tmdb_weight: float = Field(ge=0, le=1)
+    diversity_weight: float = Field(ge=0, le=1)
     enabled: bool = True

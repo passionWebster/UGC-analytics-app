@@ -412,7 +412,38 @@ export interface PersonalizedRecommendationsResponse {
   data: {
     username: string
     preferences: string[]
-    recommendations: AnimeData[]
+    recommendations: PersonalizedRecommendationItem[]
+  }
+}
+
+export interface PersonalizedRecommendationItem {
+  season_id: number
+  title: string
+  cover: string
+  area: string
+  rating: number | null
+  styles: string[]
+  release_date: string
+  views: number
+  favorites: number
+  match_score: number
+  explainability?: {
+    jaccard_similarity: number
+    combo_bonus_score: number
+    reasoning: string
+    strategy_enabled?: boolean
+    strategy_weights?: {
+      views_weight: number
+      ai_weight: number
+      tmdb_weight: number
+      diversity_weight: number
+    }
+    component_scores?: {
+      views_signal: number
+      ai_signal: number
+      tmdb_signal: number
+      diversity_signal: number
+    }
   }
 }
 
