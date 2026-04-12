@@ -1,7 +1,7 @@
 <template>
   <div class="overview-view">
     <div class="page-header mb-4">
-      <h3 class="fw-bold text-gray-800 mb-1">深度市场洞察</h3>
+      <h3 class="fw-bold text-dark mb-1">深度市场洞察</h3>
       <p class="text-muted mb-0">聚焦趋势演进、受众差异与题材组合的结构化分析</p>
     </div>
 
@@ -156,11 +156,12 @@ const yearlyOptions = [
   { value: 'china', label: '国产' },
   { value: 'japan', label: '日本' },
   { value: 'us', label: '美国' },
-]
+] as const
+type YearlyViewValue = (typeof yearlyOptions)[number]['value']
 
 const prefAreaOptions: AreaValue[] = [...AREA_VALUES]
 
-const yearlyView = ref('all')
+const yearlyView = ref<YearlyViewValue>('all')
 const selectedPrefArea = ref<AreaValue>('国内')
 const yearlyStatus = ref<LoadState>('idle')
 const seasonalStatus = ref<LoadState>('idle')
@@ -285,7 +286,7 @@ const renderYearlyChart = async () => {
 
   try {
     const yearlyData = await getYearlyQuantityChart(yearlyView.value)
-    const xData = ['春季(1-3月)', '夏季(4-6月)', '秋季(7-9月)', '冬季(10-12月)']
+    const xData = ['冬季(1-3月)', '春季(4-6月)', '夏季(7-9月)', '秋季(10-12月)']
     const legendData = Object.keys(yearlyData).sort((a, b) => Number(b) - Number(a))
 
     if (!legendData.length) {
@@ -606,7 +607,7 @@ const closeComboDetail = () => {
   setCategoryOption({ series: [{ silent: false }] })
 }
 
-const setYearlyView = (value: string) => {
+const setYearlyView = (value: YearlyViewValue) => {
   yearlyView.value = value
   void renderYearlyChart()
 }

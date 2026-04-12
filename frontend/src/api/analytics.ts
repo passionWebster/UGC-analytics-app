@@ -7,6 +7,10 @@ import apiClient from './axios'
 export const AREA_VALUES = ['国内', '日本', '美国'] as const
 export type AreaValue = typeof AREA_VALUES[number]
 
+/**
+ * 季节枚举值（后端约定）：
+ * spring=4-6月, summer=7-9月, autumn=10-12月, winter=1-3月
+ */
 export const SEASON_VALUES = ['spring', 'summer', 'autumn', 'winter'] as const
 export type SeasonValue = typeof SEASON_VALUES[number]
 

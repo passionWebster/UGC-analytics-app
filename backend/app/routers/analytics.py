@@ -54,6 +54,7 @@ _ALLOWED_IMAGE_HOSTS = {
     "image.tmdb.org",
 }
 
+# 仅允许中文、ASCII 单词字符和少量常见分隔符，长度限制 1~30
 _VALID_CATEGORY_PATTERN = re.compile(r"^[\w\u4e00-\u9fff·、&+\-/]{1,30}$")
 
 
@@ -80,7 +81,10 @@ def _validate_category_value(category: Optional[str]) -> Optional[str]:
     if not category:
         return None
     if not _VALID_CATEGORY_PATTERN.fullmatch(category):
-        raise HTTPException(status_code=400, detail="非法的 category 参数")
+        raise HTTPException(
+            status_code=400,
+            detail="非法的 category 参数，仅允许中文/字母数字/下划线及 ·、&+-/，且长度为 1~30",
+        )
     return category
 
 
@@ -95,7 +99,8 @@ def _parse_areas_param(areas: Optional[str]) -> Optional[List[str]]:
         return None
     allowed_values = {item.value for item in AreaEnum}
     if any(item not in allowed_values for item in items):
-        raise HTTPException(status_code=400, detail="非法的 areas 参数")
+        allowed_text = "、".join(sorted(allowed_values))
+        raise HTTPException(status_code=400, detail=f"非法的 areas 参数，仅允许：{allowed_text}")
     return items
 
 
