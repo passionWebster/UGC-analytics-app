@@ -786,14 +786,17 @@ onMounted(async () => {
   /* 1000px 适配常规分析图（趋势/热力/偏好），1080px 预留给组合图与右侧下钻面板，减少 CLS */
   --overview-chart-frame-width: 1000px;
   --overview-chart-frame-wide-width: 1080px;
+  --overview-header-gap: 0.9rem;
+  --overview-header-padding-y: 0.95rem;
+  --overview-header-padding-x: 1.1rem;
 }
 
 .overview-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.9rem;
-  padding: 0.95rem 1.1rem;
+  gap: var(--overview-header-gap);
+  padding: var(--overview-header-padding-y) var(--overview-header-padding-x);
   border-radius: 12px;
   background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.06);
