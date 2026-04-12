@@ -23,7 +23,7 @@
       </ul>
     </div>
 
-    <div class="tab-content" role="presentation">
+    <div class="tab-content">
       <div
         v-show="activeTab === 'yearly'"
         class="tab-pane"
@@ -786,7 +786,7 @@ onMounted(async () => {
 <style scoped>
 .overview-view {
   padding: 20px;
-  /* 固定常规图表与组合图容器宽度，避免图表首次渲染时容器尺寸漂移导致布局困惑 */
+  /* 固定常规图表与组合图容器宽度，避免图表首次渲染时容器尺寸漂移导致布局抖动 */
   --overview-chart-frame-width: 1000px;
   --overview-chart-frame-wide-width: 1080px;
 }
