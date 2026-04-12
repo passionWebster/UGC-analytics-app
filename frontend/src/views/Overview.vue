@@ -192,7 +192,6 @@ const tabs: Array<{ id: OverviewTab; label: string }> = [
 ]
 const activeTab = ref<OverviewTab>('yearly')
 const renderedTabs = ref(new Set<OverviewTab>())
-const getTabLabel = (tab: OverviewTab): string => tabs.find(item => item.id === tab)?.label ?? tab
 
 const yearlyOptions = [
   { value: 'all', label: '全部地区' },
@@ -696,9 +695,14 @@ const getTabStatus = (tab: OverviewTab): LoadState => {
   }
 }
 
-const renderByTab = async (tab: OverviewTab, force = false) => {
+const shouldSkipRender = (tab: OverviewTab, force: boolean): boolean => {
+  if (force || !renderedTabs.value.has(tab)) return false
   const status = getTabStatus(tab)
-  if (!force && renderedTabs.value.has(tab) && (status === 'success' || status === 'empty')) {
+  return status === 'success' || status === 'empty'
+}
+
+const renderByTab = async (tab: OverviewTab, force = false) => {
+  if (shouldSkipRender(tab, force)) {
     resizeTabChart(tab)
     return
   }
@@ -718,7 +722,8 @@ const renderByTab = async (tab: OverviewTab, force = false) => {
       break
   }
 
-  if (getTabStatus(tab) === 'success' || getTabStatus(tab) === 'empty') {
+  const finalStatus = getTabStatus(tab)
+  if (finalStatus === 'success' || finalStatus === 'empty') {
     renderedTabs.value.add(tab)
   } else {
     renderedTabs.value.delete(tab)
@@ -732,7 +737,8 @@ const switchTab = async (tab: OverviewTab) => {
   try {
     await renderByTab(tab)
   } catch (error) {
-    console.error(`切换标签 ${getTabLabel(tab)} 渲染失败:`, error)
+    const tabLabel = tabs.find(item => item.id === tab)?.label ?? tab
+    console.error(`切换标签 ${tabLabel} 渲染失败:`, error)
   }
 }
 
