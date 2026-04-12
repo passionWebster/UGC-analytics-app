@@ -823,7 +823,6 @@ onMounted(async () => {
 .overview-tabs {
   margin: 0;
   gap: 0.5rem;
-  flex-wrap: nowrap;
 }
 
 .overview-tabs .nav-link {
