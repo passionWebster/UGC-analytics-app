@@ -5,8 +5,8 @@
       <p class="text-muted mb-0">聚焦趋势演进、受众差异与题材组合的结构化分析</p>
     </div>
 
-    <div class="row">
-      <div class="col-12 mb-3">
+    <div class="row mb-4">
+      <div class="col-md-12">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>历年上新趋势（季度对比）</h5>
@@ -22,21 +22,23 @@
               </button>
             </div>
           </div>
-          <div class="chart-wrapper position-relative">
+          <div class="chart-wrapper chart-wrapper--420 position-relative">
             <div v-if="yearlyStatus === 'error'" class="chart-state text-danger">历年趋势加载失败</div>
             <div v-else-if="yearlyStatus === 'empty'" class="chart-state">暂无历年趋势数据</div>
             <div ref="yearlyTrendChart" style="height: 420px; width: 100%"></div>
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="col-12 mb-3">
+    <div class="row mb-4">
+      <div class="col-md-12">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>题材季节性规律</h5>
             <small class="text-muted">新增</small>
           </div>
-          <div class="chart-wrapper position-relative">
+          <div class="chart-wrapper chart-wrapper--420 position-relative">
             <div v-if="seasonalStatus === 'error'" class="chart-state text-danger">季节题材图加载失败</div>
             <div v-else-if="seasonalStatus === 'empty'" class="chart-state">暂无季节题材数据</div>
             <div ref="seasonalTrendChart" style="height: 420px; width: 100%"></div>
@@ -47,8 +49,10 @@
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="col-12 mb-3">
+    <div class="row mb-4">
+      <div class="col-md-12">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>地区受众偏好差异</h5>
@@ -64,7 +68,7 @@
               </button>
             </div>
           </div>
-          <div class="chart-wrapper position-relative">
+          <div class="chart-wrapper chart-wrapper--460 position-relative">
             <div v-if="preferenceStatus === 'error'" class="chart-state text-danger">偏好差异图加载失败</div>
             <div v-else-if="preferenceStatus === 'empty'" class="chart-state">暂无偏好差异数据</div>
             <div ref="preferenceDiffChart" style="height: 460px; width: 100%"></div>
@@ -75,14 +79,16 @@
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="col-12 mb-3">
+    <div class="row">
+      <div class="col-md-12">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>爆款风格组合库（黄金搭档）</h5>
             <small class="text-muted">点击矩形查看下钻详情</small>
           </div>
-          <div class="chart-wrapper position-relative overflow-hidden">
+          <div class="chart-wrapper chart-wrapper--460 position-relative overflow-hidden">
             <div v-if="categoryStatus === 'error'" class="chart-state text-danger">风格组合图加载失败</div>
             <div v-else-if="categoryStatus === 'empty'" class="chart-state">暂无风格组合数据</div>
             <div
@@ -688,6 +694,14 @@ onMounted(async () => {
 
 .chart-wrapper {
   padding: 0.75rem 1rem 1rem;
+}
+
+.chart-wrapper--420 {
+  min-height: 448px;
+}
+
+.chart-wrapper--460 {
+  min-height: 488px;
 }
 
 .chart-state {
