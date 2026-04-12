@@ -5,8 +5,8 @@
       <p class="text-muted mb-0">聚焦趋势演进、受众差异与题材组合的结构化分析</p>
     </div>
 
-    <div class="row mb-4">
-      <div class="col-lg-7 mb-3">
+    <div class="row">
+      <div class="col-12 mb-3">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>历年上新趋势（季度对比）</h5>
@@ -30,7 +30,7 @@
         </div>
       </div>
 
-      <div class="col-lg-5 mb-3">
+      <div class="col-12 mb-3">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>题材季节性规律</h5>
@@ -47,10 +47,8 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="row">
-      <div class="col-lg-5 mb-3">
+      <div class="col-12 mb-3">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>地区受众偏好差异</h5>
@@ -78,7 +76,7 @@
         </div>
       </div>
 
-      <div class="col-lg-7 mb-3">
+      <div class="col-12 mb-3">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>爆款风格组合库（黄金搭档）</h5>
