@@ -192,6 +192,7 @@ const tabs: Array<{ id: OverviewTab; label: string }> = [
 ]
 const activeTab = ref<OverviewTab>('yearly')
 const renderedTabs = ref(new Set<OverviewTab>())
+const getTabLabel = (tab: OverviewTab): string => tabs.find(item => item.id === tab)?.label ?? tab
 
 const yearlyOptions = [
   { value: 'all', label: '全部地区' },
@@ -713,7 +714,7 @@ const switchTab = async (tab: OverviewTab) => {
   try {
     await renderByTab(tab)
   } catch (error) {
-    console.error(`切换标签 ${tab} 渲染失败:`, error)
+    console.error(`切换标签 ${getTabLabel(tab)} 渲染失败:`, error)
   }
 }
 
@@ -727,10 +728,11 @@ onMounted(async () => {
   padding: 20px;
   --overview-chart-frame-width: 1000px;
   --overview-chart-frame-wide-width: 1080px;
+  --overview-tab-gap: 0.5rem;
 }
 
 .overview-tabs {
-  gap: 0.5rem;
+  gap: var(--overview-tab-gap);
 }
 
 .overview-tabs .nav-link {
