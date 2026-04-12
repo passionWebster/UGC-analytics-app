@@ -824,8 +824,6 @@ onMounted(async () => {
   margin: 0;
   gap: 0.5rem;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  padding-bottom: 2px;
 }
 
 .overview-tabs .nav-link {
