@@ -1,11 +1,10 @@
 <template>
   <div class="overview-view">
-    <div class="page-header mb-4">
-      <h3 class="fw-bold text-dark mb-1">深度市场洞察</h3>
-      <p class="text-muted mb-0">聚焦趋势演进、受众差异与题材组合的结构化分析</p>
-    </div>
-
-    <div class="mb-3">
+    <div class="overview-header mb-3">
+      <div class="overview-title-group">
+        <h3 class="overview-title">深度市场洞察</h3>
+        <p class="overview-subtitle">聚焦趋势演进、受众差异与题材组合的结构化分析</p>
+      </div>
       <ul class="nav nav-pills overview-tabs" role="tablist">
         <li v-for="tab in tabs" :key="tab.id" class="nav-item">
           <button
@@ -789,8 +788,44 @@ onMounted(async () => {
   --overview-chart-frame-wide-width: 1080px;
 }
 
+.overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.95rem 1.1rem;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+.overview-title-group {
+  min-width: 0;
+  flex: 1;
+}
+
+.overview-title {
+  margin: 0 0 0.2rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1.2;
+}
+
+.overview-subtitle {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
 .overview-tabs {
+  margin: 0;
   gap: 0.5rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
 .overview-tabs .nav-link {
@@ -801,6 +836,17 @@ onMounted(async () => {
 
 .overview-tabs .nav-link.active {
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+@media (max-width: 1200px) {
+  .overview-header {
+    flex-wrap: wrap;
+  }
+
+  .overview-tabs {
+    width: 100%;
+    flex-wrap: wrap;
+  }
 }
 
 .style-unified {
