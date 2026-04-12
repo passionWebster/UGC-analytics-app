@@ -6,7 +6,7 @@
     </div>
 
     <div class="row mb-4">
-      <div class="col-12">
+      <div class="col-lg-8 mb-3">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>历年上新趋势（季度对比）</h5>
@@ -29,10 +29,7 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="row mb-4">
-      <div class="col-12">
+      <div class="col-lg-4 mb-3">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>题材季节性规律</h5>
@@ -52,7 +49,7 @@
     </div>
 
     <div class="row mb-4">
-      <div class="col-12">
+      <div class="col-lg-6 mb-3">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>地区受众偏好差异</h5>
@@ -79,10 +76,7 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="row">
-      <div class="col-12">
+      <div class="col-lg-6 mb-3">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>爆款风格组合库（黄金搭档）</h5>
