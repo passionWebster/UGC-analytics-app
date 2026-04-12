@@ -36,7 +36,12 @@
             <div class="chart-wrapper chart-wrapper--medium position-relative">
               <div v-if="yearlyStatus === 'error'" class="chart-state text-danger">历年趋势加载失败</div>
               <div v-else-if="yearlyStatus === 'empty'" class="chart-state">暂无历年趋势数据</div>
-              <div ref="yearlyTrendChart" class="chart-canvas chart-canvas--medium"></div>
+              <div
+                ref="yearlyTrendChart"
+                class="chart-canvas chart-canvas--medium"
+                role="img"
+                aria-label="历年上新趋势图（季度对比）"
+              ></div>
             </div>
           </div>
         </div>
@@ -52,7 +57,12 @@
             <div class="chart-wrapper chart-wrapper--medium position-relative">
               <div v-if="seasonalStatus === 'error'" class="chart-state text-danger">季节题材图加载失败</div>
               <div v-else-if="seasonalStatus === 'empty'" class="chart-state">暂无季节题材数据</div>
-              <div ref="seasonalTrendChart" class="chart-canvas chart-canvas--medium"></div>
+              <div
+                ref="seasonalTrendChart"
+                class="chart-canvas chart-canvas--medium"
+                role="img"
+                aria-label="题材季节性规律热力图"
+              ></div>
             </div>
           </div>
           <div class="insight-summary">
@@ -82,7 +92,12 @@
             <div class="chart-wrapper chart-wrapper--large position-relative">
               <div v-if="preferenceStatus === 'error'" class="chart-state text-danger">偏好差异图加载失败</div>
               <div v-else-if="preferenceStatus === 'empty'" class="chart-state">暂无偏好差异数据</div>
-              <div ref="preferenceDiffChart" class="chart-canvas chart-canvas--large"></div>
+              <div
+                ref="preferenceDiffChart"
+                class="chart-canvas chart-canvas--large"
+                role="img"
+                aria-label="地区受众偏好差异图"
+              ></div>
             </div>
           </div>
           <div class="insight-summary">
@@ -105,6 +120,8 @@
               <div
                 ref="categoryTrendChart"
                 class="chart-canvas chart-canvas--large"
+                role="img"
+                aria-label="爆款风格组合库图"
                 :class="{ 'combo-chart-dimmed': isComboDetailVisible }"
               ></div>
 
@@ -174,6 +191,7 @@ const tabs: Array<{ id: OverviewTab; label: string }> = [
   { id: 'category', label: '爆款风格组合' },
 ]
 const activeTab = ref<OverviewTab>('yearly')
+const renderedTabs = ref(new Set<OverviewTab>())
 
 const yearlyOptions = [
   { value: 'all', label: '全部地区' },
@@ -633,15 +651,39 @@ const closeComboDetail = () => {
 
 const setYearlyView = (value: YearlyViewValue) => {
   yearlyView.value = value
-  void renderYearlyChart()
+  renderedTabs.value.delete('yearly')
+  void renderByTab('yearly', true)
 }
 
 const setPrefArea = (value: AreaValue) => {
   selectedPrefArea.value = value
-  void renderPreferenceChart()
+  renderedTabs.value.delete('preference')
+  void renderByTab('preference', true)
 }
 
-const renderByTab = async (tab: OverviewTab) => {
+const resizeTabChart = (tab: OverviewTab) => {
+  switch (tab) {
+    case 'yearly':
+      yearlyChartInstance.value?.resize()
+      break
+    case 'seasonal':
+      seasonalChartInstance.value?.resize()
+      break
+    case 'preference':
+      prefChartInstance.value?.resize()
+      break
+    case 'category':
+      categoryChartInstance.value?.resize()
+      break
+  }
+}
+
+const renderByTab = async (tab: OverviewTab, force = false) => {
+  if (!force && renderedTabs.value.has(tab)) {
+    resizeTabChart(tab)
+    return
+  }
+
   switch (tab) {
     case 'yearly':
       await renderYearlyChart()
@@ -656,6 +698,8 @@ const renderByTab = async (tab: OverviewTab) => {
       await renderCategoryChart()
       break
   }
+
+  renderedTabs.value.add(tab)
 }
 
 const switchTab = async (tab: OverviewTab) => {
