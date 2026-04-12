@@ -5,8 +5,18 @@
       <p class="text-muted mb-0">聚焦趋势演进、受众差异与题材组合的结构化分析</p>
     </div>
 
-    <div class="row mb-4">
-      <div class="col-lg-8 mb-3">
+    <div class="mb-3">
+      <ul class="nav nav-pills overview-tabs" role="tablist">
+        <li v-for="tab in tabs" :key="tab.id" class="nav-item">
+          <button class="nav-link" :class="{ active: activeTab === tab.id }" @click="switchTab(tab.id)">
+            {{ tab.label }}
+          </button>
+        </li>
+      </ul>
+    </div>
+
+    <div class="tab-content">
+      <div v-show="activeTab === 'yearly'" class="tab-pane">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>历年上新趋势（季度对比）</h5>
@@ -22,23 +32,28 @@
               </button>
             </div>
           </div>
-          <div class="chart-wrapper chart-wrapper--medium position-relative">
-            <div v-if="yearlyStatus === 'error'" class="chart-state text-danger">历年趋势加载失败</div>
-            <div v-else-if="yearlyStatus === 'empty'" class="chart-state">暂无历年趋势数据</div>
-            <div ref="yearlyTrendChart" style="height: 420px; width: 100%"></div>
+          <div class="chart-fixed-frame">
+            <div class="chart-wrapper chart-wrapper--medium position-relative">
+              <div v-if="yearlyStatus === 'error'" class="chart-state text-danger">历年趋势加载失败</div>
+              <div v-else-if="yearlyStatus === 'empty'" class="chart-state">暂无历年趋势数据</div>
+              <div ref="yearlyTrendChart" class="chart-canvas chart-canvas--medium"></div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="col-lg-4 mb-3">
+
+      <div v-show="activeTab === 'seasonal'" class="tab-pane">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>题材季节性规律</h5>
             <small class="text-muted">新增</small>
           </div>
-          <div class="chart-wrapper chart-wrapper--medium position-relative">
-            <div v-if="seasonalStatus === 'error'" class="chart-state text-danger">季节题材图加载失败</div>
-            <div v-else-if="seasonalStatus === 'empty'" class="chart-state">暂无季节题材数据</div>
-            <div ref="seasonalTrendChart" style="height: 420px; width: 100%"></div>
+          <div class="chart-fixed-frame">
+            <div class="chart-wrapper chart-wrapper--medium position-relative">
+              <div v-if="seasonalStatus === 'error'" class="chart-state text-danger">季节题材图加载失败</div>
+              <div v-else-if="seasonalStatus === 'empty'" class="chart-state">暂无季节题材数据</div>
+              <div ref="seasonalTrendChart" class="chart-canvas chart-canvas--medium"></div>
+            </div>
           </div>
           <div class="insight-summary">
             <span class="summary-label">季节偏好总结：</span>
@@ -46,10 +61,8 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="row mb-4">
-      <div class="col-lg-6 mb-3">
+      <div v-show="activeTab === 'preference'" class="tab-pane">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>地区受众偏好差异</h5>
@@ -65,10 +78,12 @@
               </button>
             </div>
           </div>
-          <div class="chart-wrapper chart-wrapper--large position-relative">
-            <div v-if="preferenceStatus === 'error'" class="chart-state text-danger">偏好差异图加载失败</div>
-            <div v-else-if="preferenceStatus === 'empty'" class="chart-state">暂无偏好差异数据</div>
-            <div ref="preferenceDiffChart" style="height: 460px; width: 100%"></div>
+          <div class="chart-fixed-frame">
+            <div class="chart-wrapper chart-wrapper--large position-relative">
+              <div v-if="preferenceStatus === 'error'" class="chart-state text-danger">偏好差异图加载失败</div>
+              <div v-else-if="preferenceStatus === 'empty'" class="chart-state">暂无偏好差异数据</div>
+              <div ref="preferenceDiffChart" class="chart-canvas chart-canvas--large"></div>
+            </div>
           </div>
           <div class="insight-summary">
             <span class="summary-label">与你的偏好重合：</span>
@@ -76,50 +91,53 @@
           </div>
         </div>
       </div>
-      <div class="col-lg-6 mb-3">
+
+      <div v-show="activeTab === 'category'" class="tab-pane">
         <div class="style-unified h-100">
           <div class="card-header-unified">
             <h5>爆款风格组合库（黄金搭档）</h5>
             <small class="text-muted">点击矩形查看下钻详情</small>
           </div>
-          <div class="chart-wrapper chart-wrapper--large position-relative overflow-hidden">
-            <div v-if="categoryStatus === 'error'" class="chart-state text-danger">风格组合图加载失败</div>
-            <div v-else-if="categoryStatus === 'empty'" class="chart-state">暂无风格组合数据</div>
-            <div
-              ref="categoryTrendChart"
-              style="height: 460px; width: 100%"
-              :class="{ 'combo-chart-dimmed': isComboDetailVisible }"
-            ></div>
+          <div class="chart-fixed-frame chart-fixed-frame--wide">
+            <div class="chart-wrapper chart-wrapper--large position-relative overflow-hidden">
+              <div v-if="categoryStatus === 'error'" class="chart-state text-danger">风格组合图加载失败</div>
+              <div v-else-if="categoryStatus === 'empty'" class="chart-state">暂无风格组合数据</div>
+              <div
+                ref="categoryTrendChart"
+                class="chart-canvas chart-canvas--large"
+                :class="{ 'combo-chart-dimmed': isComboDetailVisible }"
+              ></div>
 
-            <div v-if="isComboDetailVisible" class="combo-backdrop" @click="closeComboDetail"></div>
+              <div v-if="isComboDetailVisible" class="combo-backdrop" @click="closeComboDetail"></div>
 
-            <transition name="slide-panel">
-              <div v-if="isComboDetailVisible" class="combo-detail-panel">
-                <div class="combo-detail-header">
-                  <div class="combo-detail-block" :style="{ backgroundColor: comboDetailColor }"></div>
-                  <h5 class="combo-detail-title" :style="{ color: comboDetailColor }">{{ comboDetailData.name }}</h5>
-                  <button class="btn-close-detail" @click="closeComboDetail" title="关闭">
-                    <i class="fas fa-times"></i>
-                  </button>
-                </div>
-                <p class="combo-detail-stats">
-                  共 {{ comboDetailData.count }} 部番剧・平均追番 {{ (comboDetailData.value ?? 0).toLocaleString() }}
-                </p>
-                <div class="detail-anime-list">
-                  <div v-for="(anime, index) in comboDetailData.animes" :key="index" class="detail-anime-item">
-                    <span class="detail-rank">{{ index + 1 }}</span>
-                    <img :src="getComboAnimeImageUrl(anime)" :alt="anime.title" class="detail-cover" />
-                    <div class="detail-info">
-                      <h5>{{ anime.title }}</h5>
-                      <p>
-                        <i class="fas fa-star text-warning me-1"></i>{{ anime.score ?? '暂无评分' }}
-                        <i class="fas fa-heart text-danger ms-2 me-1"></i>{{ formatNumber(anime.favorites) }}
-                      </p>
+              <transition name="slide-panel">
+                <div v-if="isComboDetailVisible" class="combo-detail-panel">
+                  <div class="combo-detail-header">
+                    <div class="combo-detail-block" :style="{ backgroundColor: comboDetailColor }"></div>
+                    <h5 class="combo-detail-title" :style="{ color: comboDetailColor }">{{ comboDetailData.name }}</h5>
+                    <button class="btn-close-detail" @click="closeComboDetail" title="关闭">
+                      <i class="fas fa-times"></i>
+                    </button>
+                  </div>
+                  <p class="combo-detail-stats">
+                    共 {{ comboDetailData.count }} 部番剧・平均追番 {{ (comboDetailData.value ?? 0).toLocaleString() }}
+                  </p>
+                  <div class="detail-anime-list">
+                    <div v-for="(anime, index) in comboDetailData.animes" :key="index" class="detail-anime-item">
+                      <span class="detail-rank">{{ index + 1 }}</span>
+                      <img :src="getComboAnimeImageUrl(anime)" :alt="anime.title" class="detail-cover" />
+                      <div class="detail-info">
+                        <h5>{{ anime.title }}</h5>
+                        <p>
+                          <i class="fas fa-star text-warning me-1"></i>{{ anime.score ?? '暂无评分' }}
+                          <i class="fas fa-heart text-danger ms-2 me-1"></i>{{ formatNumber(anime.favorites) }}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </transition>
+              </transition>
+            </div>
           </div>
         </div>
       </div>
@@ -128,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
 import { useEcharts } from '@/composables/useEcharts'
 import { useAuthStore } from '@/stores/auth'
@@ -146,8 +164,16 @@ import {
 } from '@/api/analytics'
 
 type LoadState = 'idle' | 'loading' | 'success' | 'empty' | 'error'
+type OverviewTab = 'yearly' | 'seasonal' | 'preference' | 'category'
 
 const authStore = useAuthStore()
+const tabs: Array<{ id: OverviewTab; label: string }> = [
+  { id: 'yearly', label: '历年上新趋势' },
+  { id: 'seasonal', label: '题材季节规律' },
+  { id: 'preference', label: '受众偏好差异' },
+  { id: 'category', label: '爆款风格组合' },
+]
+const activeTab = ref<OverviewTab>('yearly')
 
 const yearlyOptions = [
   { value: 'all', label: '全部地区' },
@@ -615,19 +641,52 @@ const setPrefArea = (value: AreaValue) => {
   void renderPreferenceChart()
 }
 
+const renderByTab = async (tab: OverviewTab) => {
+  switch (tab) {
+    case 'yearly':
+      await renderYearlyChart()
+      break
+    case 'seasonal':
+      await renderSeasonalChart()
+      break
+    case 'preference':
+      await renderPreferenceChart()
+      break
+    case 'category':
+      await renderCategoryChart()
+      break
+  }
+}
+
+const switchTab = async (tab: OverviewTab) => {
+  if (activeTab.value === tab) return
+  activeTab.value = tab
+  await nextTick()
+  await renderByTab(tab)
+}
+
 onMounted(async () => {
-  await Promise.allSettled([
-    renderSeasonalChart(),
-    renderYearlyChart(),
-    renderPreferenceChart(),
-    renderCategoryChart(),
-  ])
+  await renderByTab(activeTab.value)
 })
 </script>
 
 <style scoped>
 .overview-view {
   padding: 20px;
+}
+
+.overview-tabs {
+  gap: 0.5rem;
+}
+
+.overview-tabs .nav-link {
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.88rem;
+}
+
+.overview-tabs .nav-link.active {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
 }
 
 .style-unified {
@@ -688,6 +747,28 @@ onMounted(async () => {
 
 .chart-wrapper {
   padding: 0.75rem 1rem 1rem;
+}
+
+.chart-fixed-frame {
+  width: 1000px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.chart-fixed-frame--wide {
+  width: 1080px;
+}
+
+.chart-canvas {
+  width: 100%;
+}
+
+.chart-canvas--medium {
+  height: 420px;
+}
+
+.chart-canvas--large {
+  height: 460px;
 }
 
 .chart-wrapper--medium {
