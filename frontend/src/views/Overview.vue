@@ -169,7 +169,7 @@ type OverviewTab = 'yearly' | 'seasonal' | 'preference' | 'category'
 const authStore = useAuthStore()
 const tabs: Array<{ id: OverviewTab; label: string }> = [
   { id: 'yearly', label: '历年上新趋势' },
-  { id: 'seasonal', label: '题材季节规律' },
+  { id: 'seasonal', label: '题材季节性规律' },
   { id: 'preference', label: '受众偏好差异' },
   { id: 'category', label: '爆款风格组合' },
 ]
@@ -673,6 +673,8 @@ onMounted(async () => {
 <style scoped>
 .overview-view {
   padding: 20px;
+  --overview-chart-frame-width: 1000px;
+  --overview-chart-frame-wide-width: 1080px;
 }
 
 .overview-tabs {
@@ -750,13 +752,13 @@ onMounted(async () => {
 }
 
 .chart-fixed-frame {
-  width: 1000px;
+  width: var(--overview-chart-frame-width);
   max-width: 100%;
   margin: 0 auto;
 }
 
 .chart-fixed-frame--wide {
-  width: 1080px;
+  width: var(--overview-chart-frame-wide-width);
 }
 
 .chart-canvas {
