@@ -683,8 +683,22 @@ const resizeTabChart = (tab: OverviewTab) => {
   }
 }
 
+const getTabStatus = (tab: OverviewTab): LoadState => {
+  switch (tab) {
+    case 'yearly':
+      return yearlyStatus.value
+    case 'seasonal':
+      return seasonalStatus.value
+    case 'preference':
+      return preferenceStatus.value
+    case 'category':
+      return categoryStatus.value
+  }
+}
+
 const renderByTab = async (tab: OverviewTab, force = false) => {
-  if (!force && renderedTabs.value.has(tab)) {
+  const status = getTabStatus(tab)
+  if (!force && renderedTabs.value.has(tab) && (status === 'success' || status === 'empty')) {
     resizeTabChart(tab)
     return
   }
@@ -704,7 +718,11 @@ const renderByTab = async (tab: OverviewTab, force = false) => {
       break
   }
 
-  renderedTabs.value.add(tab)
+  if (getTabStatus(tab) === 'success' || getTabStatus(tab) === 'empty') {
+    renderedTabs.value.add(tab)
+  } else {
+    renderedTabs.value.delete(tab)
+  }
 }
 
 const switchTab = async (tab: OverviewTab) => {
@@ -719,7 +737,11 @@ const switchTab = async (tab: OverviewTab) => {
 }
 
 onMounted(async () => {
-  await renderByTab(activeTab.value)
+  try {
+    await renderByTab(activeTab.value)
+  } catch (error) {
+    console.error('初始化标签渲染失败:', error)
+  }
 })
 </script>
 
@@ -728,11 +750,10 @@ onMounted(async () => {
   padding: 20px;
   --overview-chart-frame-width: 1000px;
   --overview-chart-frame-wide-width: 1080px;
-  --overview-tab-gap: 0.5rem;
 }
 
 .overview-tabs {
-  gap: var(--overview-tab-gap);
+  gap: 0.5rem;
 }
 
 .overview-tabs .nav-link {
