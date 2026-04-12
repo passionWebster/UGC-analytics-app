@@ -16,9 +16,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select as sql_select
 
+from ..auth import get_current_user
 from ..database import get_session
 from ..crud import AnalyticsService
-from ..models import Anime, TmdbAnimeInfo
+from ..models import Anime, TmdbAnimeInfo, User
 from ..schemas import (
     EpisodeBehaviorAnalysisResponse,
     LifecycleGrowthResponse,
@@ -825,5 +826,32 @@ def get_personalized_recommendations(
     return {
         "success": True,
         "total": len(data.get("recommendations", [])),
+        "data": data,
+    }
+
+
+@router.get(
+    "/users/{username}/recommendations/{season_id}/explanation",
+    response_model=dict,
+    summary="推荐解释详情",
+)
+def get_recommendation_explanation(
+    username: str,
+    season_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """获取用户对指定番剧的可解释推荐明细。"""
+    if not current_user.is_admin and username != current_user.username:
+        raise HTTPException(status_code=403, detail="无权查看其他用户的推荐解释")
+
+    analytics_service = AnalyticsService(session)
+    data = analytics_service.get_recommendation_explanation(username, season_id)
+
+    if data is None:
+        raise HTTPException(status_code=404, detail="用户或番剧不存在")
+
+    return {
+        "success": True,
         "data": data,
     }

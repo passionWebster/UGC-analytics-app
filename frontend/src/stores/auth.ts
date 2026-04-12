@@ -11,6 +11,8 @@ export const useAuthStore = defineStore('auth', () => {
   const username = ref<string>('')
   const email = ref<string>('')
   const isLoggedIn = ref<boolean>(false)
+  const isAdmin = ref<boolean>(false)
+  const isActive = ref<boolean>(true)
   const preferences = ref<string[]>([])
   const accessToken = ref<string>('')
 
@@ -18,18 +20,22 @@ export const useAuthStore = defineStore('auth', () => {
   const hasPreferences = computed(() => preferences.value.length > 0)
   const user = computed(() => ({
     username: username.value,
-    email: email.value
+    email: email.value,
+    isAdmin: isAdmin.value,
+    isActive: isActive.value
   }))
 
   // 初始化：从 localStorage 恢复状态
   const initAuth = () => {
     const savedToken = localStorage.getItem('access_token')
     const savedUsername = localStorage.getItem('username')
+    const savedIsAdmin = localStorage.getItem('is_admin')
     
     if (savedToken && savedUsername) {
       accessToken.value = savedToken
       username.value = savedUsername
       isLoggedIn.value = true
+      isAdmin.value = savedIsAdmin === 'true'
       
       // 异步加载用户信息
       loadUserInfo(savedUsername)
@@ -43,6 +49,8 @@ export const useAuthStore = defineStore('auth', () => {
       if (response.success && response.user) {
         email.value = response.user.email
         preferences.value = response.user.preferences || []
+        isAdmin.value = response.user.is_admin
+        isActive.value = response.user.is_active
       }
     } catch (error) {
       console.error('加载用户信息失败:', error)
@@ -58,6 +66,8 @@ export const useAuthStore = defineStore('auth', () => {
         // 保存状态
         username.value = response.user.username
         email.value = response.user.email
+        isAdmin.value = response.user.is_admin
+        isActive.value = response.user.is_active
         accessToken.value = response.access_token
         isLoggedIn.value = true
         
@@ -73,10 +83,12 @@ export const useAuthStore = defineStore('auth', () => {
         // 保存到 localStorage
         localStorage.setItem('access_token', response.access_token)
         localStorage.setItem('username', response.user.username)
+        localStorage.setItem('is_admin', String(response.user.is_admin))
         
         return {
           success: true,
-          hasPreferences: response.hasPreferences
+          hasPreferences: response.hasPreferences,
+          isAdmin: response.user.is_admin
         }
       }
       
@@ -127,10 +139,13 @@ export const useAuthStore = defineStore('auth', () => {
     email.value = ''
     accessToken.value = ''
     isLoggedIn.value = false
+    isAdmin.value = false
+    isActive.value = true
     preferences.value = []
     
     localStorage.removeItem('access_token')
     localStorage.removeItem('username')
+    localStorage.removeItem('is_admin')
   }
 
   return {
@@ -138,6 +153,8 @@ export const useAuthStore = defineStore('auth', () => {
     username,
     email,
     isLoggedIn,
+    isAdmin,
+    isActive,
     preferences,
     accessToken,
     

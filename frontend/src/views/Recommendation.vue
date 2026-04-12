@@ -141,6 +141,150 @@
                   </p>
                 </div>
 
+                <div v-if="selectedExplanation" class="explainability-box">
+                  <h5>推荐解释</h5>
+                  <p class="explain-reason">{{ selectedExplanation.explainability.reasoning }}</p>
+                  <div class="explain-metrics">
+                    <span>匹配分：{{ selectedExplanation.match_score.toFixed(2) }}</span>
+                    <span>Jaccard：{{ selectedExplanation.explainability.jaccard_similarity.toFixed(2) }}</span>
+                    <span>组合奖励：{{ selectedExplanation.explainability.combo_bonus_score.toFixed(2) }}</span>
+                    <span>热度分位：{{ (selectedExplanation.explainability.views_percentile * 100).toFixed(1) }}%</span>
+                  </div>
+                  <div v-if="selectedExplanation.explainability.matched_styles?.length" class="matched-styles">
+                    匹配风格：{{ selectedExplanation.explainability.matched_styles.join('、') }}
+                  </div>
+                  <div v-if="selectedExplanation.explainability.strategy_weights" class="strategy-block">
+                    <button
+                      class="strategy-toggle"
+                      type="button"
+                      :aria-expanded="isStrategyWeightsExpanded"
+                      @click="isStrategyWeightsExpanded = !isStrategyWeightsExpanded"
+                    >
+                      <span class="strategy-title">策略权重（{{ selectedExplanation.explainability.strategy_enabled ? '已启用' : '未启用' }}）</span>
+                      <span class="strategy-toggle-icon">{{ isStrategyWeightsExpanded ? '▾' : '▸' }}</span>
+                    </button>
+                    <div v-show="isStrategyWeightsExpanded">
+                      <div class="explain-metrics">
+                        <abbr class="explain-tip" :title="getSignalTooltip('views', 'weight')" tabindex="0">Views 权重：{{ formatExplainabilityNumber(selectedExplanation.explainability.strategy_weights?.views_weight) }}</abbr>
+                        <abbr class="explain-tip" :title="getSignalTooltip('ai', 'weight')" tabindex="0">AI 权重：{{ formatExplainabilityNumber(selectedExplanation.explainability.strategy_weights?.ai_weight) }}</abbr>
+                        <abbr class="explain-tip" :title="getSignalTooltip('tmdb', 'weight')" tabindex="0">TMDB 权重：{{ formatExplainabilityNumber(selectedExplanation.explainability.strategy_weights?.tmdb_weight) }}</abbr>
+                        <abbr class="explain-tip" :title="getSignalTooltip('diversity', 'weight')" tabindex="0">Diversity 权重：{{ formatExplainabilityNumber(selectedExplanation.explainability.strategy_weights?.diversity_weight) }}</abbr>
+                      </div>
+                      <div class="metric-bars">
+                        <div class="metric-bar-item">
+                          <abbr class="metric-bar-label" :title="getSignalTooltip('views', 'weight')" tabindex="0">Views ⓘ</abbr>
+                          <div
+                            class="metric-bar-track"
+                            role="progressbar"
+                            aria-label="Views 权重"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            :aria-valuenow="getExplainabilityPercentValue(selectedExplanation.explainability.strategy_weights?.views_weight)"
+                          ><span class="metric-bar-fill" :style="{ width: formatExplainabilityPercent(selectedExplanation.explainability.strategy_weights?.views_weight) }"></span></div>
+                        </div>
+                        <div class="metric-bar-item">
+                          <abbr class="metric-bar-label" :title="getSignalTooltip('ai', 'weight')" tabindex="0">AI ⓘ</abbr>
+                          <div
+                            class="metric-bar-track"
+                            role="progressbar"
+                            aria-label="AI 权重"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            :aria-valuenow="getExplainabilityPercentValue(selectedExplanation.explainability.strategy_weights?.ai_weight)"
+                          ><span class="metric-bar-fill" :style="{ width: formatExplainabilityPercent(selectedExplanation.explainability.strategy_weights?.ai_weight) }"></span></div>
+                        </div>
+                        <div class="metric-bar-item">
+                          <abbr class="metric-bar-label" :title="getSignalTooltip('tmdb', 'weight')" tabindex="0">TMDB ⓘ</abbr>
+                          <div
+                            class="metric-bar-track"
+                            role="progressbar"
+                            aria-label="TMDB 权重"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            :aria-valuenow="getExplainabilityPercentValue(selectedExplanation.explainability.strategy_weights?.tmdb_weight)"
+                          ><span class="metric-bar-fill" :style="{ width: formatExplainabilityPercent(selectedExplanation.explainability.strategy_weights?.tmdb_weight) }"></span></div>
+                        </div>
+                        <div class="metric-bar-item">
+                          <abbr class="metric-bar-label" :title="getSignalTooltip('diversity', 'weight')" tabindex="0">Diversity ⓘ</abbr>
+                          <div
+                            class="metric-bar-track"
+                            role="progressbar"
+                            aria-label="Diversity 权重"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            :aria-valuenow="getExplainabilityPercentValue(selectedExplanation.explainability.strategy_weights?.diversity_weight)"
+                          ><span class="metric-bar-fill" :style="{ width: formatExplainabilityPercent(selectedExplanation.explainability.strategy_weights?.diversity_weight) }"></span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="selectedExplanation.explainability.component_scores" class="strategy-block">
+                    <button
+                      class="strategy-toggle"
+                      type="button"
+                      :aria-expanded="isComponentSignalsExpanded"
+                      @click="isComponentSignalsExpanded = !isComponentSignalsExpanded"
+                    >
+                      <span class="strategy-title">分项信号</span>
+                      <span class="strategy-toggle-icon">{{ isComponentSignalsExpanded ? '▾' : '▸' }}</span>
+                    </button>
+                    <div v-show="isComponentSignalsExpanded">
+                      <div class="explain-metrics">
+                        <abbr class="explain-tip" :title="getSignalTooltip('views', 'signal')" tabindex="0">Views 信号：{{ formatExplainabilityNumber(selectedExplanation.explainability.component_scores?.views_signal) }}</abbr>
+                        <abbr class="explain-tip" :title="getSignalTooltip('ai', 'signal')" tabindex="0">AI 信号：{{ formatExplainabilityNumber(selectedExplanation.explainability.component_scores?.ai_signal) }}</abbr>
+                        <abbr class="explain-tip" :title="getSignalTooltip('tmdb', 'signal')" tabindex="0">TMDB 信号：{{ formatExplainabilityNumber(selectedExplanation.explainability.component_scores?.tmdb_signal) }}</abbr>
+                        <abbr class="explain-tip" :title="getSignalTooltip('diversity', 'signal')" tabindex="0">Diversity 信号：{{ formatExplainabilityNumber(selectedExplanation.explainability.component_scores?.diversity_signal) }}</abbr>
+                      </div>
+                      <div class="metric-bars">
+                        <div class="metric-bar-item">
+                          <abbr class="metric-bar-label" :title="getSignalTooltip('views', 'signal')" tabindex="0">Views ⓘ</abbr>
+                          <div
+                            class="metric-bar-track"
+                            role="progressbar"
+                            aria-label="Views 信号"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            :aria-valuenow="getExplainabilityPercentValue(selectedExplanation.explainability.component_scores?.views_signal)"
+                          ><span class="metric-bar-fill metric-bar-fill-signal" :style="{ width: formatExplainabilityPercent(selectedExplanation.explainability.component_scores?.views_signal) }"></span></div>
+                        </div>
+                        <div class="metric-bar-item">
+                          <abbr class="metric-bar-label" :title="getSignalTooltip('ai', 'signal')" tabindex="0">AI ⓘ</abbr>
+                          <div
+                            class="metric-bar-track"
+                            role="progressbar"
+                            aria-label="AI 信号"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            :aria-valuenow="getExplainabilityPercentValue(selectedExplanation.explainability.component_scores?.ai_signal)"
+                          ><span class="metric-bar-fill metric-bar-fill-signal" :style="{ width: formatExplainabilityPercent(selectedExplanation.explainability.component_scores?.ai_signal) }"></span></div>
+                        </div>
+                        <div class="metric-bar-item">
+                          <abbr class="metric-bar-label" :title="getSignalTooltip('tmdb', 'signal')" tabindex="0">TMDB ⓘ</abbr>
+                          <div
+                            class="metric-bar-track"
+                            role="progressbar"
+                            aria-label="TMDB 信号"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            :aria-valuenow="getExplainabilityPercentValue(selectedExplanation.explainability.component_scores?.tmdb_signal)"
+                          ><span class="metric-bar-fill metric-bar-fill-signal" :style="{ width: formatExplainabilityPercent(selectedExplanation.explainability.component_scores?.tmdb_signal) }"></span></div>
+                        </div>
+                        <div class="metric-bar-item">
+                          <abbr class="metric-bar-label" :title="getSignalTooltip('diversity', 'signal')" tabindex="0">Diversity ⓘ</abbr>
+                          <div
+                            class="metric-bar-track"
+                            role="progressbar"
+                            aria-label="Diversity 信号"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            :aria-valuenow="getExplainabilityPercentValue(selectedExplanation.explainability.component_scores?.diversity_signal)"
+                          ><span class="metric-bar-fill metric-bar-fill-signal" :style="{ width: formatExplainabilityPercent(selectedExplanation.explainability.component_scores?.diversity_signal) }"></span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>
@@ -153,7 +297,15 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
-import { getRankings, getAnimeDetail, type AnimeData, type AnimeDetailData } from '@/api/analytics'
+import {
+  getRankings,
+  getAnimeDetail,
+  getPersonalizedRecommendations,
+  getRecommendationExplanation,
+  type RecommendationExplanationResponse,
+  type AnimeData,
+  type AnimeDetailData
+} from '@/api/analytics'
 import { getProxiedImageUrl, getProxiedUrl } from '@/utils/imageProxy'
 import { useAuthStore } from '@/stores/auth'
 
@@ -181,6 +333,9 @@ const selectedDetail = ref<AnimeDetailData | null>(null)
 const logoError = ref(false)
 // 海报降级标记（TMDB 海报失败时回退到 B站封面）
 const posterFallback = ref(false)
+const selectedExplanation = ref<RecommendationExplanationResponse['data'] | null>(null)
+const isStrategyWeightsExpanded = ref(true)
+const isComponentSignalsExpanded = ref(true)
 
 let scrollObserver: IntersectionObserver | null = null
 
@@ -251,15 +406,22 @@ const selectAnime = async (anime: AnimeData) => {
   detailLoading.value = true
   selectedAnime.value = anime
   selectedDetail.value = null
+  selectedExplanation.value = null
   logoError.value = false
   posterFallback.value = false
   try {
-    const resp = await getAnimeDetail(anime.season_id)
+    const detailPromise = getAnimeDetail(anime.season_id)
+    const explainPromise = authStore.username
+      ? getRecommendationExplanation(authStore.username, anime.season_id)
+      : Promise.resolve(null)
+
+    const [resp, explainResp] = await Promise.all([detailPromise, explainPromise])
     // 如果期间发起了新的详情请求，则丢弃本次结果
     if (currentToken !== detailRequestToken) {
       return
     }
     selectedDetail.value = resp.data
+    selectedExplanation.value = explainResp?.data || null
   } catch (error) {
     // 如果期间发起了新的详情请求，则不覆盖最新错误/数据状态
     if (currentToken !== detailRequestToken) {
@@ -293,18 +455,24 @@ const loadRecommendations = async () => {
     visibleCount.value = PAGE_SIZE
     selectedAnime.value = null
     selectedDetail.value = null
+    selectedExplanation.value = null
 
-    let sortBy = currentSort.value
-    if (sortBy === 'followers') sortBy = 'favorites'
-    if (sortBy === 'score') sortBy = 'rating'
+    if (authStore.username) {
+      const response = await getPersonalizedRecommendations(authStore.username)
+      allAnimes.value = response.data?.recommendations || []
+    } else {
+      let sortBy = currentSort.value
+      if (sortBy === 'followers') sortBy = 'favorites'
+      if (sortBy === 'score') sortBy = 'rating'
 
-    const stylesFilter =
-      showPreferencesTooltip.value && authStore.preferences.length > 0
-        ? authStore.preferences.join(',')
-        : undefined
+      const stylesFilter =
+        showPreferencesTooltip.value && authStore.preferences.length > 0
+          ? authStore.preferences.join(',')
+          : undefined
 
-    const response = await getRankings(sortBy, BATCH_SIZE, undefined, stylesFilter)
-    allAnimes.value = response.list || []
+      const response = await getRankings(sortBy, BATCH_SIZE, undefined, stylesFilter)
+      allAnimes.value = response.list || []
+    }
   } catch (error) {
     console.error('加载推荐失败:', error)
   } finally {
@@ -348,6 +516,49 @@ const triggerSentinelCheck = () => {
     scrollObserver.observe(sentinel.value)
   }
 }
+
+const formatExplainabilityNumber = (value?: number) =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '--'
+
+const boundExplainabilityRatio = (value: number) => Math.max(0, Math.min(1, value))
+
+const formatExplainabilityPercent = (value?: number) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '0%'
+  if ((value < 0 || value > 1) && import.meta.env.DEV) {
+    console.warn('explainability value out of range [0,1]:', value)
+  }
+  const bounded = boundExplainabilityRatio(value)
+  return `${(bounded * 100).toFixed(0)}%`
+}
+
+const getExplainabilityPercentValue = (value?: number) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0
+  return Math.round(boundExplainabilityRatio(value) * 100)
+}
+
+const signalTooltipMap = {
+  views: {
+    weight: 'Views 权重：该项在综合推荐分中的占比，越高说明系统越重视播放热度相关信号。',
+    signal: 'Views 信号：当前番剧在热度维度的标准化表现，结合热度分位进行衡量。'
+  },
+  ai: {
+    weight: 'AI 权重：AI 偏好匹配项在综合推荐分中的占比。',
+    signal: 'AI 信号：当前番剧与用户偏好的语义匹配强度。'
+  },
+  tmdb: {
+    weight: 'TMDB 权重：外部评分质量信号在综合推荐分中的占比。',
+    signal: 'TMDB 信号：基于 TMDB 评分相关数据计算出的质量表现。'
+  },
+  diversity: {
+    weight: 'Diversity 权重：多样性补偿项在综合推荐分中的占比。',
+    signal: 'Diversity 信号：当前番剧对推荐列表多样性的贡献程度。'
+  }
+} as const
+
+const getSignalTooltip = (
+  key: keyof typeof signalTooltipMap,
+  type: 'weight' | 'signal'
+) => signalTooltipMap[key][type]
 
 onMounted(async () => {
   await loadRecommendations()
@@ -711,6 +922,124 @@ onUnmounted(() => {
 .overview-empty {
   color: #bbb;
   font-style: italic;
+}
+
+.explainability-box {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.explainability-box h5 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.explain-reason {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.explain-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.matched-styles {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #111827;
+}
+
+.strategy-block {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #d1d5db;
+}
+
+.strategy-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.strategy-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin-bottom: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.strategy-toggle-icon {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.explain-tip {
+  cursor: help;
+  text-decoration: none;
+  border-bottom: none;
+}
+
+.metric-bars {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.metric-bar-item {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.metric-bar-label {
+  font-size: 11px;
+  color: #6b7280;
+  cursor: help;
+  text-decoration: none;
+  border-bottom: none;
+}
+
+.explain-tip:focus-visible,
+.metric-bar-label:focus-visible {
+  outline: 1px solid #3b82f6;
+  outline-offset: 1px;
+}
+
+.metric-bar-track {
+  width: 100%;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.metric-bar-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+  transition: width 0.25s ease;
+}
+
+.metric-bar-fill-signal {
+  background: linear-gradient(90deg, #10b981, #059669);
 }
 
 /* ── 动画 ──────────────────────────────────── */

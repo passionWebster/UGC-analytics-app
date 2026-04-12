@@ -14,6 +14,7 @@ AI 助手服务
 import hashlib
 import json
 import threading
+import time
 import requests
 from typing import Optional, Dict, Any
 from fastapi import HTTPException
@@ -21,6 +22,9 @@ from cachetools import TTLCache
 
 from .config import settings
 from .logger import app_logger
+from .database import engine
+from .models import AITelemetry
+from sqlmodel import Session
 
 # ──────────────────────────────────────────────────────────────────────────────
 # AI 响应缓存：最多缓存 128 条结果，每条 TTL 10 分钟
@@ -166,6 +170,12 @@ class AIService:
             HTTPException 500: 网络异常、响应解析失败或其他意外错误
         """
         if not self.api_key:
+            self._record_telemetry(
+                api_type="request",
+                latency_ms=0,
+                is_success=False,
+                error_code="missing_api_key",
+            )
             raise HTTPException(
                 status_code=503,
                 detail="AI 服务未配置，请设置 DOUBAO_API_KEY 环境变量"
@@ -197,6 +207,7 @@ class AIService:
         }
 
         # ── HTTP 请求 ─────────────────────────────────────────────────────
+        request_start = time.perf_counter()
         try:
             response = requests.post(
                 self.api_url,
@@ -219,21 +230,45 @@ class AIService:
             detail = f"AI 服务请求失败（HTTP {status_str}）"
             if body:
                 detail += f"：{body}"
+            self._record_telemetry(
+                api_type="request",
+                latency_ms=int((time.perf_counter() - request_start) * 1000),
+                is_success=False,
+                error_code=f"http_{status_str}",
+            )
             raise HTTPException(status_code=500, detail=detail)
         except requests.exceptions.ConnectionError as exc:
             app_logger.error("豆包 API 连接失败（网络不可达）: {}", exc)
+            self._record_telemetry(
+                api_type="request",
+                latency_ms=int((time.perf_counter() - request_start) * 1000),
+                is_success=False,
+                error_code="connection_error",
+            )
             raise HTTPException(
                 status_code=500,
                 detail=f"AI 服务连接失败，请检查网络或 API 地址配置：{str(exc)}"
             )
         except requests.exceptions.Timeout as exc:
             app_logger.error("豆包 API 请求超时: {}", exc)
+            self._record_telemetry(
+                api_type="request",
+                latency_ms=int((time.perf_counter() - request_start) * 1000),
+                is_success=False,
+                error_code="timeout",
+            )
             raise HTTPException(
                 status_code=500,
                 detail="AI 服务请求超时（30s），请稍后重试"
             )
         except requests.exceptions.RequestException as exc:
             app_logger.error("豆包 API 请求异常: {}", exc)
+            self._record_telemetry(
+                api_type="request",
+                latency_ms=int((time.perf_counter() - request_start) * 1000),
+                is_success=False,
+                error_code="request_exception",
+            )
             raise HTTPException(
                 status_code=500,
                 detail=f"AI 服务暂时不可用：{str(exc)}"
@@ -266,6 +301,12 @@ class AIService:
                 "可能是响应格式变更，原始响应（前 500 字符）: {}",
                 json.dumps(data, ensure_ascii=False)[:500],
             )
+            self._record_telemetry(
+                api_type="request",
+                latency_ms=int((time.perf_counter() - request_start) * 1000),
+                is_success=False,
+                error_code="empty_reply",
+            )
             raise HTTPException(
                 status_code=500,
                 detail=(
@@ -278,4 +319,40 @@ class AIService:
         with _ai_cache_lock:
             _ai_cache[cache_key] = reply
 
+        usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        total_tokens = usage.get("total_tokens") if isinstance(usage, dict) else None
+        self._record_telemetry(
+            api_type="request",
+            latency_ms=int((time.perf_counter() - request_start) * 1000),
+            is_success=True,
+            token_usage=total_tokens if isinstance(total_tokens, int) else None,
+        )
+
         return reply
+
+    def _record_telemetry(
+        self,
+        api_type: str,
+        latency_ms: Optional[int],
+        is_success: bool,
+        token_usage: Optional[int] = None,
+        error_code: Optional[str] = None,
+    ) -> None:
+        """
+        持久化 AI 调用遥测数据。
+        记录失败不应影响主流程，因此内部吞掉异常并输出日志。
+        """
+        try:
+            with Session(engine) as session:
+                session.add(
+                    AITelemetry(
+                        api_type=api_type,
+                        latency_ms=latency_ms,
+                        is_success=is_success,
+                        token_usage=token_usage,
+                        error_code=error_code,
+                    )
+                )
+                session.commit()
+        except Exception as exc:
+            app_logger.warning("AI 遥测写入失败: {}", exc)

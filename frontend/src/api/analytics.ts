@@ -14,6 +14,11 @@ export interface AnimeData {
   release_date: string
   views: number
   favorites: number
+  explainability?: {
+    jaccard_similarity: number
+    combo_bonus_score: number
+    reasoning: string
+  }
 }
 
 export interface AnimeListResponse {
@@ -399,4 +404,92 @@ export const getPopularStyleCombinationChart = async (): Promise<{
   data: PopularStyleCombinationItem[]
 }> => {
   return apiClient.get('/analytics/charts/popular-style-combination')
+}
+
+export interface PersonalizedRecommendationsResponse {
+  success: boolean
+  total: number
+  data: {
+    username: string
+    preferences: string[]
+    recommendations: PersonalizedRecommendationItem[]
+  }
+}
+
+export interface PersonalizedRecommendationItem {
+  season_id: number
+  title: string
+  cover: string
+  area: string
+  rating: number | null
+  styles: string[]
+  release_date: string
+  views: number
+  favorites: number
+  match_score: number
+  explainability?: {
+    jaccard_similarity: number
+    combo_bonus_score: number
+    reasoning: string
+    strategy_enabled?: boolean
+    strategy_weights?: {
+      views_weight: number
+      ai_weight: number
+      tmdb_weight: number
+      diversity_weight: number
+    }
+    component_scores?: {
+      views_signal: number
+      ai_signal: number
+      tmdb_signal: number
+      diversity_signal: number
+    }
+  }
+}
+
+export const getPersonalizedRecommendations = async (
+  username: string
+): Promise<PersonalizedRecommendationsResponse> => {
+  return apiClient.get(`/analytics/users/${username}/recommendations`)
+}
+
+export interface RecommendationExplanationResponse {
+  success: boolean
+  data: {
+    username: string
+    season_id: number
+    title: string
+    match_score: number
+    explainability: {
+      jaccard_similarity: number
+      combo_bonus_score: number
+      views_percentile: number
+      matched_styles: string[]
+      reasoning: string
+      strategy_enabled: boolean
+      strategy_weights: {
+        views_weight: number
+        ai_weight: number
+        tmdb_weight: number
+        diversity_weight: number
+      }
+      component_scores: {
+        views_signal: number
+        ai_signal: number
+        tmdb_signal: number
+        diversity_signal: number
+      }
+    }
+    stats: {
+      views: number
+      favorites: number
+    }
+  }
+}
+
+export const getRecommendationExplanation = async (
+  username: string,
+  seasonId: number
+): Promise<RecommendationExplanationResponse> => {
+  return apiClient.get(`/analytics/users/${username}/recommendations/${seasonId}/explanation`)
 }

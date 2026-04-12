@@ -176,8 +176,10 @@ const handleLogin = async () => {
     
     if (result.success) {
       ElMessage.success('登录成功')
-      // 根据是否有偏好设置决定跳转目标
-      if (result.hasPreferences) {
+      // 管理员跳转后台，其余根据偏好设置进入流程
+      if (result.isAdmin) {
+        router.push('/admin')
+      } else if (result.hasPreferences) {
         router.push('/home')
       } else {
         router.push('/genre-selection')

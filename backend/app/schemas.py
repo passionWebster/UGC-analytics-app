@@ -26,6 +26,8 @@ class UserResponse(BaseModel):
     id: int
     username: str
     email: str
+    is_admin: bool = False
+    is_active: bool = True
     preferences: Optional[str] = None
     created_at: datetime
 
@@ -37,6 +39,20 @@ class PreferenceUpdate(BaseModel):
     """偏好设置更新模型"""
     username: str
     preferences: List[str]  # 风格偏好列表
+
+
+class UserStatusUpdate(BaseModel):
+    """管理员修改用户状态"""
+    is_active: bool
+
+
+class ResetPasswordRequest(BaseModel):
+    """管理员重置用户密码"""
+    new_password: str = Field(
+        min_length=8,
+        max_length=255,
+        pattern=r"^(?=.*[A-Za-z])(?=.*\d).+$",
+    )
 
 
 class AnimeResponse(BaseModel):
@@ -191,6 +207,7 @@ class PersonalizedRecommendationItem(BaseModel):
     area: str
     rating: Optional[float]
     styles: List[str]
+    release_date: Optional[str] = None
     match_score: float  # 双向匹配度（0-100）
     views: int
     favorites: int
@@ -201,3 +218,12 @@ class PersonalizedRecommendationsResponse(BaseModel):
     username: str
     preferences: List[str]
     recommendations: List[PersonalizedRecommendationItem]
+
+
+class RecommendationStrategyUpdate(BaseModel):
+    """推荐策略权重更新请求"""
+    views_weight: float = Field(ge=0, le=1)
+    ai_weight: float = Field(ge=0, le=1)
+    tmdb_weight: float = Field(ge=0, le=1)
+    diversity_weight: float = Field(ge=0, le=1)
+    enabled: bool = True

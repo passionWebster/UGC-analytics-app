@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from .database import init_database
 from .config import settings
 from .logger import app_logger
-from .routers import auth, analytics, ai, crawler
+from .routers import auth, analytics, ai, crawler, admin
 from .scheduler import create_scheduler
 
 
@@ -105,6 +105,7 @@ app.include_router(analytics.router)
 app.include_router(analytics.proxy_router)
 app.include_router(ai.router)
 app.include_router(crawler.router)
+app.include_router(admin.router)
 
 
 @app.on_event("startup")

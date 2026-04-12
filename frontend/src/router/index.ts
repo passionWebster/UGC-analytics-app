@@ -4,6 +4,7 @@
  */
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { ElMessage } from 'element-plus'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -64,6 +65,12 @@ const router = createRouter({
       name: 'Report',
       component: () => import('@/views/Report.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/admin',
+      name: 'Admin',
+      component: () => import('@/views/AdminDashboard.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
     }
   ]
 })
@@ -75,6 +82,9 @@ router.beforeEach((to, from, next) => {
   // 需要认证的路由
   if (to.meta.requiresAuth && !authStore.isLoggedIn) {
     next('/login')
+  } else if (to.meta.requiresAdmin && !authStore.isAdmin) {
+    ElMessage.warning('需要管理员权限')
+    next('/home')
   } else if (to.path === '/login' && authStore.isLoggedIn) {
     next('/home')
   } else {
