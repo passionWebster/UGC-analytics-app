@@ -4,6 +4,12 @@
  */
 import apiClient from './axios'
 
+export const AREA_VALUES = ['国内', '日本', '美国'] as const
+export type AreaValue = typeof AREA_VALUES[number]
+
+export const SEASON_VALUES = ['spring', 'summer', 'autumn', 'winter'] as const
+export type SeasonValue = typeof SEASON_VALUES[number]
+
 export interface AnimeData {
   season_id: number
   title: string
@@ -309,6 +315,19 @@ export interface PopularStyleCombinationItem {
   representativeAnimes: ComboAnimeItem[]
 }
 
+export interface SeasonalGenreTrendItem {
+  season: SeasonValue
+  genre: string
+  anime_count: number
+  avg_views: number
+  total_views: number
+}
+
+export interface SeasonalGenreTrendsData {
+  trends: SeasonalGenreTrendItem[]
+  best_genre_by_season: Partial<Record<SeasonValue, string>>
+}
+
 /**
  * 获取番剧类型（风格）分布数据，用于首页饼图（含"其他"下钻功能）。
  * 返回按数量降序排列的 [name, value] 二元组数组。
@@ -404,6 +423,14 @@ export const getPopularStyleCombinationChart = async (): Promise<{
   data: PopularStyleCombinationItem[]
 }> => {
   return apiClient.get('/analytics/charts/popular-style-combination')
+}
+
+export const getSeasonalGenreTrends = async (): Promise<{
+  success: boolean
+  total: number
+  data: SeasonalGenreTrendsData
+}> => {
+  return apiClient.get('/analytics/seasonal-genre-trends')
 }
 
 export interface PersonalizedRecommendationsResponse {
