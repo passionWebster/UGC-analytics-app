@@ -789,7 +789,7 @@ onMounted(async () => {
   --overview-header-gap: 0.9rem;
   --overview-header-padding-y: 0.95rem;
   --overview-header-padding-x: 1.1rem;
-  --overview-tab-gap: 0.45rem;
+  --overview-tabs-gap: 0.45rem;
   --overview-tabs-min-width: 620px;
   --overview-tabs-max-width: 760px;
   --overview-combo-backdrop: rgba(15, 23, 42, 0.12);
@@ -830,7 +830,7 @@ onMounted(async () => {
 .overview-tabs {
   margin: 0;
   padding: 0.25rem;
-  gap: var(--overview-tab-gap);
+  gap: var(--overview-tabs-gap);
   border-radius: 12px;
   background: linear-gradient(180deg, #f8fbff 0%, #f1f6ff 100%);
   flex: 1 1 var(--overview-tabs-min-width);
@@ -860,7 +860,7 @@ onMounted(async () => {
 
 .overview-tabs .nav-link.active {
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-  color: #ffffff;
+  color: #0f172a;
   box-shadow: 0 6px 16px rgba(79, 172, 254, 0.28);
 }
 
@@ -871,6 +871,8 @@ onMounted(async () => {
 
 .overview-tabs .nav-link:focus-visible {
   outline: none;
+  background: rgba(79, 172, 254, 0.14);
+  color: #1d4ed8;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
 
