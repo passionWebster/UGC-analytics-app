@@ -793,6 +793,13 @@ onMounted(async () => {
   --overview-tabs-gap: 0.45rem;
   --overview-tabs-min-width: 620px;
   --overview-tabs-max-width: 760px;
+  --overview-tabs-inactive-color: #334155;
+  --overview-tabs-active-bg-start: #1d4ed8;
+  --overview-tabs-active-bg-end: #0369a1;
+  --overview-tabs-active-color: #ffffff;
+  --overview-tabs-active-shadow: rgba(29, 78, 216, 0.3);
+  --overview-tabs-hover-bg: rgba(79, 172, 254, 0.14);
+  --overview-tabs-hover-color: #1d4ed8;
   --overview-combo-backdrop: rgba(15, 23, 42, 0.12);
   --overview-combo-backdrop-z: 12;
   --overview-combo-panel-z: 13;
@@ -855,22 +862,22 @@ onMounted(async () => {
   padding: 0.45rem 0.7rem;
   font-size: 0.88rem;
   font-weight: 500;
-  color: #334155;
+  color: var(--overview-tabs-inactive-color);
   background: transparent;
   transition: all 0.2s ease;
   white-space: nowrap;
 }
 
 .overview-tabs .nav-link.active {
-  background: linear-gradient(135deg, #1d4ed8 0%, #0369a1 100%);
-  color: #ffffff;
-  box-shadow: 0 6px 16px rgba(29, 78, 216, 0.3);
+  background: linear-gradient(135deg, var(--overview-tabs-active-bg-start) 0%, var(--overview-tabs-active-bg-end) 100%);
+  color: var(--overview-tabs-active-color);
+  box-shadow: 0 6px 16px var(--overview-tabs-active-shadow);
 }
 
 .overview-tabs .nav-link:hover:not(.active),
 .overview-tabs .nav-link:focus-visible:not(.active) {
-  background: rgba(79, 172, 254, 0.14);
-  color: #1d4ed8;
+  background: var(--overview-tabs-hover-bg);
+  color: var(--overview-tabs-hover-color);
 }
 
 .overview-tabs .nav-link:focus-visible {
