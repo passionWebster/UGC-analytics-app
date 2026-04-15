@@ -790,7 +790,9 @@ onMounted(async () => {
   --overview-header-padding-y: 0.95rem;
   --overview-header-padding-x: 1.1rem;
   --overview-tab-gap: 0.45rem;
-  --overview-combo-backdrop-overlay: rgba(15, 23, 42, 0.12);
+  --overview-tabs-min-width: 620px;
+  --overview-tabs-max-width: 760px;
+  --overview-combo-backdrop: rgba(15, 23, 42, 0.12);
 }
 
 .overview-header {
@@ -831,8 +833,8 @@ onMounted(async () => {
   gap: var(--overview-tab-gap);
   border-radius: 12px;
   background: linear-gradient(180deg, #f8fbff 0%, #f1f6ff 100%);
-  flex: 1 1 620px;
-  max-width: 760px;
+  flex: 1 1 var(--overview-tabs-min-width);
+  max-width: var(--overview-tabs-max-width);
   margin-left: auto;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1025,7 +1027,7 @@ onMounted(async () => {
 .combo-backdrop {
   position: absolute;
   inset: 0;
-  background: var(--overview-combo-backdrop-overlay);
+  background: var(--overview-combo-backdrop);
   z-index: 12;
   cursor: pointer;
 }
