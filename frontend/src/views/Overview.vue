@@ -789,8 +789,10 @@ onMounted(async () => {
   --overview-header-gap: 0.9rem;
   --overview-header-padding-y: 0.95rem;
   --overview-header-padding-x: 1.1rem;
-  /* 4 个 tab 在桌面端单行均分展示时的间距与宽度约束 */
+  /* Tab layout constraints for single-row desktop distribution */
   --overview-tabs-gap: 0.45rem;
+  --overview-tabs-columns: 4;
+  --overview-tabs-mobile-columns: 2;
   --overview-tabs-min-width: 620px;
   --overview-tabs-max-width: 760px;
   --overview-tabs-inactive-color: #334155;
@@ -847,7 +849,7 @@ onMounted(async () => {
   max-width: var(--overview-tabs-max-width);
   margin-left: auto;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--overview-tabs-columns), minmax(0, 1fr));
   list-style: none;
 }
 
@@ -899,7 +901,7 @@ onMounted(async () => {
 
 @media (max-width: 768px) {
   .overview-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--overview-tabs-mobile-columns), minmax(0, 1fr));
   }
 }
 
