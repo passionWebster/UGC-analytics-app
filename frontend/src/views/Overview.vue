@@ -84,9 +84,17 @@
               ></div>
             </div>
           </div>
-          <div class="insight-summary">
+          <div v-if="seasonalStatus === 'success'" class="insight-summary">
             <span class="summary-label">季节偏好总结：</span>
             <span>{{ seasonalSummary }}</span>
+          </div>
+          <div v-else-if="seasonalStatus === 'error'" class="insight-summary">
+            <span class="summary-label">季节偏好总结：</span>
+            <span>当前无法生成总结</span>
+          </div>
+          <div v-else-if="seasonalStatus === 'empty'" class="insight-summary">
+            <span class="summary-label">季节偏好总结：</span>
+            <span>暂无可总结的季节偏好数据</span>
           </div>
         </div>
       </div>
@@ -125,9 +133,17 @@
               ></div>
             </div>
           </div>
-          <div class="insight-summary">
+          <div v-if="preferenceStatus === 'success'" class="insight-summary">
             <span class="summary-label">与你的偏好重合：</span>
             <span>{{ preferenceSummary }}</span>
+          </div>
+          <div v-else-if="preferenceStatus === 'error'" class="insight-summary">
+            <span class="summary-label">与你的偏好重合：</span>
+            <span>偏好差异图加载失败，暂无法生成总结</span>
+          </div>
+          <div v-else-if="preferenceStatus === 'empty'" class="insight-summary">
+            <span class="summary-label">与你的偏好重合：</span>
+            <span>暂无偏好总结数据</span>
           </div>
         </div>
       </div>
@@ -399,6 +415,7 @@ const renderSeasonalChart = async () => {
   if (!seasonalTrendChart.value) return
   ensureSeasonalChart()
   seasonalStatus.value = 'loading'
+  bestGenreBySeason.value = {}
   showSeasonalLoad()
 
   try {
@@ -504,6 +521,7 @@ const renderSeasonalChart = async () => {
     seasonalStatus.value = 'success'
   } catch (error) {
     console.error('加载季节题材趋势失败:', error)
+    bestGenreBySeason.value = {}
     seasonalStatus.value = 'error'
   } finally {
     hideSeasonalLoad()
@@ -514,6 +532,7 @@ const renderPreferenceChart = async () => {
   if (!preferenceDiffChart.value) return
   ensurePrefChart()
   preferenceStatus.value = 'loading'
+  preferenceRaw.value = []
   showPrefLoad()
 
   try {
@@ -580,6 +599,7 @@ const renderPreferenceChart = async () => {
     preferenceStatus.value = 'success'
   } catch (error) {
     console.error('加载偏好差异失败:', error)
+    preferenceRaw.value = []
     preferenceStatus.value = 'error'
   } finally {
     hidePrefLoad()
@@ -1014,7 +1034,7 @@ onMounted(async () => {
   justify-content: center;
   color: #6b7280;
   font-size: 0.95rem;
-  z-index: 1;
+  z-index: 2;
   pointer-events: none;
 }
 
