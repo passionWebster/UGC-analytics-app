@@ -794,6 +794,8 @@ onMounted(async () => {
   --overview-tabs-min-width: 620px;
   --overview-tabs-max-width: 760px;
   --overview-combo-backdrop: rgba(15, 23, 42, 0.12);
+  --overview-combo-backdrop-z: 12;
+  --overview-combo-panel-z: 13;
 }
 
 .overview-header {
@@ -865,15 +867,14 @@ onMounted(async () => {
   box-shadow: 0 6px 16px rgba(29, 78, 216, 0.3);
 }
 
-.overview-tabs .nav-link:hover:not(.active) {
+.overview-tabs .nav-link:hover:not(.active),
+.overview-tabs .nav-link:focus-visible:not(.active) {
   background: rgba(79, 172, 254, 0.14);
   color: #1d4ed8;
 }
 
 .overview-tabs .nav-link:focus-visible {
   outline: none;
-  background: rgba(79, 172, 254, 0.14);
-  color: #1d4ed8;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
 
@@ -1031,7 +1032,7 @@ onMounted(async () => {
   position: absolute;
   inset: 0;
   background: var(--overview-combo-backdrop);
-  z-index: 12;
+  z-index: var(--overview-combo-backdrop-z);
   cursor: pointer;
 }
 
@@ -1046,7 +1047,7 @@ onMounted(async () => {
   border-radius: 10px 0 0 10px;
   padding: 20px 16px;
   overflow-y: auto;
-  z-index: 13;
+  z-index: var(--overview-combo-panel-z);
 }
 
 .combo-detail-header {
