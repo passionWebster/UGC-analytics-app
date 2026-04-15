@@ -90,7 +90,7 @@
           </div>
           <div v-else-if="seasonalStatus === 'error'" class="insight-summary">
             <span class="summary-label">季节偏好总结：</span>
-            <span>数据加载失败，请稍后重试</span>
+            <span>季节偏好数据加载失败，请稍后重试</span>
           </div>
           <div v-else-if="seasonalStatus === 'empty'" class="insight-summary">
             <span class="summary-label">季节偏好总结：</span>
