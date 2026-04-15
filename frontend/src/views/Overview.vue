@@ -1,11 +1,18 @@
 <template>
   <div class="overview-view">
-    <!-- 标签页导航 -->
-    <div class="mb-3">
-      <ul class="nav nav-pills" role="tablist">
+    <div class="overview-header mb-3">
+      <div class="overview-title-group">
+        <h3 class="overview-title">深度市场洞察</h3>
+        <p class="overview-subtitle">聚焦趋势演进、受众差异与题材组合的结构化分析</p>
+      </div>
+      <ul class="nav nav-pills overview-tabs" role="tablist">
         <li v-for="tab in tabs" :key="tab.id" class="nav-item">
-          <button 
-            class="nav-link" 
+          <button
+            class="nav-link"
+            :id="`overview-tab-${tab.id}`"
+            role="tab"
+            :aria-selected="activeTab === tab.id"
+            :aria-controls="`overview-panel-${tab.id}`"
             :class="{ active: activeTab === tab.id }"
             @click="switchTab(tab.id)"
           >
@@ -15,178 +22,186 @@
       </ul>
     </div>
 
-    <!-- 标签页内容 -->
     <div class="tab-content">
-      <!-- 历年数量变化 -->
-      <div v-show="activeTab === 'yearly'" class="tab-pane">
-        <div class="card p-3">
-          <div class="d-flex h-100">
-            <div class="custom-chart-panel h-100">
-              <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="card-title mb-0">历年番剧上新数量变化</h5>
-              </div>
-              <div class="chart-container h-100">
-                <div ref="yearlyTrendChart" style="height: 500px; width: 100%"></div>
-              </div>
+      <div
+        v-show="activeTab === 'yearly'"
+        class="tab-pane"
+        role="tabpanel"
+        id="overview-panel-yearly"
+        aria-labelledby="overview-tab-yearly"
+      >
+        <div class="style-unified h-100">
+          <div class="card-header-unified">
+            <h5>历年上新趋势（季度对比）</h5>
+            <div class="area-btn-group">
+              <button
+                v-for="option in yearlyOptions"
+                :key="option.value"
+                class="area-btn"
+                :class="{ active: yearlyView === option.value }"
+                @click="setYearlyView(option.value)"
+              >
+                {{ option.label }}
+              </button>
             </div>
-            <div class="custom-control-panel h-100">
-              <div class="d-flex flex-column h-100">
-                <h6 class="control-panel-title">视图选项</h6>
-                <div class="flex-grow-1 control-buttons-group">
-                  <button 
-                    v-for="option in yearlyOptions" 
-                    :key="option.value"
-                    class="control-btn"
-                    :class="{ active: yearlyView === option.value }"
-                    @click="yearlyView = option.value; renderYearlyChart()"
-                  >
-                    {{ option.label }}
-                  </button>
-                </div>
-              </div>
+          </div>
+          <div class="chart-fixed-frame">
+            <div class="chart-wrapper chart-wrapper--medium position-relative">
+              <div v-if="yearlyStatus === 'error'" class="chart-state text-danger">历年趋势加载失败</div>
+              <div v-else-if="yearlyStatus === 'empty'" class="chart-state">暂无历年趋势数据</div>
+              <div
+                ref="yearlyTrendChart"
+                class="chart-canvas chart-canvas--medium"
+                role="img"
+                aria-label="历年上新趋势图（季度对比）"
+              ></div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 偏好差异 -->
-      <div v-show="activeTab === 'genre'" class="tab-pane">
-        <div class="card p-3">
-          <div class="d-flex h-100">
-            <div class="custom-chart-panel h-100">
-              <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="card-title mb-0">用户偏好差异</h5>
-              </div>
-              <div class="chart-container h-100">
-                <div ref="preferenceDiffChart" style="height: 500px; width: 100%"></div>
-              </div>
+      <div
+        v-show="activeTab === 'seasonal'"
+        class="tab-pane"
+        role="tabpanel"
+        id="overview-panel-seasonal"
+        aria-labelledby="overview-tab-seasonal"
+      >
+        <div class="style-unified h-100">
+          <div class="card-header-unified">
+            <h5>题材季节性规律</h5>
+            <small class="text-muted">新增</small>
+          </div>
+          <div class="chart-fixed-frame">
+            <div class="chart-wrapper chart-wrapper--medium position-relative">
+              <div v-if="seasonalStatus === 'error'" class="chart-state text-danger">季节题材图加载失败</div>
+              <div v-else-if="seasonalStatus === 'empty'" class="chart-state">暂无季节题材数据</div>
+              <div
+                ref="seasonalTrendChart"
+                class="chart-canvas chart-canvas--medium"
+                role="img"
+                aria-label="题材季节性规律热力图"
+              ></div>
             </div>
-            <div class="custom-control-panel h-100">
-              <div class="d-flex flex-column h-100">
-                <h6 class="control-panel-title">地区维度</h6>
-                <div class="flex-grow-1 control-buttons-group">
-                  <button 
-                    v-for="area in prefAreaOptions" 
-                    :key="area"
-                    class="control-btn"
-                    :class="{ active: selectedPrefArea === area }"
-                    @click="selectedPrefArea = area; renderPreferenceChart()"
-                  >
-                    {{ area }}
-                  </button>
-                </div>
-              </div>
-            </div>
+          </div>
+          <div v-if="seasonalStatus === 'success'" class="insight-summary">
+            <span class="summary-label">季节偏好总结：</span>
+            <span>{{ seasonalSummary }}</span>
+          </div>
+          <div v-else-if="seasonalStatus === 'error'" class="insight-summary">
+            <span class="summary-label">季节偏好总结：</span>
+            <span>季节偏好数据加载失败，请稍后重试</span>
+          </div>
+          <div v-else-if="seasonalStatus === 'empty'" class="insight-summary">
+            <span class="summary-label">季节偏好总结：</span>
+            <span>暂无可总结的季节偏好数据</span>
           </div>
         </div>
       </div>
 
-      <!-- 口碑热度指数 -->
-      <div v-show="activeTab === 'rating'" class="tab-pane">
-        <div class="card p-3">
-          <div class="d-flex h-100">
-            <div class="custom-chart-panel h-100">
-              <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="card-title mb-0">综合口碑热度指数排行</h5>
-              </div>
-              <div class="chart-container h-100">
-                <div ref="collectionRatioChart" style="height: 500px; width: 100%"></div>
-              </div>
+      <div
+        v-show="activeTab === 'preference'"
+        class="tab-pane"
+        role="tabpanel"
+        id="overview-panel-preference"
+        aria-labelledby="overview-tab-preference"
+      >
+        <div class="style-unified h-100">
+          <div class="card-header-unified">
+            <h5>地区受众偏好差异</h5>
+            <div class="area-btn-group">
+              <button
+                v-for="area in prefAreaOptions"
+                :key="area"
+                class="area-btn"
+                :class="{ active: selectedPrefArea === area }"
+                @click="setPrefArea(area)"
+              >
+                {{ area }}
+              </button>
             </div>
-            <div class="custom-control-panel h-100">
-              <div class="d-flex flex-column h-100">
-                <div class="custom-select-wrapper mb-3">
-                  <select v-model="selectedSeason" class="form-select" @change="renderRatingChart">
-                    <option value="all">全年</option>
-                    <option value="spring">春季新番 (4-6月)</option>
-                    <option value="summer">夏季新番 (7-9月)</option>
-                    <option value="autumn">秋季新番 (10-12月)</option>
-                    <option value="winter">冬季新番 (1-3月)</option>
-                  </select>
-                </div>
-                <h6 class="control-panel-title">视图选项</h6>
-                <div class="flex-grow-1 control-buttons-group">
-                  <button 
-                    v-for="option in ratingOptions" 
-                    :key="option.value"
-                    class="control-btn"
-                    :class="{ active: ratingView === option.value }"
-                    @click="ratingView = option.value; renderRatingChart()"
-                  >
-                    {{ option.label }}
-                  </button>
-                </div>
-              </div>
+          </div>
+          <div class="chart-fixed-frame">
+            <div class="chart-wrapper chart-wrapper--large position-relative">
+              <div v-if="preferenceStatus === 'error'" class="chart-state text-danger">偏好差异图加载失败</div>
+              <div v-else-if="preferenceStatus === 'empty'" class="chart-state">暂无偏好差异数据</div>
+              <div
+                ref="preferenceDiffChart"
+                class="chart-canvas chart-canvas--large"
+                role="img"
+                aria-label="地区受众偏好差异图"
+              ></div>
             </div>
+          </div>
+          <div v-if="preferenceStatus === 'success'" class="insight-summary">
+            <span class="summary-label">与你的偏好重合：</span>
+            <span>{{ preferenceSummary }}</span>
+          </div>
+          <div v-else-if="preferenceStatus === 'error'" class="insight-summary">
+            <span class="summary-label">与你的偏好重合：</span>
+            <span>偏好差异图加载失败，请稍后重试</span>
+          </div>
+          <div v-else-if="preferenceStatus === 'empty'" class="insight-summary">
+            <span class="summary-label">与你的偏好重合：</span>
+            <span>暂无偏好总结数据</span>
           </div>
         </div>
       </div>
 
-      <!-- 热门风格组合 -->
-      <div v-show="activeTab === 'category'" class="tab-pane">
-        <div class="card p-3">
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="card-title mb-0">热门风格组合分析 (黄金搭档)</h5>
-            <small class="text-muted">点击矩形查看详情</small>
+      <div
+        v-show="activeTab === 'category'"
+        class="tab-pane"
+        role="tabpanel"
+        id="overview-panel-category"
+        aria-labelledby="overview-tab-category"
+      >
+        <div class="style-unified h-100">
+          <div class="card-header-unified">
+            <h5>爆款风格组合库（黄金搭档）</h5>
+            <small class="text-muted">点击矩形查看下钻详情</small>
           </div>
-          <!-- 图表与下钻详情面板的相对容器 -->
-          <div class="chart-container h-100 position-relative overflow-hidden">
-            <div
-              ref="categoryTrendChart"
-              style="height: 600px; width: 100%"
-              :class="{ 'combo-chart-dimmed': isComboDetailVisible }"
-            ></div>
+          <div class="chart-fixed-frame chart-fixed-frame--wide">
+            <div class="chart-wrapper chart-wrapper--large chart-wrapper--combo">
+              <div v-if="categoryStatus === 'error'" class="chart-state text-danger">风格组合图加载失败</div>
+              <div v-else-if="categoryStatus === 'empty'" class="chart-state">暂无风格组合数据</div>
+              <div
+                ref="categoryTrendChart"
+                class="chart-canvas chart-canvas--large"
+                role="img"
+                aria-label="爆款风格组合库图"
+                :class="{ 'combo-chart-dimmed': isComboDetailVisible }"
+              ></div>
 
-            <!-- 背景蒙层：点击可关闭侧边面板 -->
-            <div
-              v-if="isComboDetailVisible"
-              class="combo-backdrop"
-              @click="closeComboDetail"
-            ></div>
+              <div v-if="isComboDetailVisible" class="combo-backdrop" @click="closeComboDetail"></div>
 
-            <!-- 下钻详情侧边面板 -->
-            <transition name="slide-panel">
-              <div v-if="isComboDetailVisible" class="combo-detail-panel">
-                <div class="combo-detail-header">
-                  <div
-                    class="combo-detail-block"
-                    :style="{ backgroundColor: comboDetailColor }"
-                  ></div>
-                  <h5 class="combo-detail-title" :style="{ color: comboDetailColor }">
-                    {{ comboDetailData.name }}
-                  </h5>
-                  <button class="btn-close-detail" @click="closeComboDetail" title="关闭">
-                    <i class="fas fa-times"></i>
-                  </button>
-                </div>
-                <p class="combo-detail-stats">
-                  共 {{ comboDetailData.count }} 部番剧・平均追番 {{ (comboDetailData.value ?? 0).toLocaleString() }}
-                </p>
-                <div class="detail-anime-list">
-                  <div
-                    v-for="(anime, index) in comboDetailData.animes"
-                    :key="index"
-                    class="detail-anime-item"
-                  >
-                    <span class="detail-rank">{{ index + 1 }}</span>
-                    <img
-                      :src="getComboAnimeImageUrl(anime)"
-                      :alt="anime.title"
-                      class="detail-cover"
-                    />
-                    <div class="detail-info">
-                      <h5>{{ anime.title }}</h5>
-                      <p>
-                        <i class="fas fa-star text-warning me-1"></i>
-                        {{ anime.score ?? '暂无评分' }}
-                        <i class="fas fa-heart text-danger ms-2 me-1"></i>
-                        {{ formatNumber(anime.favorites) }}
-                      </p>
+              <transition name="slide-panel">
+                <div v-if="isComboDetailVisible" class="combo-detail-panel">
+                  <div class="combo-detail-header">
+                    <div class="combo-detail-block" :style="{ backgroundColor: comboDetailColor }"></div>
+                    <h5 class="combo-detail-title" :style="{ color: comboDetailColor }">{{ comboDetailData.name }}</h5>
+                    <button class="btn-close-detail" @click="closeComboDetail" title="关闭">
+                      <i class="fas fa-times"></i>
+                    </button>
+                  </div>
+                  <p class="combo-detail-stats">
+                    共 {{ comboDetailData.count }} 部番剧・平均追番 {{ (comboDetailData.value ?? 0).toLocaleString() }}
+                  </p>
+                  <div class="detail-anime-list">
+                    <div v-for="(anime, index) in comboDetailData.animes" :key="index" class="detail-anime-item">
+                      <span class="detail-rank">{{ index + 1 }}</span>
+                      <img :src="getComboAnimeImageUrl(anime)" :alt="anime.title" class="detail-cover" />
+                      <div class="detail-info">
+                        <h5>{{ anime.title }}</h5>
+                        <p>
+                          <i class="fas fa-star text-warning me-1"></i>{{ anime.score ?? '暂无评分' }}
+                          <i class="fas fa-heart text-danger ms-2 me-1"></i>{{ formatNumber(anime.favorites) }}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </transition>
+              </transition>
+            </div>
           </div>
         </div>
       </div>
@@ -195,38 +210,58 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
 import { useEcharts } from '@/composables/useEcharts'
 import { useAuthStore } from '@/stores/auth'
-import type { ComboAnimeItem } from '@/api/analytics'
 import {
-  getYearlyQuantityChart,
-  getPreferenceDifferenceChart,
-  getReputationHeatIndexChart,
+  AREA_VALUES,
+  type AreaValue,
+  type ComboAnimeItem,
+  type PreferenceDifferenceItem,
+  SEASON_VALUES,
+  type SeasonValue,
   getPopularStyleCombinationChart,
+  getPreferenceDifferenceChart,
+  getSeasonalGenreTrends,
+  getYearlyQuantityChart,
 } from '@/api/analytics'
 
+type LoadState = 'idle' | 'loading' | 'success' | 'empty' | 'error'
+type OverviewTab = 'yearly' | 'seasonal' | 'preference' | 'category'
+
 const authStore = useAuthStore()
-
-// ─── 标签页配置 ──────────────────────────────────────────────────────────────
-const tabs = [
-  { id: 'yearly', label: '历年数量变化' },
-  { id: 'genre', label: '偏好差异' },
-  { id: 'rating', label: '口碑热度指数' },
-  { id: 'category', label: '热门风格组合' }
+const tabs: Array<{ id: OverviewTab; label: string }> = [
+  { id: 'yearly', label: '历年上新趋势' },
+  { id: 'seasonal', label: '题材季节性规律' },
+  { id: 'preference', label: '受众偏好差异' },
+  { id: 'category', label: '爆款风格组合' },
 ]
+const activeTab = ref<OverviewTab>('yearly')
+const renderedTabs = ref(new Set<OverviewTab>())
 
-// ─── 状态管理 ────────────────────────────────────────────────────────────────
-const activeTab = ref('yearly')
-const yearlyView = ref('all')
-const selectedPrefArea = ref('国内')
-const selectedSeason = ref('all')
-const ratingView = ref('all')
+const yearlyOptions = [
+  { value: 'all', label: '全部地区' },
+  { value: 'china', label: '国产' },
+  { value: 'japan', label: '日本' },
+  { value: 'us', label: '美国' },
+] as const
+type YearlyViewValue = (typeof yearlyOptions)[number]['value']
 
-// ─── 图表 DOM 引用（通过 useEcharts 管理） ──────────────────────────────────
+const prefAreaOptions: AreaValue[] = [...AREA_VALUES]
+
+const yearlyView = ref<YearlyViewValue>('all')
+const selectedPrefArea = ref<AreaValue>('国内')
+const yearlyStatus = ref<LoadState>('idle')
+const seasonalStatus = ref<LoadState>('idle')
+const preferenceStatus = ref<LoadState>('idle')
+const categoryStatus = ref<LoadState>('idle')
+const preferenceRaw = ref<PreferenceDifferenceItem[]>([])
+const bestGenreBySeason = ref<Partial<Record<SeasonValue, string>>>({})
+
 const {
   chartRef: yearlyTrendChart,
+  chartInstance: yearlyChartInstance,
   initChart: initYearlyChart,
   setOption: setYearlyOption,
   showLoading: showYearlyLoad,
@@ -234,7 +269,17 @@ const {
 } = useEcharts()
 
 const {
+  chartRef: seasonalTrendChart,
+  chartInstance: seasonalChartInstance,
+  initChart: initSeasonalChart,
+  setOption: setSeasonalOption,
+  showLoading: showSeasonalLoad,
+  hideLoading: hideSeasonalLoad,
+} = useEcharts()
+
+const {
   chartRef: preferenceDiffChart,
+  chartInstance: prefChartInstance,
   initChart: initPrefChart,
   setOption: setPrefOption,
   showLoading: showPrefLoad,
@@ -242,99 +287,102 @@ const {
 } = useEcharts()
 
 const {
-  chartRef: collectionRatioChart,
-  initChart: initRatingChart,
-  setOption: setRatingOption,
-  showLoading: showRatingLoad,
-  hideLoading: hideRatingLoad,
-} = useEcharts()
-
-const {
   chartRef: categoryTrendChart,
+  chartInstance: categoryChartInstance,
   initChart: initCategoryChart,
   setOption: setCategoryOption,
   showLoading: showCategoryLoad,
   hideLoading: hideCategoryLoad,
-  chartInstance: categoryChartInstance,
 } = useEcharts()
 
-// ─── 选项配置 ────────────────────────────────────────────────────────────────
-const yearlyOptions = [
-  { value: 'all', label: '全部地区' },
-  { value: 'china', label: '国产' },
-  { value: 'japan', label: '日本' },
-  { value: 'us', label: '美国' }
-]
-
-const prefAreaOptions = ['国内', '日本', '美国']
-
-const ratingOptions = [
-  { value: 'all', label: '全部' },
-  { value: 'top10', label: 'Top 10' },
-  { value: 'top20', label: 'Top 20' }
-]
-
-// ─── 热门风格组合下钻状态 ───────────────────────────────────────────────────
-/** 是否显示下钻详情侧边面板 */
 const isComboDetailVisible = ref(false)
-
-/** 详情面板绑定的数据（包含 name、value、count、animes） */
-const comboDetailData = ref<{
-  name: string
-  value: number
-  count: number
-  animes: ComboAnimeItem[]
-}>({ name: '', value: 0, count: 0, animes: [] })
-
-/** 当前点击矩形的颜色（用于标题色块同步） */
+const comboDetailData = ref<{ name: string; value: number; count: number; animes: ComboAnimeItem[] }>({
+  name: '',
+  value: 0,
+  count: 0,
+  animes: [],
+})
 const comboDetailColor = ref('#667eea')
 
-// ─── 工具函数 ────────────────────────────────────────────────────────────────
-/** 格式化数字（亿 / 万） */
+const seasonLabelMap: Record<SeasonValue, string> = {
+  winter: '冬季(1-3月)',
+  spring: '春季(4-6月)',
+  summer: '夏季(7-9月)',
+  autumn: '秋季(10-12月)',
+}
+
 const formatNumber = (num: number | null | undefined): string => {
   if (num == null) return '0'
-  if (num >= 100000000) return (num / 100000000).toFixed(1) + '亿'
-  if (num >= 10000) return (num / 10000).toFixed(1) + '万'
+  if (num >= 100000000) return `${(num / 100000000).toFixed(1)}亿`
+  if (num >= 10000) return `${(num / 10000).toFixed(1)}万`
   return num.toLocaleString()
 }
 
-/**
- * 获取风格组合详情中番剧封面的代理图片 URL。
- * 通过后端 image_proxy 绕过 CDN 防盗链。
- */
 const getComboAnimeImageUrl = (anime: ComboAnimeItem): string => {
   if (!anime.cover) return ''
   return `/api/image_proxy?url=${encodeURIComponent(anime.cover)}&title=${encodeURIComponent(anime.title)}&season_id=${anime.season_id}`
 }
 
-// ─── 切换标签页 ──────────────────────────────────────────────────────────────
-const switchTab = (tabId: string) => {
-  activeTab.value = tabId
-  // 等待 v-show 更新 DOM 后再渲染/刷新图表
-  nextTick(() => {
-    switch (tabId) {
-      case 'yearly':   renderYearlyChart();    break
-      case 'genre':    renderPreferenceChart(); break
-      case 'rating':   renderRatingChart();    break
-      case 'category': renderCategoryChart();  break
-    }
-  })
+const seasonalSummary = computed(() => {
+  const order: SeasonValue[] = ['winter', 'spring', 'summer', 'autumn']
+  const chunks = order
+    .map(season => {
+      const genre = bestGenreBySeason.value[season]
+      return genre ? `${seasonLabelMap[season]}：${genre}` : ''
+    })
+    .filter(Boolean)
+  return chunks.length ? chunks.join('；') : '暂无可用结论'
+})
+
+const preferenceSummary = computed(() => {
+  const data = preferenceRaw.value
+  if (!data.length) return '暂无可用结论'
+
+  const userPrefs = new Set(authStore.preferences || [])
+  if (!userPrefs.size) return '你尚未设置偏好，可先在偏好页配置'
+
+  const topStyles = [...data]
+    .sort((a, b) => b.preferenceIndex - a.preferenceIndex)
+    .slice(0, 8)
+    .map(item => item.style)
+
+  const overlap = topStyles.filter(style => userPrefs.has(style))
+  if (!overlap.length) return `在「${selectedPrefArea.value}」的 Top 题材中暂未命中你的偏好`
+  return `在「${selectedPrefArea.value}」的 Top 题材中命中 ${overlap.length} 个：${overlap.join('、')}`
+})
+
+const ensureYearlyChart = () => {
+  if (!yearlyChartInstance.value) initYearlyChart({})
 }
 
-// ─── 历年数量变化图（多系列折线图，X 轴为季度） ─────────────────────────────
+const ensureSeasonalChart = () => {
+  if (!seasonalChartInstance.value) initSeasonalChart({})
+}
+
+const ensurePrefChart = () => {
+  if (!prefChartInstance.value) initPrefChart({})
+}
+
+const ensureCategoryChart = () => {
+  if (!categoryChartInstance.value) initCategoryChart({})
+}
+
 const renderYearlyChart = async () => {
   if (!yearlyTrendChart.value) return
-
-  // 若实例尚未初始化，先创建空实例
-  initYearlyChart({})
+  ensureYearlyChart()
+  yearlyStatus.value = 'loading'
+  showYearlyLoad()
 
   try {
-    showYearlyLoad()
     const yearlyData = await getYearlyQuantityChart(yearlyView.value)
-    const xData = ['春季(1-3月)', '夏季(4-6月)', '秋季(7-9月)', '冬季(10-12月)']
-
-    // 年份降序排列，最新年份在图例最前
+    const xData = ['冬季(1-3月)', '春季(4-6月)', '夏季(7-9月)', '秋季(10-12月)']
     const legendData = Object.keys(yearlyData).sort((a, b) => Number(b) - Number(a))
+
+    if (!legendData.length) {
+      yearlyStatus.value = 'empty'
+      setYearlyOption({ series: [] }, { notMerge: true })
+      return
+    }
 
     const seriesData: echarts.SeriesOption[] = legendData.map(year => ({
       name: year,
@@ -343,38 +391,162 @@ const renderYearlyChart = async () => {
       data: yearlyData[year],
     }))
 
-    setYearlyOption({
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'cross' },
+    setYearlyOption(
+      {
+        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+        legend: { data: legendData, type: 'scroll' },
+        xAxis: { type: 'category', data: xData },
+        yAxis: { type: 'value', name: '番剧数量' },
+        grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
+        series: seriesData,
       },
-      legend: { data: legendData, type: 'scroll' },
-      xAxis: { type: 'category', data: xData },
-      yAxis: { type: 'value', name: '番剧数量' },
-      series: seriesData,
-      grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-    }, { notMerge: true })
+      { notMerge: true }
+    )
+    yearlyStatus.value = 'success'
   } catch (error) {
     console.error('加载历年趋势失败:', error)
+    yearlyStatus.value = 'error'
   } finally {
     hideYearlyLoad()
   }
 }
 
-// ─── 偏好差异图（矩形树图，按地区偏好指数着色） ─────────────────────────────
-const renderPreferenceChart = async () => {
-  if (!preferenceDiffChart.value) return
-
-  initPrefChart({})
+const renderSeasonalChart = async () => {
+  if (!seasonalTrendChart.value) return
+  ensureSeasonalChart()
+  seasonalStatus.value = 'loading'
+  bestGenreBySeason.value = {}
+  showSeasonalLoad()
 
   try {
-    showPrefLoad()
+    const response = await getSeasonalGenreTrends()
+    const trends = response.data?.trends || []
+    bestGenreBySeason.value = response.data?.best_genre_by_season || {}
+
+    if (!trends.length) {
+      seasonalStatus.value = 'empty'
+      setSeasonalOption({ series: [] }, { notMerge: true })
+      return
+    }
+
+    const seasonOrder: SeasonValue[] = [...SEASON_VALUES]
+    const genreTotals = new Map<string, number>()
+    for (const item of trends) {
+      genreTotals.set(item.genre, (genreTotals.get(item.genre) || 0) + item.total_views)
+    }
+
+    const topGenres = [...genreTotals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+      .map(([genre]) => genre)
+
+    if (!topGenres.length) {
+      seasonalStatus.value = 'empty'
+      setSeasonalOption({ series: [] }, { notMerge: true })
+      return
+    }
+
+    const topGenreSet = new Set(topGenres)
+    const pairMap = new Map<string, { avgViews: number; animeCount: number }>()
+    const heatmapData: Array<[number, number, number]> = []
+
+    for (const item of trends) {
+      if (!topGenreSet.has(item.genre)) continue
+      const x = seasonOrder.indexOf(item.season)
+      const y = topGenres.indexOf(item.genre)
+      if (x < 0 || y < 0) continue
+      pairMap.set(`${item.season}|${item.genre}`, {
+        avgViews: item.avg_views,
+        animeCount: item.anime_count,
+      })
+      heatmapData.push([x, y, item.avg_views])
+    }
+
+    const values = heatmapData.map(([, , value]) => value)
+    const min = values.length ? Math.min(...values) : 0
+    const max = values.length ? Math.max(...values) : 0
+
+    setSeasonalOption(
+      {
+        tooltip: {
+          trigger: 'item',
+          formatter: (params: any) => {
+            const season = seasonOrder[params.value[0]]
+            const genre = topGenres[params.value[1]]
+            const detail = pairMap.get(`${season}|${genre}`)
+            if (!detail) return ''
+            return `<b>${seasonLabelMap[season]}</b><br/>题材：${genre}<br/>平均播放：${formatNumber(detail.avgViews)}<br/>番剧数：${detail.animeCount}`
+          },
+        },
+        grid: { left: '3%', right: '8%', bottom: '10%', top: '8%', containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: seasonOrder.map(s => seasonLabelMap[s]),
+          splitArea: { show: true },
+        },
+        yAxis: {
+          type: 'category',
+          data: topGenres,
+          splitArea: { show: true },
+        },
+        visualMap: {
+          min,
+          max,
+          calculable: true,
+          orient: 'vertical',
+          right: 0,
+          top: 'middle',
+          inRange: {
+            color: ['#e0f2fe', '#7dd3fc', '#38bdf8', '#0ea5e9', '#0369a1'],
+          },
+        },
+        series: [
+          {
+            type: 'heatmap',
+            data: heatmapData,
+            label: {
+              show: false,
+            },
+            emphasis: {
+              itemStyle: {
+                shadowBlur: 8,
+                shadowColor: 'rgba(0, 0, 0, 0.35)',
+              },
+            },
+          },
+        ],
+      },
+      { notMerge: true }
+    )
+    seasonalStatus.value = 'success'
+  } catch (error) {
+    console.error('加载季节题材趋势失败:', error)
+    bestGenreBySeason.value = {}
+    seasonalStatus.value = 'error'
+  } finally {
+    hideSeasonalLoad()
+  }
+}
+
+const renderPreferenceChart = async () => {
+  if (!preferenceDiffChart.value) return
+  ensurePrefChart()
+  preferenceStatus.value = 'loading'
+  preferenceRaw.value = []
+  showPrefLoad()
+
+  try {
     const response = await getPreferenceDifferenceChart(selectedPrefArea.value)
     const chartData = response.data || []
+    preferenceRaw.value = chartData
 
-    // 获取用户偏好列表，用于高亮匹配的风格
-    const userPreferences: string[] = authStore.preferences || []
+    if (!chartData.length) {
+      preferenceStatus.value = 'empty'
+      setPrefOption({ series: [] }, { notMerge: true })
+      return
+    }
 
+    const userPreferences = authStore.preferences || []
     const treeData = chartData.map(d => ({
       name: d.style,
       value: d.preferenceIndex,
@@ -389,151 +561,67 @@ const renderPreferenceChart = async () => {
       },
     }))
 
-    setPrefOption({
-      tooltip: {
-        trigger: 'item',
-        formatter: (params: any) => {
-          // 跳过父节点
-          if (params.data?.children?.length > 0 || params.data?.value == null) return ''
-          const d = params.data
-          const compText =
-            d.value > 1.1
-              ? `<span style="color:#28a745;">(高于全球)</span>`
-              : d.value < 0.9
-              ? `<span style="color:#dc3545;">(低于全球)</span>`
-              : `<span>(与全球持平)</span>`
-          return `<b>${d.name}</b><br/>
-地区偏好指数: <b style="font-size:1.2em;">${d.value}</b> ${compText}<br/>
-<hr style="margin:4px 0;">
-该地区番剧数: ${d.regionCount}<br/>
-全球番剧数: ${d.globalCount}`
+    setPrefOption(
+      {
+        tooltip: {
+          trigger: 'item',
+          formatter: (params: any) => {
+            if (params.data?.children?.length > 0 || params.data?.value == null) return ''
+            const d = params.data
+            const compText =
+              d.value > 1.1
+                ? `<span style="color:#28a745;">(高于全球)</span>`
+                : d.value < 0.9
+                  ? `<span style="color:#dc3545;">(低于全球)</span>`
+                  : `<span>(与全球持平)</span>`
+            return `<b>${d.name}</b><br/>地区偏好指数: <b style="font-size:1.1em;">${d.value}</b> ${compText}<br/><hr style="margin:4px 0;">该地区番剧数: ${d.regionCount}<br/>全球番剧数: ${d.globalCount}`
+          },
         },
+        series: [
+          {
+            type: 'treemap',
+            roam: false,
+            nodeClick: false,
+            breadcrumb: { show: false },
+            label: {
+              show: true,
+              position: 'inside',
+              formatter: (p: any) => `${p.name}\n${p.value}`,
+              color: '#fff',
+              fontSize: 13,
+            },
+            data: treeData,
+          },
+        ],
       },
-      series: [{
-        type: 'treemap',
-        roam: false,
-        nodeClick: false,
-        breadcrumb: { show: false },
-        label: {
-          show: true,
-          position: 'inside',
-          formatter: (p: any) => `${p.name}\n${p.value}`,
-          color: '#fff',
-          fontSize: 14,
-        },
-        data: treeData,
-      }],
-    }, { notMerge: true })
+      { notMerge: true }
+    )
+    preferenceStatus.value = 'success'
   } catch (error) {
     console.error('加载偏好差异失败:', error)
+    preferenceRaw.value = []
+    preferenceStatus.value = 'error'
   } finally {
     hidePrefLoad()
   }
 }
 
-// ─── 口碑热度指数排行图（渐变条形图） ────────────────────────────────────────
-const renderRatingChart = async () => {
-  if (!collectionRatioChart.value) return
-
-  initRatingChart({})
-
-  try {
-    showRatingLoad()
-    const season = selectedSeason.value !== 'all' ? selectedSeason.value : ''
-    const response = await getReputationHeatIndexChart(season)
-    const topAnimes = response.data || []
-
-    // 根据 ratingView 控制展示数量
-    const limit = ratingView.value === 'top10' ? 10 : 20
-    const displayAnimes = topAnimes.slice(0, limit)
-
-    // 倒序显示（最高分在顶部）
-    const yAxisData = displayAnimes.map(a => a.title).reverse()
-    const seriesData = displayAnimes
-      .map(a => ({
-        value: parseFloat(a.qualityScore.toFixed(0)),
-        score: a.rating,
-        views: a.views,
-        favorites: a.favorites,
-      }))
-      .reverse()
-
-    setRatingOption({
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-        backgroundColor: 'rgba(30, 41, 59, 0.9)',
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        textStyle: { color: '#f0f0f0' },
-        formatter: (params: any) => {
-          if (!params?.length) return ''
-          const d = params[0].data
-          return `<b>${params[0].name}</b><br/>
-<span style="font-size:1.2em;color:#fde047;font-weight:bold;">口碑热度指数: ${formatNumber(d.value)}</span><br/>
-<hr style="margin:4px 0;border-color:rgba(255,255,255,0.2);">
-B站评分: ${d.score}<br/>
-追番数: ${formatNumber(d.favorites)}<br/>
-播放量: ${formatNumber(d.views)}`
-        },
-      },
-      grid: { left: '5%', right: '10%', bottom: '3%', top: '3%', containLabel: true },
-      xAxis: { type: 'value', name: '口碑热度指数' },
-      yAxis: {
-        type: 'category',
-        data: yAxisData,
-        axisLabel: { show: false },
-        axisTick: { show: false },
-        axisLine: { show: false },
-      },
-      series: [{
-        name: '口碑热度指数',
-        type: 'bar',
-        barWidth: '60%',
-        data: seriesData,
-        itemStyle: {
-          borderRadius: [0, 5, 5, 0],
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#f97316' },
-            { offset: 1, color: '#facc15' },
-          ]),
-        },
-        emphasis: {
-          itemStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-              { offset: 0, color: '#fb923c' },
-              { offset: 1, color: '#fde047' },
-            ]),
-          },
-        },
-        label: {
-          show: true,
-          position: 'insideLeft',
-          formatter: '{b}',
-          color: '#fff',
-          fontSize: 12,
-        },
-      }],
-    }, { notMerge: true })
-  } catch (error) {
-    console.error('加载口碑热度失败:', error)
-  } finally {
-    hideRatingLoad()
-  }
-}
-
-// ─── 热门风格组合矩形树图（含点击下钻详情面板） ─────────────────────────────
 const renderCategoryChart = async () => {
   if (!categoryTrendChart.value) return
-
-  initCategoryChart({})
-
-  // 移除旧的点击监听，防止重复绑定
+  ensureCategoryChart()
+  categoryStatus.value = 'loading'
+  showCategoryLoad()
   categoryChartInstance.value?.off('click')
 
   try {
-    showCategoryLoad()
     const response = await getPopularStyleCombinationChart()
     const topCombinations = response.data || []
+
+    if (!topCombinations.length) {
+      categoryStatus.value = 'empty'
+      setCategoryOption({ series: [] }, { notMerge: true })
+      return
+    }
 
     const seriesData = topCombinations.map(combo => ({
       name: combo.combination,
@@ -542,286 +630,441 @@ const renderCategoryChart = async () => {
       animes: combo.representativeAnimes,
     }))
 
-    setCategoryOption({
-      tooltip: {
-        trigger: 'item',
-        backgroundColor: 'rgba(30, 41, 59, 0.9)',
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        textStyle: { color: '#f0f0f0' },
-        formatter: (params: any) => {
-          if (params.data?.children?.length > 0 || params.data?.value == null) return ''
-          const { name, value, count, animes } = params.data
-          let animeListHtml = ''
-          if (animes?.length > 0) {
-            const preview = animes.slice(0, 5)
-            const items = preview.map((a: any) => `<li>${a.title || '未知标题'}</li>`).join('')
-            const more = animes.length > 5 ? `<li>等 ${animes.length} 部番剧...</li>` : ''
-            animeListHtml = `<hr style="margin:4px 0;border-color:rgba(255,255,255,0.2);">
-<span style="color:#d1d5db;">包含番剧（部分）:</span>
-<ul style="padding-left:15px;margin:5px 0 0;">${items}${more}</ul>`
-          }
-          return `<b>${name}</b><br/>
-<span style="font-size:1.2em;color:#34d399;font-weight:bold;">平均追番: ${value?.toLocaleString()}</span><br/>
-<hr style="margin:4px 0;border-color:rgba(255,255,255,0.2);">
-包含番剧数: ${count}${animeListHtml}`
+    setCategoryOption(
+      {
+        tooltip: {
+          trigger: 'item',
+          backgroundColor: 'rgba(30, 41, 59, 0.9)',
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          textStyle: { color: '#f0f0f0' },
+          formatter: (params: any) => {
+            if (params.data?.children?.length > 0 || params.data?.value == null) return ''
+            const { name, value, count, animes } = params.data
+            let animeListHtml = ''
+            if (animes?.length > 0) {
+              const preview = animes.slice(0, 5)
+              const items = preview.map((a: any) => `<li>${a.title || '未知标题'}</li>`).join('')
+              const more = animes.length > 5 ? `<li>等 ${animes.length} 部番剧...</li>` : ''
+              animeListHtml = `<hr style="margin:4px 0;border-color:rgba(255,255,255,0.2);"><span style="color:#d1d5db;">包含番剧（部分）:</span><ul style="padding-left:15px;margin:5px 0 0;">${items}${more}</ul>`
+            }
+            return `<b>${name}</b><br/><span style="font-size:1.1em;color:#34d399;font-weight:bold;">平均追番: ${value?.toLocaleString()}</span><br/><hr style="margin:4px 0;border-color:rgba(255,255,255,0.2);">包含番剧数: ${count}${animeListHtml}`
+          },
         },
+        series: [
+          {
+            type: 'treemap',
+            roam: false,
+            nodeClick: false,
+            breadcrumb: { show: false },
+            label: {
+              show: true,
+              position: 'inside',
+              formatter: '{b}',
+              color: '#fff',
+              fontSize: 14,
+              fontWeight: 'bold',
+            },
+            itemStyle: { gapWidth: 3, borderColor: '#fff', borderRadius: 5 },
+            data: seriesData,
+          },
+        ],
       },
-      series: [{
-        type: 'treemap',
-        roam: false,
-        nodeClick: false,
-        breadcrumb: { show: false },
-        label: {
-          show: true,
-          position: 'inside',
-          formatter: '{b}',
-          color: '#fff',
-          fontSize: 14,
-          fontWeight: 'bold',
-        },
-        itemStyle: { gapWidth: 3, borderColor: '#fff', borderRadius: 5 },
-        data: seriesData,
-      }],
-    }, { notMerge: true })
+      { notMerge: true }
+    )
 
-    // 绑定点击事件：打开下钻详情面板
     categoryChartInstance.value?.on('click', (params: any) => {
-      if (params.data?.animes) {
-        comboDetailData.value = {
-          name: params.data.name,
-          value: params.data.value,
-          count: params.data.count,
-          animes: params.data.animes,
-        }
-        comboDetailColor.value = params.color ?? '#667eea'
-        isComboDetailVisible.value = true
-
-        // 隐藏 tooltip 并将图表设为静默（防止遮挡面板）
-        categoryChartInstance.value?.dispatchAction({ type: 'hideTip' })
-        setCategoryOption({ series: [{ silent: true }] })
+      if (!params.data?.animes) return
+      comboDetailData.value = {
+        name: params.data.name,
+        value: params.data.value,
+        count: params.data.count,
+        animes: params.data.animes,
       }
+      comboDetailColor.value = params.color ?? '#667eea'
+      isComboDetailVisible.value = true
+      categoryChartInstance.value?.dispatchAction({ type: 'hideTip' })
+      setCategoryOption({ series: [{ silent: true }] })
     })
+
+    categoryStatus.value = 'success'
   } catch (error) {
     console.error('加载风格组合失败:', error)
+    categoryStatus.value = 'error'
   } finally {
     hideCategoryLoad()
   }
 }
 
-/** 关闭风格组合下钻详情面板，恢复图表交互 */
 const closeComboDetail = () => {
   isComboDetailVisible.value = false
   setCategoryOption({ series: [{ silent: false }] })
 }
 
-// ─── 生命周期 ────────────────────────────────────────────────────────────────
-onMounted(() => {
-  // 挂载后渲染默认标签页图表
-  renderYearlyChart()
+const setYearlyView = (value: YearlyViewValue) => {
+  yearlyView.value = value
+  void renderByTab('yearly', true).catch(error => {
+    console.error('刷新历年趋势失败:', error)
+  })
+}
+
+const setPrefArea = (value: AreaValue) => {
+  selectedPrefArea.value = value
+  void renderByTab('preference', true).catch(error => {
+    console.error('刷新地区偏好差异失败:', error)
+  })
+}
+
+const resizeTabChart = (tab: OverviewTab) => {
+  switch (tab) {
+    case 'yearly':
+      yearlyChartInstance.value?.resize()
+      break
+    case 'seasonal':
+      seasonalChartInstance.value?.resize()
+      break
+    case 'preference':
+      prefChartInstance.value?.resize()
+      break
+    case 'category':
+      categoryChartInstance.value?.resize()
+      break
+  }
+}
+
+const getTabStatus = (tab: OverviewTab): LoadState => {
+  switch (tab) {
+    case 'yearly':
+      return yearlyStatus.value
+    case 'seasonal':
+      return seasonalStatus.value
+    case 'preference':
+      return preferenceStatus.value
+    case 'category':
+      return categoryStatus.value
+  }
+}
+
+const shouldRenderFromCache = (tab: OverviewTab, force: boolean): boolean => {
+  if (force || !renderedTabs.value.has(tab)) return false
+  const status = getTabStatus(tab)
+  return status === 'success' || status === 'empty'
+}
+
+const renderByTab = async (tab: OverviewTab, force = false) => {
+  if (shouldRenderFromCache(tab, force)) {
+    resizeTabChart(tab)
+    return
+  }
+
+  switch (tab) {
+    case 'yearly':
+      await renderYearlyChart()
+      break
+    case 'seasonal':
+      await renderSeasonalChart()
+      break
+    case 'preference':
+      await renderPreferenceChart()
+      break
+    case 'category':
+      await renderCategoryChart()
+      break
+  }
+
+  const finalStatus = getTabStatus(tab)
+  if (finalStatus === 'success' || finalStatus === 'empty') {
+    renderedTabs.value.add(tab)
+  } else {
+    renderedTabs.value.delete(tab)
+  }
+}
+
+const switchTab = async (tab: OverviewTab) => {
+  if (activeTab.value === tab) return
+  activeTab.value = tab
+  await nextTick()
+  try {
+    await renderByTab(tab)
+  } catch (error) {
+    const tabLabel = tabs.find(item => item.id === tab)?.label ?? tab
+    console.error(`切换标签 ${tabLabel} 渲染失败:`, error)
+  }
+}
+
+onMounted(async () => {
+  try {
+    await renderByTab(activeTab.value)
+  } catch (error) {
+    console.error('初始化标签渲染失败:', error)
+  }
 })
 </script>
 
 <style scoped>
 .overview-view {
   padding: 20px;
+  /* 1000px 适配常规分析图（趋势/热力/偏好），1080px 预留给组合图与右侧下钻面板，减少 CLS */
+  --overview-chart-frame-width: 1000px;
+  --overview-chart-frame-wide-width: 1080px;
+  --overview-header-gap: 0.9rem;
+  --overview-header-padding-y: 0.95rem;
+  --overview-header-padding-x: 1.1rem;
+  /* Tab layout constraints for single-row desktop distribution */
+  --overview-tabs-gap: 0.45rem;
+  --overview-tabs-columns: 4;
+  --overview-tabs-mobile-columns: 2;
+  --overview-tabs-min-width: 620px;
+  --overview-tabs-max-width: 760px;
+  --overview-tabs-inactive-color: #334155;
+  --overview-tabs-active-bg-start: #1d4ed8;
+  --overview-tabs-active-bg-end: #0369a1;
+  --overview-tabs-active-color: #ffffff;
+  --overview-tabs-active-shadow: rgba(29, 78, 216, 0.3);
+  --overview-tabs-hover-bg: rgba(79, 172, 254, 0.14);
+  --overview-tabs-hover-color: #1d4ed8;
+  --overview-combo-backdrop: rgba(15, 23, 42, 0.12);
+  --overview-combo-backdrop-z: 12;
+  --overview-combo-panel-z: 13;
 }
 
-.nav-pills {
-  background: white;
-  padding: 12px 15px;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+.overview-header {
   display: flex;
-  gap: 4px;
-}
-
-.nav-pills .nav-link {
-  color: #6b7280;
-  padding: 10px 22px;
-  border-radius: 8px;
-  transition: all 0.25s ease;
-  font-weight: 500;
-  font-size: 0.95rem;
-}
-
-.nav-pills .nav-link:hover {
-  background: #f3f4f6;
-  color: #374151;
-}
-
-.nav-pills .nav-link.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
-}
-
-.card {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--overview-header-gap);
+  padding: var(--overview-header-padding-y) var(--overview-header-padding-x);
   border-radius: 12px;
+  background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-  min-height: 600px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
 }
 
-.d-flex {
-  display: flex;
-}
-
-.h-100 {
-  height: 100%;
-}
-
-.custom-chart-panel {
+.overview-title-group {
+  min-width: 0;
   flex: 1;
-  padding-right: 20px;
 }
 
-.custom-control-panel {
-  width: 200px;
-  border-left: 1px solid rgba(0, 0, 0, 0.06);
-  padding-left: 20px;
+.overview-title {
+  margin: 0 0 0.2rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1.2;
 }
 
-.control-panel-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 2px solid #667eea;
-  letter-spacing: 0.3px;
-}
-
-.control-buttons-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.control-btn {
-  padding: 9px 14px;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+.overview-subtitle {
+  margin: 0;
   color: #6b7280;
-  font-size: 13.5px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: left;
+  font-size: 0.88rem;
+  line-height: 1.35;
 }
 
-.control-btn:hover {
-  background: #f9fafb;
-  border-color: #667eea;
-  color: #667eea;
+.overview-tabs {
+  margin: 0;
+  padding: 0.25rem;
+  gap: var(--overview-tabs-gap);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f1f6ff 100%);
+  flex: 1 1 var(--overview-tabs-min-width);
+  max-width: var(--overview-tabs-max-width);
+  margin-left: auto;
+  display: grid;
+  grid-template-columns: repeat(var(--overview-tabs-columns), minmax(0, 1fr));
+  list-style: none;
 }
 
-.control-btn.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border-color: transparent;
-  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
+.overview-tabs .nav-item {
+  min-width: 0;
 }
 
-.custom-select-wrapper {
+.overview-tabs .nav-link {
   width: 100%;
-  position: relative;
-}
-
-.form-select {
-  width: 100%;
-  padding: 8px 32px 8px 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 13.5px;
-  cursor: pointer;
+  border-radius: 999px;
+  border: none;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--overview-tabs-inactive-color);
+  background: transparent;
   transition: all 0.2s ease;
-  appearance: none;
-  background-color: white;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  color: #374151;
+  white-space: nowrap;
 }
 
-.form-select:focus {
+.overview-tabs .nav-link.active {
+  background: linear-gradient(135deg, var(--overview-tabs-active-bg-start) 0%, var(--overview-tabs-active-bg-end) 100%);
+  color: var(--overview-tabs-active-color);
+  box-shadow: 0 6px 16px var(--overview-tabs-active-shadow);
+}
+
+.overview-tabs .nav-link:hover:not(.active),
+.overview-tabs .nav-link:focus-visible:not(.active) {
+  background: var(--overview-tabs-hover-bg);
+  color: var(--overview-tabs-hover-color);
+}
+
+.overview-tabs .nav-link:focus-visible {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
 
-.chart-container {
-  min-height: 500px;
-}
-
-.position-relative {
-  position: relative;
-}
-
-.overflow-hidden {
-  overflow: hidden;
-}
-
-@media (max-width: 992px) {
-  .d-flex {
-    flex-direction: column;
-  }
-  
-  .custom-chart-panel {
-    padding-right: 0;
-    margin-bottom: 20px;
-  }
-  
-  .custom-control-panel {
-    width: 100%;
-    border-left: none;
-    border-top: 1px solid #e0e0e0;
-    padding-left: 0;
-    padding-top: 20px;
-  }
-  
-  .control-buttons-group {
-    flex-direction: row;
+@media (max-width: 1200px) {
+  .overview-header {
     flex-wrap: wrap;
   }
-  
-  .control-btn {
-    flex: 1;
-    min-width: 120px;
+
+  .overview-tabs {
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
   }
 }
 
 @media (max-width: 768px) {
-  .nav-pills {
-    overflow-x: auto;
-    white-space: nowrap;
-  }
-  
-  .nav-pills .nav-link {
-    display: inline-block;
-    padding: 10px 16px;
-    font-size: 14px;
+  .overview-tabs {
+    grid-template-columns: repeat(var(--overview-tabs-mobile-columns), minmax(0, 1fr));
   }
 }
-/* ─── 热门风格组合：图表变暗效果 ─────────────────────────────────────────── */
+
+.style-unified {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  height: 100%;
+}
+
+.card-header-unified {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.card-header-unified h5 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.area-btn-group {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.area-btn {
+  padding: 3px 12px;
+  border-radius: 20px;
+  border: 1px solid #d1d5db;
+  background: transparent;
+  color: #6b7280;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.area-btn:hover {
+  border-color: #4facfe;
+  color: #4facfe;
+}
+
+.area-btn.active {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  border-color: transparent;
+  color: white;
+  font-weight: 600;
+}
+
+.chart-wrapper {
+  padding: 0.75rem 1rem 1rem;
+}
+
+.chart-fixed-frame {
+  width: var(--overview-chart-frame-width);
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.chart-fixed-frame--wide {
+  width: var(--overview-chart-frame-wide-width);
+}
+
+.chart-canvas {
+  width: 100%;
+}
+
+.chart-canvas--medium {
+  height: 420px;
+}
+
+.chart-canvas--large {
+  height: 460px;
+}
+
+.chart-wrapper--medium {
+  min-height: 448px;
+}
+
+.chart-wrapper--large {
+  min-height: 488px;
+}
+
+.chart-wrapper--combo {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.chart-wrapper--combo .chart-canvas--large {
+  position: relative;
+  z-index: 1;
+}
+
+.chart-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  font-size: 0.95rem;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.insight-summary {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 0.7rem 1rem 0.9rem;
+  font-size: 0.86rem;
+  color: #4b5563;
+  line-height: 1.45;
+}
+
+.summary-label {
+  color: #1f2937;
+  font-weight: 600;
+}
+
 .combo-chart-dimmed {
   opacity: 0.4;
   pointer-events: none;
   transition: opacity 0.3s ease;
 }
 
-/* ─── 热门风格组合：背景蒙层（点击关闭详情面板） ────────────────────────── */
 .combo-backdrop {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 9;
+  inset: 0;
+  background: var(--overview-combo-backdrop);
+  z-index: var(--overview-combo-backdrop-z);
   cursor: pointer;
 }
 
-/* ─── 热门风格组合：下钻详情侧边面板 ────────────────────────────────────── */
 .combo-detail-panel {
   position: absolute;
   top: 0;
@@ -833,7 +1076,7 @@ onMounted(() => {
   border-radius: 10px 0 0 10px;
   padding: 20px 16px;
   overflow-y: auto;
-  z-index: 10;
+  z-index: var(--overview-combo-panel-z);
 }
 
 .combo-detail-header {
@@ -929,7 +1172,6 @@ onMounted(() => {
   margin: 0;
 }
 
-/* 面板滑入/滑出动画 */
 .slide-panel-enter-active,
 .slide-panel-leave-active {
   transition: transform 0.3s ease, opacity 0.3s ease;
@@ -941,4 +1183,13 @@ onMounted(() => {
   opacity: 0;
 }
 
+@media (max-width: 992px) {
+  .chart-wrapper {
+    padding: 0.5rem 0.75rem 0.75rem;
+  }
+
+  .combo-detail-panel {
+    width: min(86vw, 320px);
+  }
+}
 </style>

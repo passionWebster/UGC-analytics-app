@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+from enum import Enum
 from datetime import datetime
 from typing import List, Optional
 from urllib.parse import urlparse
@@ -52,6 +53,55 @@ _ALLOWED_IMAGE_HOSTS = {
     # TMDB 图片服务器（背景图、Logo、海报均由此域名提供）
     "image.tmdb.org",
 }
+
+# 仅允许中文、ASCII 单词字符和少量常见分隔符，长度限制 1~30
+_VALID_CATEGORY_PATTERN = re.compile(r"^[\w\u4e00-\u9fff·、&+\-/]{1,30}$")
+
+
+class AreaEnum(str, Enum):
+    china = "国内"
+    japan = "日本"
+    us = "美国"
+
+
+class SeasonEnum(str, Enum):
+    spring = "spring"
+    summer = "summer"
+    autumn = "autumn"
+    winter = "winter"
+
+
+def _validate_category_value(category: Optional[str]) -> Optional[str]:
+    """
+    校验 category 参数，防止前端参数被篡改后携带异常字符。
+    """
+    if category is None:
+        return None
+    category = category.strip()
+    if not category:
+        return None
+    if not _VALID_CATEGORY_PATTERN.fullmatch(category):
+        raise HTTPException(
+            status_code=400,
+            detail="非法的 category 参数，仅允许中文/字母数字/下划线及 ·、&+-/，且长度为 1~30",
+        )
+    return category
+
+
+def _parse_areas_param(areas: Optional[str]) -> Optional[List[str]]:
+    """
+    解析逗号分隔地区参数，并限制在 AreaEnum 白名单内。
+    """
+    if not areas:
+        return None
+    items = [a.strip() for a in areas.split(',') if a.strip()]
+    if not items:
+        return None
+    allowed_values = {item.value for item in AreaEnum}
+    if any(item not in allowed_values for item in items):
+        allowed_text = "、".join(sorted(allowed_values))
+        raise HTTPException(status_code=400, detail=f"非法的 areas 参数，仅允许：{allowed_text}")
+    return items
 
 
 @proxy_router.get("/image_proxy")
@@ -334,9 +384,9 @@ def search_animes(
 def get_rankings(
     sort_by: str = Query("views", description="排序字段: views, favorites, rating"),
     limit: int = Query(10, description="返回数量"),
-    area: Optional[str] = Query(None, description="地区筛选"),
+    area: Optional[AreaEnum] = Query(None, description="地区筛选"),
     styles: Optional[str] = Query(None, description="风格筛选，逗号分隔"),
-    season: Optional[str] = Query(None, description="季节筛选: spring, summer, autumn, winter"),
+    season: Optional[SeasonEnum] = Query(None, description="季节筛选: spring, summer, autumn, winter"),
     session: Session = Depends(get_session)
 ):
     """
@@ -363,9 +413,9 @@ def get_rankings(
     rankings = analytics_service.get_top_animes(
         sort_by=sort_by,
         limit=limit,
-        area=area,
+        area=area.value if area else None,
         styles=style_list,
-        season=season,
+        season=season.value if season else None,
     )
 
     return {
@@ -423,7 +473,7 @@ def get_anime_history(
 
 @router.get("/statistics/styles", response_model=dict)
 def get_style_distribution(
-    area: Optional[str] = Query(None, description="地区筛选（如 国内、日本、美国）"),
+    area: Optional[AreaEnum] = Query(None, description="地区筛选（如 国内、日本、美国）"),
     session: Session = Depends(get_session)
 ):
     """
@@ -437,7 +487,7 @@ def get_style_distribution(
         风格分布数据
     """
     analytics_service = AnalyticsService(session)
-    distribution = analytics_service.get_style_distribution(area=area)
+    distribution = analytics_service.get_style_distribution(area=area.value if area else None)
 
     return {
         "success": True,
@@ -447,7 +497,7 @@ def get_style_distribution(
 
 @router.get("/statistics/trends", response_model=dict)
 def get_release_trend(
-    area: Optional[str] = Query(None, description="地区筛选（如 国内、日本、美国）"),
+    area: Optional[AreaEnum] = Query(None, description="地区筛选（如 国内、日本、美国）"),
     session: Session = Depends(get_session)
 ):
     """
@@ -461,7 +511,7 @@ def get_release_trend(
         发布趋势数据
     """
     analytics_service = AnalyticsService(session)
-    trend = analytics_service.get_release_trend(area=area)
+    trend = analytics_service.get_release_trend(area=area.value if area else None)
 
     return {
         "success": True,
@@ -536,7 +586,7 @@ def get_reputation_popularity_chart(
         散点图数据列表，每项包含 title、rating、favorites、views、area 字段
     """
     analytics_service = AnalyticsService(session)
-    area_list = [a.strip() for a in areas.split(',')] if areas else None
+    area_list = _parse_areas_param(areas)
     data = analytics_service.get_reputation_popularity_chart(areas=area_list)
 
     return {
@@ -548,7 +598,7 @@ def get_reputation_popularity_chart(
 
 @router.get("/charts/preference-difference", response_model=dict)
 def get_preference_difference_chart(
-    region: str = Query("国内", description="地区名称（如 国内、日本、美国）"),
+    region: AreaEnum = Query(AreaEnum.china, description="地区名称（如 国内、日本、美国）"),
     session: Session = Depends(get_session)
 ):
     """
@@ -562,7 +612,7 @@ def get_preference_difference_chart(
         偏好指数列表，每项包含 style、preferenceIndex、regionCount、globalCount 字段
     """
     analytics_service = AnalyticsService(session)
-    data = analytics_service.get_preference_difference_chart(region=region)
+    data = analytics_service.get_preference_difference_chart(region=region.value)
 
     return {
         "success": True,
@@ -573,7 +623,7 @@ def get_preference_difference_chart(
 
 @router.get("/charts/reputation-heat-index", response_model=dict)
 def get_reputation_heat_index_chart(
-    season: Optional[str] = Query(None, description="季节筛选: spring, summer, autumn, winter"),
+    season: Optional[SeasonEnum] = Query(None, description="季节筛选: spring, summer, autumn, winter"),
     category: Optional[str] = Query(None, description="风格/类型筛选"),
     session: Session = Depends(get_session)
 ):
@@ -589,7 +639,10 @@ def get_reputation_heat_index_chart(
         前 15 名番剧列表，每项包含 title、qualityScore、rating、favorites、views 字段
     """
     analytics_service = AnalyticsService(session)
-    data = analytics_service.get_reputation_heat_index_chart(season=season, category=category)
+    data = analytics_service.get_reputation_heat_index_chart(
+        season=season.value if season else None,
+        category=_validate_category_value(category),
+    )
 
     return {
         "success": True,
