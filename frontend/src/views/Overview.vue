@@ -145,7 +145,7 @@
             <small class="text-muted">点击矩形查看下钻详情</small>
           </div>
           <div class="chart-fixed-frame chart-fixed-frame--wide">
-            <div class="chart-wrapper chart-wrapper--large position-relative overflow-hidden">
+            <div class="chart-wrapper chart-wrapper--large chart-wrapper--combo">
               <div v-if="categoryStatus === 'error'" class="chart-state text-danger">风格组合图加载失败</div>
               <div v-else-if="categoryStatus === 'empty'" class="chart-state">暂无风格组合数据</div>
               <div
@@ -789,6 +789,7 @@ onMounted(async () => {
   --overview-header-gap: 0.9rem;
   --overview-header-padding-y: 0.95rem;
   --overview-header-padding-x: 1.1rem;
+  --overview-tab-gap: 0.45rem;
 }
 
 .overview-header {
@@ -825,17 +826,49 @@ onMounted(async () => {
 
 .overview-tabs {
   margin: 0;
-  gap: 0.5rem;
+  padding: 0.25rem;
+  gap: var(--overview-tab-gap);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f1f6ff 100%);
+  flex: 1 1 620px;
+  max-width: 760px;
+  margin-left: auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+}
+
+.overview-tabs .nav-item {
+  min-width: 0;
 }
 
 .overview-tabs .nav-link {
+  width: 100%;
   border-radius: 999px;
-  padding: 0.35rem 0.9rem;
+  border: none;
+  padding: 0.45rem 0.7rem;
   font-size: 0.88rem;
+  font-weight: 500;
+  color: #475569;
+  background: transparent;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .overview-tabs .nav-link.active {
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(79, 172, 254, 0.28);
+}
+
+.overview-tabs .nav-link:hover {
+  background: rgba(79, 172, 254, 0.14);
+  color: #1d4ed8;
+}
+
+.overview-tabs .nav-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
 
 @media (max-width: 1200px) {
@@ -845,7 +878,14 @@ onMounted(async () => {
 
   .overview-tabs {
     width: 100%;
-    flex-wrap: wrap;
+    max-width: none;
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .overview-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -939,6 +979,17 @@ onMounted(async () => {
   min-height: 488px;
 }
 
+.chart-wrapper--combo {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.chart-wrapper--combo .chart-canvas--large {
+  position: relative;
+  z-index: 1;
+}
+
 .chart-state {
   position: absolute;
   inset: 0;
@@ -972,11 +1023,9 @@ onMounted(async () => {
 
 .combo-backdrop {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 9;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.12);
+  z-index: 12;
   cursor: pointer;
 }
 
@@ -991,7 +1040,7 @@ onMounted(async () => {
   border-radius: 10px 0 0 10px;
   padding: 20px 16px;
   overflow-y: auto;
-  z-index: 10;
+  z-index: 13;
 }
 
 .combo-detail-header {
