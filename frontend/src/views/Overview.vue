@@ -789,6 +789,7 @@ onMounted(async () => {
   --overview-header-gap: 0.9rem;
   --overview-header-padding-y: 0.95rem;
   --overview-header-padding-x: 1.1rem;
+  /* 4 个 tab 在桌面端单行均分展示时的间距与宽度约束 */
   --overview-tabs-gap: 0.45rem;
   --overview-tabs-min-width: 620px;
   --overview-tabs-max-width: 760px;
@@ -852,16 +853,16 @@ onMounted(async () => {
   padding: 0.45rem 0.7rem;
   font-size: 0.88rem;
   font-weight: 500;
-  color: #475569;
+  color: #334155;
   background: transparent;
   transition: all 0.2s ease;
   white-space: nowrap;
 }
 
 .overview-tabs .nav-link.active {
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-  color: #0f172a;
-  box-shadow: 0 6px 16px rgba(79, 172, 254, 0.28);
+  background: linear-gradient(135deg, #1d4ed8 0%, #0369a1 100%);
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(29, 78, 216, 0.3);
 }
 
 .overview-tabs .nav-link:hover:not(.active) {
