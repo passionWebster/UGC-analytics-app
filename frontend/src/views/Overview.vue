@@ -90,7 +90,7 @@
           </div>
           <div v-else-if="seasonalStatus === 'error'" class="insight-summary">
             <span class="summary-label">季节偏好总结：</span>
-            <span>当前无法生成总结</span>
+            <span>数据加载失败，请稍后重试</span>
           </div>
           <div v-else-if="seasonalStatus === 'empty'" class="insight-summary">
             <span class="summary-label">季节偏好总结：</span>
@@ -139,7 +139,7 @@
           </div>
           <div v-else-if="preferenceStatus === 'error'" class="insight-summary">
             <span class="summary-label">与你的偏好重合：</span>
-            <span>偏好差异图加载失败，暂无法生成总结</span>
+            <span>偏好差异图加载失败，请刷新页面重试</span>
           </div>
           <div v-else-if="preferenceStatus === 'empty'" class="insight-summary">
             <span class="summary-label">与你的偏好重合：</span>
