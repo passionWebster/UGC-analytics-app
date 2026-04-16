@@ -9,6 +9,7 @@ from jose import JWTError, jwt
 from sqlmodel import Session, select
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from passlib.context import CryptContext
 
 from .models import User
 from .schemas import UserCreate, UserLogin, UserResponse
@@ -21,6 +22,19 @@ class AuthService:
     
     def __init__(self, session: Session):
         self.session = session
+
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+    @classmethod
+    def hash_password(cls, password: str) -> str:
+        return cls.pwd_context.hash(password)
+
+    @classmethod
+    def verify_password(cls, plain_password: str, stored_password: str) -> bool:
+        # 兼容历史明文密码数据：验证成功后由调用方触发升级
+        if stored_password.startswith("$2"):
+            return cls.pwd_context.verify(plain_password, stored_password)
+        return plain_password == stored_password
     
     @staticmethod
     def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -99,12 +113,11 @@ class AuthService:
                 detail="邮箱已存在"
             )
         
-        # 创建新用户
-        # 注意：实际生产环境中应该使用密码哈希（如 bcrypt）
+        # 创建新用户（bcrypt 哈希存储）
         new_user = User(
             username=user_create.username,
             email=user_create.email,
-            password=user_create.password,  # TODO: 应该哈希密码
+            password=self.hash_password(user_create.password),
             preferences=None,
             created_at=datetime.now()
         )
@@ -134,12 +147,21 @@ class AuthService:
             用户对象或 None
         """
         user = self.session.exec(
-            select(User).where(
-                User.username == user_login.username,
-                User.password == user_login.password  # TODO: 应该使用密码哈希验证
-            )
+            select(User).where(User.username == user_login.username)
         ).first()
-        
+
+        if not user:
+            return None
+
+        if not self.verify_password(user_login.password, user.password):
+            return None
+
+        # 历史明文密码首次登录后自动升级为哈希
+        if not user.password.startswith("$2"):
+            user.password = self.hash_password(user_login.password)
+            self.session.add(user)
+            self.session.commit()
+
         return user
     
     def login(self, user_login: UserLogin) -> dict:
@@ -240,6 +262,20 @@ class AuthService:
         self.session.commit()
         
         return True
+
+    def change_password(self, user: User, old_password: str, new_password: str) -> None:
+        """
+        修改用户密码（需校验旧密码）。
+        """
+        if not self.verify_password(old_password, user.password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="旧密码错误"
+            )
+
+        user.password = self.hash_password(new_password)
+        self.session.add(user)
+        self.session.commit()
 
 
 # ─────────────────────────────────────────────────────────

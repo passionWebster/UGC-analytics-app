@@ -227,6 +227,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onUnmounted, onActivated, onDeactivated, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
 import {
@@ -249,6 +250,7 @@ import type { SentimentPoint } from '@/api/ai'
 
 // 为 KeepAlive 注册组件名
 defineOptions({ name: 'StatusView' })
+const route = useRoute()
 
 // ─── 状态管理 ───────────────────────────────────────────────────────────────
 const keyword = ref('')
@@ -1060,6 +1062,12 @@ onUnmounted(() => {
 
 // KeepAlive 激活：从缓存恢复时触发图表 resize，并根据当前番剧恢复小时轮询
 onActivated(() => {
+  const routeKeyword = typeof route.query.keyword === 'string' ? route.query.keyword.trim() : ''
+  if (routeKeyword && routeKeyword !== keyword.value) {
+    keyword.value = routeKeyword
+    handleSearch()
+  }
+
   // 恢复图表尺寸
   playTrendInstance?.resize()
   watchTimeInstance?.resize()

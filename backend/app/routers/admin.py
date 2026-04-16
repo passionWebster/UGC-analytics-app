@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Query
 from sqlalchemy import desc, func, case
 from sqlmodel import Session, select
 
-from ..auth import get_current_admin_user
+from ..auth import AuthService, get_current_admin_user
 from ..database import get_session, engine
 from ..models import User, CrawlLog, Anime, RecommendationStrategyConfig, AITelemetry
 from ..schemas import UserStatusUpdate, ResetPasswordRequest, RecommendationStrategyUpdate
@@ -83,7 +83,7 @@ def reset_user_password(
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    user.password = payload.new_password
+    user.password = AuthService.hash_password(payload.new_password)
     session.add(user)
     session.commit()
 

@@ -38,8 +38,25 @@ class User(SQLModel, table=True):
     preferences: Optional[str] = Field(default=None, sa_column=Column(JSON))  # JSON 字符串存储偏好
     created_at: datetime = Field(default_factory=datetime.now)
     
-    # 关系：用户可以有多个追番记录（未来扩展）
-    # favorites: List["UserFavorite"] = Relationship(back_populates="user")
+    # 关系：用户可以有多个追番记录
+    favorites: List["UserFavorite"] = Relationship(back_populates="user")
+
+
+class UserFavorite(SQLModel, table=True):
+    """用户追番收藏记录表"""
+    __tablename__ = "user_favorites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "season_id", name="uq_user_favorite_user_season"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    season_id: int = Field(foreign_key="anime.season_id", index=True)
+    status: str = Field(default="watching", max_length=20)  # watching | plan | completed
+    created_at: datetime = Field(default_factory=datetime.now)
+
+    user: Optional["User"] = Relationship(back_populates="favorites")
+    anime: Optional["Anime"] = Relationship(back_populates="favorited_by")
 
 
 class Anime(SQLModel, table=True):
@@ -78,6 +95,7 @@ class Anime(SQLModel, table=True):
     # 关系
     daily_stats: List["DailyStats"] = Relationship(back_populates="anime")
     tmdb_info: Optional["TmdbAnimeInfo"] = Relationship(back_populates="anime")
+    favorited_by: List["UserFavorite"] = Relationship(back_populates="anime")
 
 
 class DailyStats(SQLModel, table=True):
