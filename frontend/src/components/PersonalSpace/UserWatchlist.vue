@@ -41,7 +41,7 @@
       </el-table-column>
       <el-table-column label="操作" width="220">
         <template #default="{ row }">
-          <el-button size="small" @click="goToStatus(row.title)">深度分析</el-button>
+          <el-button size="small" @click="goToStatus(row.title)">查看状态分析</el-button>
           <el-button size="small" type="danger" @click="removeFavorite(row.season_id)">取消收藏</el-button>
         </template>
       </el-table-column>
