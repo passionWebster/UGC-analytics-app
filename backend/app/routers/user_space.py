@@ -225,7 +225,7 @@ def get_user_space_analytics(
             .order_by(DailyStats.season_id, desc(DailyStats.date))
         ).all()
 
-        # 记录每个番剧最近一条统计数据：(latest_date, latest_views)
+        # 记录每个番剧最近一条统计数据: (latest_date, latest_views)
         latest_by_season: dict[int, tuple[datetime, int]] = {}
         week_ago_by_season: dict[int, int] = {}
 
@@ -237,7 +237,7 @@ def get_user_space_analytics(
             if season_id in week_ago_by_season:
                 continue
 
-            latest_date, _latest_views = latest_by_season[season_id]
+            latest_date, _ = latest_by_season[season_id]
             if stat_date <= latest_date - timedelta(days=7):
                 week_ago_by_season[season_id] = views
 
