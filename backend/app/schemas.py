@@ -3,9 +3,10 @@
 Pydantic 数据验证模型
 定义 API 请求和响应的数据结构
 """
+import re
 from datetime import datetime
 from typing import Optional, List, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class UserCreate(BaseModel):
@@ -51,8 +52,14 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(
         min_length=8,
         max_length=255,
-        pattern=r"^(?=.*[A-Za-z])(?=.*\d).+$",
     )
+    
+    
+@field_validator("new_password")
+def validate_password_complexity(cls, value: str) -> str:
+    if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
+        raise ValueError("new_password must contain at least one letter and one digit")
+    return value
 
 
 class AnimeResponse(BaseModel):
