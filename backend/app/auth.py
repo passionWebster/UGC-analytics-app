@@ -19,8 +19,8 @@ try:
             __version__ = _bcrypt.__version__
 
         _bcrypt.__about__ = _BcryptAbout()  # type: ignore[attr-defined]
-except Exception:
-    _bcrypt = None
+except (ImportError, AttributeError):
+    pass
 
 from passlib.context import CryptContext
 
