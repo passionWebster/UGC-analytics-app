@@ -84,16 +84,24 @@ const renderCharts = async () => {
   }
 
   const topGenres = (data.value.genre_distribution || []).slice(0, 6)
+  const hasGenreData = topGenres.length > 0
   const maxValue = Math.max(1, ...topGenres.map((item) => item.count))
   const radarOption: EChartsOption = {
     tooltip: {},
     radar: {
-      indicator: topGenres.map((item) => ({ name: item.genre, max: maxValue })),
+      indicator: hasGenreData
+        ? topGenres.map((item) => ({ name: item.genre, max: maxValue }))
+        : [{ name: '暂无偏好数据', max: 1 }],
     },
     series: [
       {
         type: 'radar',
-        data: [{ value: topGenres.map((item) => item.count), name: '偏好类型强度' }],
+        data: [
+          {
+            value: hasGenreData ? topGenres.map((item) => item.count) : [0],
+            name: '偏好类型强度',
+          },
+        ],
       },
     ],
   }
