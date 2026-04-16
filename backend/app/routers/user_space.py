@@ -3,7 +3,7 @@
 """
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc
@@ -225,7 +225,7 @@ def get_user_space_analytics(
             .order_by(DailyStats.season_id, desc(DailyStats.date))
         ).all()
 
-        latest_by_season: dict[int, tuple] = {}
+        latest_by_season: dict[int, tuple[datetime, int]] = {}
         week_ago_by_season: dict[int, int] = {}
 
         for season_id, stat_date, views in stats_rows:
@@ -236,11 +236,11 @@ def get_user_space_analytics(
             if season_id in week_ago_by_season:
                 continue
 
-            latest_date = latest_by_season[season_id][0]
+            latest_date, _latest_views = latest_by_season[season_id]
             if stat_date <= latest_date - timedelta(days=7):
                 week_ago_by_season[season_id] = views
 
-        latest_views_total = sum(item[1] for item in latest_by_season.values())
+        latest_views_total = sum(latest_views for _latest_date, latest_views in latest_by_season.values())
         week_ago_views_total = sum(week_ago_by_season.get(season_id, 0) for season_id in season_ids)
 
     weekly_growth = latest_views_total - week_ago_views_total
