@@ -63,10 +63,7 @@ const router = createRouter({
     {
       path: '/admin',
       name: 'Admin',
-      component: () => import('@/views/PersonalSpace.vue'),
-      beforeEnter: (_to, _from, next) => {
-        next({ path: '/personal-space', query: { tab: 'admin' } })
-      },
+      redirect: { path: '/personal-space', query: { tab: 'admin' } },
       meta: { requiresAuth: true, requiresAdmin: true },
     }
   ]
@@ -79,7 +76,7 @@ router.beforeEach((to, from, next) => {
   // 需要认证的路由
   if (to.meta.requiresAuth && !authStore.isLoggedIn) {
     next('/login')
-  } else if (to.meta.requiresAdmin && !authStore.isAdmin) {
+  } else if ((to.meta.requiresAdmin || to.path === '/admin') && !authStore.isAdmin) {
     ElMessage.warning('需要管理员权限')
     next('/home')
   } else if (to.path === '/login' && authStore.isLoggedIn) {
