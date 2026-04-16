@@ -205,7 +205,12 @@ def get_user_space_analytics(
             try:
                 styles = json.loads(anime.styles)
             except json.JSONDecodeError:
-                logger.warning("Anime styles parse failed for season_id=%s", favorite.season_id)
+                raw_styles = (anime.styles or "")[:200]
+                logger.warning(
+                    "Anime styles parse failed for season_id=%s raw_styles=%s",
+                    favorite.season_id,
+                    raw_styles,
+                )
                 styles = []
             for genre in styles:
                 genre_counter[genre] = genre_counter.get(genre, 0) + 1

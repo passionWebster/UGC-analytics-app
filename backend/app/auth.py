@@ -5,6 +5,7 @@
 """
 from datetime import datetime, timedelta
 from typing import Optional
+import secrets
 from jose import JWTError, jwt
 from sqlmodel import Session, select
 from fastapi import Depends, HTTPException, status
@@ -38,7 +39,7 @@ class AuthService:
         # 兼容历史明文密码数据：验证成功后由调用方触发升级
         if cls.is_password_hashed(stored_password):
             return PWD_CONTEXT.verify(plain_password, stored_password)
-        return plain_password == stored_password
+        return secrets.compare_digest(plain_password, stored_password)
     
     @staticmethod
     def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
