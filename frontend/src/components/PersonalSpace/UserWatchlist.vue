@@ -31,7 +31,7 @@
           <el-select
             :model-value="row.status"
             size="small"
-            @change="(value) => changeStatus(row.season_id, value)"
+            @change="handleStatusChange(row.season_id, $event)"
           >
             <el-option label="想看" value="plan" />
             <el-option label="在看" value="watching" />
@@ -82,6 +82,10 @@ const changeStatus = async (seasonId: number, status: string) => {
   await updateFavoriteStatus(seasonId, status as FavoriteStatus)
   ElMessage.success('状态更新成功')
   await loadFavorites()
+}
+
+const handleStatusChange = (seasonId: number, value: string | number | boolean) => {
+  changeStatus(seasonId, String(value))
 }
 
 const removeFavorite = async (seasonId: number) => {
