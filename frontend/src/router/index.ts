@@ -55,12 +55,6 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
-      path: '/data-screen',
-      name: 'DataScreen',
-      component: () => import('@/views/DataScreen.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
       path: '/report',
       name: 'Report',
       component: () => import('@/views/Report.vue'),

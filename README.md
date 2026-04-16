@@ -142,7 +142,6 @@ npm run build        # 生产构建
 | 状态检测 | `/status` | 搜索番剧，查看播放趋势与剧集详情 |
 | 数据概览 | `/overview` | 历年趋势、偏好差异、风格组合树图 |
 | 番剧推荐 | `/recommendation` | 基于偏好的个性化推荐列表 |
-| 数据大屏 | `/data-screen` | 全屏可视化展示 |
 
 **触发数据爬取**（需要登录）：在首页或通过 API `POST /api/crawler/update` 手动触发。
 
@@ -228,4 +227,3 @@ bilibili-analytics-app/
 
 - **GitHub Issues**: [提交问题或建议](https://github.com/passionWebster/bilibili-analytics-app/issues)
 - **GitHub**: [@passionWebster](https://github.com/passionWebster)
-
