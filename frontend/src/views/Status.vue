@@ -1062,7 +1062,12 @@ onUnmounted(() => {
 
 // KeepAlive 激活：从缓存恢复时触发图表 resize，并根据当前番剧恢复小时轮询
 onActivated(() => {
-  const routeKeyword = typeof route.query.keyword === 'string' ? route.query.keyword.trim() : ''
+  const rawKeyword = route.query.keyword
+  const routeKeyword = Array.isArray(rawKeyword)
+    ? (rawKeyword[0] || '').trim()
+    : typeof rawKeyword === 'string'
+      ? rawKeyword.trim()
+      : ''
   if (routeKeyword && routeKeyword !== keyword.value) {
     keyword.value = routeKeyword
     handleSearch()

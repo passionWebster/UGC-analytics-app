@@ -2,6 +2,7 @@
 个人空间相关 API 路由
 """
 import json
+import logging
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,6 +20,7 @@ from ..schemas import (
 
 
 router = APIRouter(prefix="/api/user", tags=["个人空间"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/favorites", response_model=dict)
@@ -188,13 +190,22 @@ def get_user_space_analytics(
     week_ago_views_total = 0
 
     for favorite in favorites:
-        status_distribution[favorite.status] = status_distribution.get(favorite.status, 0) + 1
+        if favorite.status not in status_distribution:
+            logger.warning(
+                "Invalid favorite status found for user_id=%s season_id=%s status=%s",
+                current_user.id,
+                favorite.season_id,
+                favorite.status,
+            )
+            continue
+        status_distribution[favorite.status] += 1
 
         anime = session.exec(select(Anime).where(Anime.season_id == favorite.season_id)).first()
         if anime and anime.styles:
             try:
                 styles = json.loads(anime.styles)
             except json.JSONDecodeError:
+                logger.warning("Anime styles parse failed for season_id=%s", favorite.season_id)
                 styles = []
             for genre in styles:
                 genre_counter[genre] = genre_counter.get(genre, 0) + 1

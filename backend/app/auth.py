@@ -16,6 +16,8 @@ from .schemas import UserCreate, UserLogin, UserResponse
 from .config import settings
 from .database import get_session
 
+PWD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 
 class AuthService:
     """用户认证服务类"""
@@ -23,17 +25,19 @@ class AuthService:
     def __init__(self, session: Session):
         self.session = session
 
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    @classmethod
+    def is_password_hashed(cls, password: str) -> bool:
+        return bool(PWD_CONTEXT.identify(password))
 
     @classmethod
     def hash_password(cls, password: str) -> str:
-        return cls.pwd_context.hash(password)
+        return PWD_CONTEXT.hash(password)
 
     @classmethod
     def verify_password(cls, plain_password: str, stored_password: str) -> bool:
         # 兼容历史明文密码数据：验证成功后由调用方触发升级
-        if stored_password.startswith("$2"):
-            return cls.pwd_context.verify(plain_password, stored_password)
+        if cls.is_password_hashed(stored_password):
+            return PWD_CONTEXT.verify(plain_password, stored_password)
         return plain_password == stored_password
     
     @staticmethod
@@ -157,7 +161,7 @@ class AuthService:
             return None
 
         # 历史明文密码首次登录后自动升级为哈希
-        if not user.password.startswith("$2"):
+        if not self.is_password_hashed(user.password):
             user.password = self.hash_password(user_login.password)
             self.session.add(user)
             self.session.commit()
