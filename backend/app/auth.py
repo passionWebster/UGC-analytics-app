@@ -10,6 +10,18 @@ from jose import JWTError, jwt
 from sqlmodel import Session, select
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+try:
+    import bcrypt as _bcrypt
+
+    if not hasattr(_bcrypt, "__about__") and hasattr(_bcrypt, "__version__"):
+        class _BcryptAbout:
+            __version__ = _bcrypt.__version__
+
+        _bcrypt.__about__ = _BcryptAbout()  # type: ignore[attr-defined]
+except Exception:
+    _bcrypt = None
+
 from passlib.context import CryptContext
 
 from .models import User
