@@ -165,10 +165,12 @@ def get_user_space_analytics(
     """
     获取个人看板聚合数据。
     """
-    favorites = session.exec(
-        select(UserFavorite).where(UserFavorite.user_id == current_user.id)
+    favorite_rows = session.exec(
+        select(UserFavorite, Anime)
+        .join(Anime, Anime.season_id == UserFavorite.season_id)
+        .where(UserFavorite.user_id == current_user.id)
     ).all()
-    if not favorites:
+    if not favorite_rows:
         return {
             "success": True,
             "data": {
@@ -188,8 +190,10 @@ def get_user_space_analytics(
     genre_counter: dict[str, int] = {}
     latest_views_total = 0
     week_ago_views_total = 0
+    season_ids: set[int] = set()
 
-    for favorite in favorites:
+    for favorite, anime in favorite_rows:
+        season_ids.add(favorite.season_id)
         if favorite.status not in status_distribution:
             logger.warning(
                 "Invalid favorite status found for user_id=%s season_id=%s status=%s",
@@ -200,8 +204,7 @@ def get_user_space_analytics(
             continue
         status_distribution[favorite.status] += 1
 
-        anime = session.exec(select(Anime).where(Anime.season_id == favorite.season_id)).first()
-        if anime and anime.styles:
+        if anime.styles:
             try:
                 styles = json.loads(anime.styles)
             except json.JSONDecodeError:
@@ -215,26 +218,30 @@ def get_user_space_analytics(
             for genre in styles:
                 genre_counter[genre] = genre_counter.get(genre, 0) + 1
 
-        latest = session.exec(
-            select(DailyStats)
-            .where(DailyStats.season_id == favorite.season_id)
-            .order_by(desc(DailyStats.date))
-            .limit(1)
-        ).first()
-        if not latest:
-            continue
+    if season_ids:
+        stats_rows = session.exec(
+            select(DailyStats.season_id, DailyStats.date, DailyStats.views)
+            .where(DailyStats.season_id.in_(season_ids))
+            .order_by(DailyStats.season_id, desc(DailyStats.date))
+        ).all()
 
-        latest_views_total += latest.views
-        week_ago = session.exec(
-            select(DailyStats)
-            .where(
-                DailyStats.season_id == favorite.season_id,
-                DailyStats.date <= latest.date - timedelta(days=7),
-            )
-            .order_by(desc(DailyStats.date))
-            .limit(1)
-        ).first()
-        week_ago_views_total += week_ago.views if week_ago else 0
+        latest_by_season: dict[int, tuple] = {}
+        week_ago_by_season: dict[int, int] = {}
+
+        for season_id, stat_date, views in stats_rows:
+            if season_id not in latest_by_season:
+                latest_by_season[season_id] = (stat_date, views)
+                continue
+
+            if season_id in week_ago_by_season:
+                continue
+
+            latest_date = latest_by_season[season_id][0]
+            if stat_date <= latest_date - timedelta(days=7):
+                week_ago_by_season[season_id] = views
+
+        latest_views_total = sum(item[1] for item in latest_by_season.values())
+        week_ago_views_total = sum(week_ago_by_season.get(season_id, 0) for season_id in season_ids)
 
     weekly_growth = latest_views_total - week_ago_views_total
     weekly_growth_rate = (
@@ -251,7 +258,7 @@ def get_user_space_analytics(
     return {
         "success": True,
         "data": {
-            "watchlist_count": len(favorites),
+            "watchlist_count": len(favorite_rows),
             "status_distribution": status_distribution,
             "genre_distribution": genre_distribution,
             "weekly_views_summary": {

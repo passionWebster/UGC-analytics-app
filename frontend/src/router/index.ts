@@ -63,8 +63,11 @@ const router = createRouter({
     {
       path: '/admin',
       name: 'Admin',
-      redirect: { path: '/personal-space', query: { tab: 'admin' } },
-      meta: { requiresAuth: true, requiresAdmin: true }
+      component: () => import('@/views/PersonalSpace.vue'),
+      beforeEnter: (_to, _from, next) => {
+        next({ path: '/personal-space', query: { tab: 'admin' } })
+      },
+      meta: { requiresAuth: true, requiresAdmin: true },
     }
   ]
 })

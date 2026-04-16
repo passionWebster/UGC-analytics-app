@@ -73,15 +73,21 @@ const loadFavorites = async () => {
     const status = activeStatus.value === 'all' ? undefined : activeStatus.value
     const response = await getUserFavorites(status)
     favorites.value = response.data || []
+  } catch {
+    favorites.value = []
   } finally {
     loading.value = false
   }
 }
 
 const changeStatus = async (seasonId: number, status: string) => {
-  await updateFavoriteStatus(seasonId, status as FavoriteStatus)
-  ElMessage.success('状态更新成功')
-  await loadFavorites()
+  try {
+    await updateFavoriteStatus(seasonId, status as FavoriteStatus)
+    ElMessage.success('状态更新成功')
+    await loadFavorites()
+  } catch {
+    ElMessage.error('状态更新失败')
+  }
 }
 
 const handleStatusChange = (seasonId: number, value: string | number | boolean) => {
@@ -89,10 +95,14 @@ const handleStatusChange = (seasonId: number, value: string | number | boolean) 
 }
 
 const removeFavorite = async (seasonId: number) => {
-  const response = await toggleFavorite(seasonId)
-  if (response.success) {
-    ElMessage.success('已取消收藏')
-    await loadFavorites()
+  try {
+    const response = await toggleFavorite(seasonId)
+    if (response.success) {
+      ElMessage.success('已取消收藏')
+      await loadFavorites()
+    }
+  } catch {
+    ElMessage.error('取消收藏失败')
   }
 }
 

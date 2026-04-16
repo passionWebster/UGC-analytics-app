@@ -44,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import ProfileSettings from '@/components/PersonalSpace/ProfileSettings.vue'
@@ -67,14 +67,14 @@ const tabs: Array<{ id: PersonalTab; label: string; adminOnly?: boolean }> = [
 ]
 const visibleTabs = computed(() => tabs.filter((tab) => !tab.adminOnly || authStore.isAdmin))
 
-const initialTab = (() => {
-  const queryTab = route.query.tab
+const normalizeTab = (queryTab: unknown): PersonalTab => {
   const normalized = Array.isArray(queryTab) ? queryTab[0] : queryTab
   const tab = typeof normalized === 'string' ? normalized : 'profile'
   if (tab === 'admin' && !authStore.isAdmin) return 'profile'
   return (tabs.find((item) => item.id === tab)?.id || 'profile') as PersonalTab
-})()
-const activeTab = ref<PersonalTab>(initialTab)
+}
+
+const activeTab = ref<PersonalTab>(normalizeTab(route.query.tab))
 
 const switchTab = (tab: PersonalTab) => {
   if (tab === 'admin' && !authStore.isAdmin) return
@@ -82,6 +82,16 @@ const switchTab = (tab: PersonalTab) => {
   const query = tab === 'profile' ? {} : { tab }
   router.replace({ path: '/personal-space', query })
 }
+
+watch(
+  () => route.query.tab,
+  (queryTab) => {
+    const nextTab = normalizeTab(queryTab)
+    if (nextTab !== activeTab.value) {
+      activeTab.value = nextTab
+    }
+  },
+)
 
 const formatDate = (value?: string) => {
   if (!value) return '-'

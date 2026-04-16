@@ -1,50 +1,63 @@
 <template>
-  <div class="stats-board">
-    <el-card>
-      <template #header>
-        <span>本周追番播放量增长</span>
-      </template>
-      <div class="summary">
-        <div class="item">
-          <label>当前总播放量</label>
-          <strong>{{ formatNumber(data?.weekly_views_summary.latest_views_total || 0) }}</strong>
+  <div class="stats-board" v-loading="loading">
+    <el-alert
+      v-if="errorMessage"
+      :title="errorMessage"
+      type="error"
+      show-icon
+      :closable="false"
+    />
+    <template v-else-if="data">
+      <el-card>
+        <template #header>
+          <span>本周追番播放量增长</span>
+        </template>
+        <div class="summary">
+          <div class="item">
+            <label>当前总播放量</label>
+            <strong>{{ formatNumber(data.weekly_views_summary.latest_views_total) }}</strong>
+          </div>
+          <div class="item">
+            <label>7天前总播放量</label>
+            <strong>{{ formatNumber(data.weekly_views_summary.week_ago_views_total) }}</strong>
+          </div>
+          <div class="item">
+            <label>本周增长</label>
+            <strong>
+              {{ formatNumber(data.weekly_views_summary.weekly_growth) }}
+              <span v-if="data.weekly_views_summary.weekly_growth_rate !== null">
+                ({{ data.weekly_views_summary.weekly_growth_rate }}%)
+              </span>
+            </strong>
+          </div>
         </div>
-        <div class="item">
-          <label>7天前总播放量</label>
-          <strong>{{ formatNumber(data?.weekly_views_summary.week_ago_views_total || 0) }}</strong>
-        </div>
-        <div class="item">
-          <label>本周增长</label>
-          <strong>
-            {{ formatNumber(data?.weekly_views_summary.weekly_growth || 0) }}
-            <span v-if="data?.weekly_views_summary.weekly_growth_rate !== null">
-              ({{ data?.weekly_views_summary.weekly_growth_rate }}%)
-            </span>
-          </strong>
-        </div>
-      </div>
-    </el-card>
+      </el-card>
 
-    <div class="charts">
-      <el-card>
-        <template #header><span>追番状态占比</span></template>
-        <div ref="statusPieRef" class="chart"></div>
-      </el-card>
-      <el-card>
-        <template #header><span>偏好类型雷达图</span></template>
-        <div ref="genreRadarRef" class="chart"></div>
-      </el-card>
-    </div>
+      <div class="charts">
+        <el-card>
+          <template #header><span>追番状态占比</span></template>
+          <div ref="statusPieRef" class="chart"></div>
+        </el-card>
+        <el-card>
+          <template #header><span>偏好类型雷达图</span></template>
+          <div ref="genreRadarRef" class="chart"></div>
+        </el-card>
+      </div>
+    </template>
+    <el-empty v-else description="暂无统计数据" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import type { EChartsOption } from 'echarts'
 import { useEcharts } from '@/composables/useEcharts'
 import { getUserSpaceAnalytics } from '@/api/userSpace'
 
 const data = ref<Awaited<ReturnType<typeof getUserSpaceAnalytics>>['data'] | null>(null)
+const loading = ref(false)
+const errorMessage = ref('')
 const { chartRef: statusPieRef, initChart: initStatusPie } = useEcharts()
 const { chartRef: genreRadarRef, initChart: initGenreRadar } = useEcharts()
 
@@ -90,9 +103,19 @@ const renderCharts = async () => {
 }
 
 const loadData = async () => {
-  const response = await getUserSpaceAnalytics()
-  data.value = response.data
-  await renderCharts()
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    const response = await getUserSpaceAnalytics()
+    data.value = response.data
+    await renderCharts()
+  } catch {
+    data.value = null
+    errorMessage.value = '加载个人看板失败，请稍后重试'
+    ElMessage.error(errorMessage.value)
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(loadData)
