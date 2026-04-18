@@ -3,9 +3,11 @@
 AI 助手相关的 API 路由
 """
 import re
+import json
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import text as sa_text
 from sqlmodel import Session
@@ -76,6 +78,44 @@ def chat_with_ai(chat_message: ChatMessage):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"系统内部错误: {str(e)}")
+
+
+@router.post("/chat/stream")
+def chat_with_ai_stream(chat_message: ChatMessage):
+    """
+    与 AI 助手对话（SSE 流式输出）。
+    """
+    def event_generator():
+        try:
+            for chunk in ai_service.chat_stream(message=chat_message.message):
+                payload = json.dumps(
+                    {"type": "delta", "content": chunk},
+                    ensure_ascii=False,
+                )
+                yield f"data: {payload}\n\n"
+            yield "data: {\"type\":\"done\"}\n\n"
+        except HTTPException as he:
+            payload = json.dumps(
+                {"type": "error", "error": he.detail},
+                ensure_ascii=False,
+            )
+            yield f"data: {payload}\n\n"
+        except Exception as exc:
+            payload = json.dumps(
+                {"type": "error", "error": f"系统内部错误: {str(exc)}"},
+                ensure_ascii=False,
+            )
+            yield f"data: {payload}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/ai/generate-insight", response_model=dict)

@@ -145,6 +145,12 @@ npm run build        # 生产构建
 
 **触发数据爬取**（需要登录）：在首页或通过 API `POST /api/crawler/update` 手动触发。
 
+**更新 AI 项目知识库**（推荐在代码变更后执行）：
+
+```bash
+python scripts/generate_kb.py
+```
+
 ## 📁 项目结构
 
 ```text

@@ -2,13 +2,16 @@
   <div class="ai-assistant">
     <!-- 全局浮动按钮：固定在右下角，点击展开/收起聊天窗口 -->
     <div class="assistant-btn" @click="toggleChat" :title="isOpen ? '收起助手' : '展开助手'">
-      <i class="fas fa-robot"></i>
+      <img :src="aiAvatar" class="assistant-btn-avatar" alt="AI助手" />
     </div>
 
     <!-- 聊天窗口：使用 visibility + opacity + transform 实现平滑动画 -->
     <div class="chat-container" :class="{ 'show': isOpen }">
       <div class="chat-header">
-        <h3><i class="fas fa-robot"></i> AI助手</h3>
+        <h3>
+          <img :src="aiAvatar" class="header-ai-avatar" alt="AI助手" />
+          AI助手
+        </h3>
         <div class="header-tabs">
           <button
             class="tab-btn"
@@ -31,45 +34,60 @@
       <!-- 消息区域：flex 列布局，overflow-y scroll，新消息出现时自动滚动到底部 -->
       <div class="messages" ref="messagesContainer">
         <!-- 挂载时显示欢迎消息 -->
-        <div class="message bot-message">
-          您好！我是AI助手，专门为B站分析系统服务。
+        <div class="message-row is-bot">
+          <img :src="aiAvatar" class="message-avatar" alt="AI" />
+          <div class="message bot-message">
+            您好！我是AI助手，专门为B站分析系统服务。
+          </div>
         </div>
-        <div class="message bot-message">
-          您可以问我关于番剧数据、用户行为分析、系统使用等问题。我会尽力为您提供帮助！
+        <div class="message-row is-bot">
+          <img :src="aiAvatar" class="message-avatar" alt="AI" />
+          <div class="message bot-message">
+            您可以问我关于番剧数据、用户行为分析、系统使用等问题。我会尽力为您提供帮助！
+          </div>
         </div>
 
         <!-- 服务在线状态（首次检查完成后才显示，避免闪烁） -->
         <template v-if="serviceStatusChecked">
           <!-- 服务在线 -->
-          <div v-if="serviceAvailable" class="message status-message status-online-msg">
-            <div class="service-status">
-              <span class="status-indicator status-online"></span>
-              <span>当前服务状态: <strong>已连接</strong></span>
+          <div v-if="serviceAvailable" class="message-row is-bot">
+            <img :src="aiAvatar" class="message-avatar" alt="AI" />
+            <div class="message status-message status-online-msg">
+              <div class="service-status">
+                <span class="status-indicator status-online"></span>
+                <span>当前服务状态: <strong>已连接</strong></span>
+              </div>
             </div>
           </div>
           <!-- 服务离线 -->
-          <div v-else class="message status-message">
-            <div class="service-status">
-              <span class="status-indicator status-offline"></span>
-              <span>当前服务状态: <strong>未连接</strong></span>
-            </div>
-            <div class="connection-help">
-              <h4><i class="fas fa-exclamation-triangle"></i> 服务未连接</h4>
-              <p>AI助手服务当前不可用，可能原因：后端服务未启动或网络连接问题。请联系系统管理员解决此问题。</p>
+          <div v-else class="message-row is-bot">
+            <img :src="aiAvatar" class="message-avatar" alt="AI" />
+            <div class="message status-message">
+              <div class="service-status">
+                <span class="status-indicator status-offline"></span>
+                <span>当前服务状态: <strong>未连接</strong></span>
+              </div>
+              <div class="connection-help">
+                <h4><i class="fas fa-exclamation-triangle"></i> 服务未连接</h4>
+                <p>AI助手服务当前不可用，可能原因：后端服务未启动或网络连接问题。请联系系统管理员解决此问题。</p>
+              </div>
             </div>
           </div>
         </template>
 
         <!-- 示例问题：服务在线且尚未开始对话时展示 -->
-        <div v-if="sampleQuestionsVisible" class="sample-questions-container">
-          <p><i class="fas fa-lightbulb"></i> 试试问我：</p>
-          <div class="samples-wrapper">
-            <div
-              v-for="q in sampleQuestions"
-              :key="q"
-              class="sample-question"
-              @click="fillSampleQuestion(q)"
-            >{{ q }}</div>
+        <div v-if="sampleQuestionsVisible" class="message-row is-bot">
+          <img :src="aiAvatar" class="message-avatar" alt="AI" />
+          <div class="sample-questions-container">
+            <p><i class="fas fa-lightbulb"></i> 试试问我：</p>
+            <div class="samples-wrapper">
+              <div
+                v-for="q in sampleQuestions"
+                :key="q"
+                class="sample-question"
+                @click="fillSampleQuestion(q)"
+              >{{ q }}</div>
+            </div>
           </div>
         </div>
 
@@ -77,21 +95,41 @@
         <div
           v-for="(msg, index) in messages"
           :key="index"
-          class="message"
-          :class="{
-            'user-message': msg.role === 'user',
-            'bot-message': msg.role === 'bot',
-            'error-message': msg.role === 'error'
-          }"
-        >{{ msg.content }}</div>
+          class="message-row"
+          :class="{ 'is-user': msg.role === 'user', 'is-bot': msg.role !== 'user' }"
+        >
+          <img
+            :src="msg.role === 'user' ? userAvatar : aiAvatar"
+            class="message-avatar"
+            :alt="msg.role === 'user' ? '用户' : 'AI'"
+          />
+          <div
+            class="message"
+            :class="{
+              'user-message': msg.role === 'user',
+              'bot-message': msg.role === 'bot',
+              'error-message': msg.role === 'error'
+            }"
+          >
+            <template v-if="msg.role === 'bot'">
+              <div class="markdown-body" v-html="renderBotMessage(msg.content)"></div>
+            </template>
+            <template v-else>
+              {{ msg.content }}
+            </template>
+          </div>
+        </div>
 
         <!-- AI 打字指示器：三个跳动圆点，取代简单的"思考中..."文字 -->
-        <div v-if="isTyping" class="message bot-message bot-typing">
-          <span>豆包正在思考</span>
-          <div class="typing-indicator">
-            <div class="typing-dot"></div>
-            <div class="typing-dot"></div>
-            <div class="typing-dot"></div>
+        <div v-if="isTyping" class="message-row is-bot">
+          <img :src="aiAvatar" class="message-avatar thinking-avatar" alt="AI思考中" />
+          <div class="message bot-message bot-typing">
+            <span>豆包正在思考</span>
+            <div class="typing-indicator">
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+            </div>
           </div>
         </div>
 
@@ -141,9 +179,15 @@
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick, watch } from 'vue'
-import { chatWithAI, checkAIServiceStatus, textToSQL } from '@/api/ai'
+import MarkdownIt from 'markdown-it'
+import hljs from 'highlight.js'
+import DOMPurify from 'dompurify'
+import { chatWithAI, chatWithAIStream, checkAIServiceStatus, textToSQL } from '@/api/ai'
 import type { TextToSQLResponse } from '@/api/ai'
 import { getApiErrorMessage } from '@/utils/errorHandling'
+import aiAvatar from '@/assets/ai-avatar.svg'
+import userAvatar from '@/assets/user-avatar.svg'
+import 'highlight.js/styles/github.css'
 
 // ——— 状态 ———
 const isOpen = ref(false)                          // 聊天窗口是否展开
@@ -157,6 +201,18 @@ const sampleQuestionsVisible = ref(false)         // 服务在线后是否显示
 const mode = ref<'chat' | 'sql'>('chat')          // 当前交互模式
 const sqlResult = ref<TextToSQLResponse | null>(null) // Text-to-SQL 查询结果
 
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+  highlight: (code: string, language: string) => {
+    if (language && hljs.getLanguage(language)) {
+      return `<pre><code class="hljs">${hljs.highlight(code, { language }).value}</code></pre>`
+    }
+    return `<pre><code class="hljs">${md.utils.escapeHtml(code)}</code></pre>`
+  },
+})
+
 // 挂载后延迟检查服务的等待时间（给后端启动留出时间，单位毫秒）
 const SERVICE_CHECK_DELAY = 1000
 
@@ -167,6 +223,11 @@ const sampleQuestions = [
   '解释一下弹幕情感分析的结果',
   '生成一份上周的数据简报'
 ]
+
+const renderBotMessage = (content: string) => {
+  const rawHtml = md.render(content || '')
+  return DOMPurify.sanitize(rawHtml)
+}
 
 // 切换聊天窗口；每次打开都重新检查服务状态
 const toggleChat = () => {
@@ -241,11 +302,33 @@ const sendMessage = async () => {
   } else {
     // ── 普通问答模式 ──────────────────────────────────────────────────
     try {
-      const response = await chatWithAI(message)
-      if (!response?.success) {
-        throw new Error('后端未返回成功状态')
+      const streamingMessage = { role: 'bot', content: '' }
+      messages.value.push(streamingMessage)
+      let receivedChunk = false
+
+      try {
+        await chatWithAIStream(message, {
+          onChunk: (chunk) => {
+            receivedChunk = true
+            streamingMessage.content += chunk
+            scrollToBottom()
+          },
+        })
+      } catch (streamError) {
+        if (!receivedChunk) {
+          messages.value.pop()
+          const response = await chatWithAI(message)
+          if (!response?.success) {
+            throw new Error('后端未返回成功状态')
+          }
+          messages.value.push({ role: 'bot', content: response.reply })
+        } else {
+          messages.value.push({
+            role: 'error',
+            content: `流式连接中断：${getApiErrorMessage(streamError, '请稍后再试。')}`,
+          })
+        }
       }
-      messages.value.push({ role: 'bot', content: response.reply })
     } catch (error: unknown) {
       // 将错误作为 error 角色消息显示，样式独立于普通 bot 消息
       messages.value.push({
@@ -308,6 +391,12 @@ onMounted(() => {
   animation: pulse 2s infinite;
 }
 
+.assistant-btn-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
 .assistant-btn:hover {
   transform: scale(1.1);
   box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
@@ -359,6 +448,15 @@ onMounted(() => {
   margin: 0;
   font-size: 1rem;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-ai-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
 }
 
 /* ── 模式切换 Tab ── */
@@ -483,6 +581,37 @@ onMounted(() => {
   scroll-behavior: smooth;
 }
 
+.message-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.message-row.is-user {
+  justify-content: flex-end;
+}
+
+.message-row.is-user .message-avatar {
+  order: 2;
+}
+
+.message-row.is-user .message {
+  order: 1;
+}
+
+.message-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.thinking-avatar {
+  animation: breathing 1.8s ease-in-out infinite;
+}
+
 /* ——— 消息气泡通用样式 ——— */
 .message {
   padding: 0.75rem 1rem;
@@ -508,6 +637,54 @@ onMounted(() => {
   border: 1px solid #e0e0e0;
   margin-right: auto;
   border-bottom-left-radius: 4px;
+}
+
+.markdown-body {
+  word-break: break-word;
+}
+
+.markdown-body :deep(p) {
+  margin: 0.4rem 0;
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 0.4rem 0;
+  padding-left: 1.2rem;
+}
+
+.markdown-body :deep(pre) {
+  background: #f6f8fa;
+  border-radius: 8px;
+  padding: 0.6rem;
+  overflow-x: auto;
+}
+
+.markdown-body :deep(code) {
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.markdown-body :deep(blockquote) {
+  margin: 0.4rem 0;
+  padding-left: 0.8rem;
+  border-left: 3px solid #c5cae9;
+  color: #5f6368;
+}
+
+.markdown-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.4rem 0;
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  border: 1px solid #e5e7eb;
+  padding: 4px 8px;
+  white-space: nowrap;
 }
 
 /* 错误消息：红色警告样式 */
@@ -725,6 +902,17 @@ onMounted(() => {
   }
 }
 
+@keyframes breathing {
+  0%, 100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.06);
+    filter: brightness(1.08);
+  }
+}
+
 /* ——— 响应式：小屏幕适配 ——— */
 @media (max-width: 768px) {
   .chat-container {
@@ -737,6 +925,11 @@ onMounted(() => {
     width: 50px;
     height: 50px;
     font-size: 20px;
+  }
+
+  .message-avatar {
+    width: 24px;
+    height: 24px;
   }
 }
 </style>

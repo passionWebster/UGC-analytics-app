@@ -66,6 +66,7 @@ export interface TopCommentsResponse {
 }
 
 const AI_REQUEST_TIMEOUT = 60000
+const AI_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 
 /**
  * 获取 AI 服务状态
@@ -79,6 +80,97 @@ export const checkAIServiceStatus = async (): Promise<AIServiceStatus> => {
  */
 export const chatWithAI = async (message: string): Promise<ChatResponse> => {
   return apiClient.post('/chat', { message }, { timeout: AI_REQUEST_TIMEOUT })
+}
+
+interface StreamEvent {
+  type?: string
+  content?: string
+  error?: string
+}
+
+export const chatWithAIStream = async (
+  message: string,
+  handlers: {
+    onChunk: (chunk: string) => void
+    onError?: (error: string) => void
+    onDone?: () => void
+  },
+): Promise<void> => {
+  const token = localStorage.getItem('access_token')
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT)
+
+  try {
+    const response = await fetch(`${AI_BASE_URL}/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ message }),
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      let errMsg = `流式请求失败（HTTP ${response.status}）`
+      try {
+        const err = (await response.json()) as { detail?: string; msg?: string }
+        errMsg = err.detail || err.msg || errMsg
+      } catch {
+        // ignore parse error
+      }
+      throw new Error(errMsg)
+    }
+
+    if (!response.body) {
+      throw new Error('浏览器不支持流式响应')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const events = buffer.split('\n\n')
+      buffer = events.pop() || ''
+
+      for (const event of events) {
+        const dataLine = event
+          .split('\n')
+          .find((line) => line.startsWith('data:'))
+          ?.slice(5)
+          .trim()
+        if (!dataLine) continue
+
+        let payload: StreamEvent | null = null
+        try {
+          payload = JSON.parse(dataLine) as StreamEvent
+        } catch {
+          handlers.onChunk(dataLine)
+          continue
+        }
+
+        if (payload.type === 'delta' && typeof payload.content === 'string') {
+          handlers.onChunk(payload.content)
+        } else if (payload.type === 'error') {
+          const errorMsg = payload.error || 'AI 流式请求失败'
+          handlers.onError?.(errorMsg)
+          throw new Error(errorMsg)
+        } else if (payload.type === 'done') {
+          handlers.onDone?.()
+          return
+        }
+      }
+    }
+
+    handlers.onDone?.()
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
 }
 
 /**
