@@ -15,9 +15,8 @@ import hashlib
 import json
 import threading
 import time
-from pathlib import Path
 import requests
-from typing import Optional, Dict, Any, Iterator, Tuple
+from typing import Optional, Dict, Any
 from fastapi import HTTPException
 from cachetools import TTLCache
 
@@ -35,13 +34,6 @@ from sqlmodel import Session
 _ai_cache: TTLCache = TTLCache(maxsize=128, ttl=600)
 _ai_cache_lock = threading.RLock()
 
-_MAX_KNOWLEDGE_CHARS = 12000
-_MAX_CONTEXT_CHARS = 1200
-_PROJECT_KNOWLEDGE_CANDIDATES = (
-    Path(__file__).resolve().parents[2] / "project_knowledge.md",
-    Path(__file__).resolve().parents[1] / "project_knowledge.md",
-)
-
 
 class AIService:
     """AI 助手服务类"""
@@ -50,7 +42,6 @@ class AIService:
         self.api_key = settings.doubao_api_key
         self.api_url = settings.doubao_api_url
         self.model = settings.doubao_model
-        self.project_knowledge = self._load_project_knowledge()
 
     # ── 公开方法 ────────────────────────────────────────────────────────────
 
@@ -81,15 +72,12 @@ class AIService:
         Raises:
             HTTPException: 服务不可用或请求失败
         """
-        system_prompt = self._build_chat_system_prompt(context)
+        system_prompt = (
+            "你是一个B站数据分析助手，帮助用户理解B站番剧数据、用户行为分析报告和系统使用。"
+        )
+        if context:
+            system_prompt += f"\n\n当前上下文：{context}"
         return self._request_api(message=message, system_prompt=system_prompt)
-
-    def chat_stream(self, message: str, context: Optional[str] = None) -> Iterator[str]:
-        """
-        通用问答（流式）：按文本增量返回模型输出。
-        """
-        system_prompt = self._build_chat_system_prompt(context)
-        yield from self._stream_request_api(message=message, system_prompt=system_prompt)
 
     def generate_insight(self, data: Any, context_hint: str = "") -> str:
         """
@@ -296,7 +284,16 @@ class AIService:
                 detail="AI 服务返回了无法解析的响应，请检查 API 地址是否正确"
             )
 
-        reply = self._extract_reply_from_response(data)
+        reply = ""
+        if "output" in data:
+            for output_item in data["output"]:
+                if (
+                    output_item.get("type") == "message"
+                    and output_item.get("role") == "assistant"
+                ):
+                    for content_item in output_item.get("content", []):
+                        if content_item.get("type") == "output_text":
+                            reply += content_item.get("text", "")
 
         if not reply:
             app_logger.error(
@@ -332,245 +329,6 @@ class AIService:
         )
 
         return reply
-
-    def _stream_request_api(self, message: str, system_prompt: str) -> Iterator[str]:
-        """
-        向豆包 API 发起流式请求，逐段产出文本内容。
-        """
-        if not self.api_key:
-            self._record_telemetry(
-                api_type="stream",
-                latency_ms=0,
-                is_success=False,
-                error_code="missing_api_key",
-            )
-            raise HTTPException(
-                status_code=503,
-                detail="AI 服务未配置，请设置 DOUBAO_API_KEY 环境变量"
-            )
-
-        cache_key = hashlib.sha256(
-            f"{message}||{system_prompt}".encode("utf-8")
-        ).hexdigest()
-        with _ai_cache_lock:
-            cached = _ai_cache.get(cache_key)
-        if cached is not None:
-            yield cached
-            return
-
-        request_body = {
-            "model": self.model,
-            "stream": True,
-            "input": [
-                {
-                    "role": "system",
-                    "content": [{"type": "input_text", "text": system_prompt}]
-                },
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": message}]
-                }
-            ]
-        }
-
-        request_start = time.perf_counter()
-        full_reply = ""
-        token_usage: Optional[int] = None
-        try:
-            response = requests.post(
-                self.api_url,
-                json=request_body,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.api_key}",
-                },
-                timeout=60,
-                stream=True,
-            )
-            response.raise_for_status()
-
-            for raw_line in response.iter_lines(decode_unicode=True):
-                if not raw_line:
-                    continue
-                line = raw_line.strip()
-                if not line.startswith("data:"):
-                    continue
-                payload = line[5:].strip()
-                if not payload or payload == "[DONE]":
-                    continue
-
-                chunk_data = self._safe_json_loads(payload)
-                if not chunk_data:
-                    continue
-
-                chunk_text, chunk_tokens = self._extract_stream_chunk(chunk_data)
-                if isinstance(chunk_tokens, int):
-                    token_usage = chunk_tokens
-                if chunk_text:
-                    full_reply += chunk_text
-                    yield chunk_text
-        except requests.exceptions.HTTPError as exc:
-            status_code = exc.response.status_code if exc.response is not None else None
-            body = exc.response.text[:500] if exc.response is not None else ""
-            app_logger.error(
-                "豆包 API 流式 HTTP 错误 status={} body={}: {}", status_code, body, exc
-            )
-            status_str = str(status_code) if status_code is not None else "unknown"
-            self._record_telemetry(
-                api_type="stream",
-                latency_ms=int((time.perf_counter() - request_start) * 1000),
-                is_success=False,
-                error_code=f"http_{status_str}",
-            )
-            detail = f"AI 流式请求失败（HTTP {status_str}）"
-            if body:
-                detail += f"：{body}"
-            raise HTTPException(status_code=500, detail=detail)
-        except requests.exceptions.Timeout as exc:
-            self._record_telemetry(
-                api_type="stream",
-                latency_ms=int((time.perf_counter() - request_start) * 1000),
-                is_success=False,
-                error_code="timeout",
-            )
-            app_logger.error("豆包 API 流式请求超时: {}", exc)
-            raise HTTPException(status_code=500, detail="AI 流式请求超时，请稍后重试")
-        except requests.exceptions.RequestException as exc:
-            self._record_telemetry(
-                api_type="stream",
-                latency_ms=int((time.perf_counter() - request_start) * 1000),
-                is_success=False,
-                error_code="request_exception",
-            )
-            app_logger.error("豆包 API 流式请求异常: {}", exc)
-            raise HTTPException(status_code=500, detail=f"AI 流式请求失败：{str(exc)}")
-
-        if not full_reply:
-            self._record_telemetry(
-                api_type="stream",
-                latency_ms=int((time.perf_counter() - request_start) * 1000),
-                is_success=False,
-                error_code="empty_reply",
-            )
-            raise HTTPException(
-                status_code=500,
-                detail="解析 AI 流式响应失败：未收到有效文本分片。"
-            )
-
-        with _ai_cache_lock:
-            _ai_cache[cache_key] = full_reply
-
-        self._record_telemetry(
-            api_type="stream",
-            latency_ms=int((time.perf_counter() - request_start) * 1000),
-            is_success=True,
-            token_usage=token_usage,
-        )
-
-    def _build_chat_system_prompt(self, context: Optional[str]) -> str:
-        """
-        构建结构化聊天系统提示词（角色 + 任务边界 + 项目知识）。
-        """
-        knowledge = self._truncate_text(self.project_knowledge, _MAX_KNOWLEDGE_CHARS)
-        context_text = self._truncate_text(context or "", _MAX_CONTEXT_CHARS)
-        context_block = f"\n## 当前上下文\n{context_text}\n" if context_text else ""
-
-        return (
-            "你是 Bilibili Analytics Platform 的资深项目开发助理。\n"
-            "请严格基于提供的项目上下文回答，优先给出准确、可执行、简洁的建议。\n\n"
-            "## 任务边界\n"
-            "1. 你需要解释本项目中的功能、路由、接口、数据库与前后端交互。\n"
-            "2. 不编造不存在的接口或文件；不确定时明确说明并给出核验建议。\n"
-            "3. 涉及安全问题时优先提示风险与防护建议。\n"
-            "4. 除非用户要求，不输出冗长背景，尽量用结构化要点回答。\n"
-            f"{context_block}\n"
-            "## 项目知识库（节选）\n"
-            f"{knowledge}"
-        )
-
-    def _load_project_knowledge(self) -> str:
-        """
-        读取项目知识库文件并进行长度裁剪。
-        """
-        for path in _PROJECT_KNOWLEDGE_CANDIDATES:
-            try:
-                if path.exists():
-                    content = path.read_text(encoding="utf-8")
-                    if content.strip():
-                        app_logger.info("AI 已加载项目知识库：{}", str(path))
-                        return self._truncate_text(content, _MAX_KNOWLEDGE_CHARS)
-            except Exception as exc:
-                app_logger.warning("项目知识库加载失败 {}: {}", str(path), exc)
-        return "未加载到 project_knowledge.md；请先执行 scripts/generate_kb.py 生成。"
-
-    @staticmethod
-    def _truncate_text(text: str, limit: int) -> str:
-        if not text:
-            return ""
-        cleaned = text.strip()
-        if len(cleaned) <= limit:
-            return cleaned
-        return cleaned[:limit] + "\n\n[内容已截断以控制上下文长度]"
-
-    @staticmethod
-    def _safe_json_loads(payload: str) -> Optional[Dict[str, Any]]:
-        try:
-            parsed = json.loads(payload)
-            return parsed if isinstance(parsed, dict) else None
-        except ValueError:
-            return None
-
-    def _extract_reply_from_response(self, data: Dict[str, Any]) -> str:
-        reply = ""
-        if "output" in data:
-            for output_item in data["output"]:
-                if (
-                    output_item.get("type") == "message"
-                    and output_item.get("role") == "assistant"
-                ):
-                    for content_item in output_item.get("content", []):
-                        if content_item.get("type") == "output_text":
-                            reply += content_item.get("text", "")
-        return reply
-
-    def _extract_stream_chunk(self, data: Dict[str, Any]) -> Tuple[str, Optional[int]]:
-        text_chunk = ""
-        token_usage: Optional[int] = None
-
-        usage = data.get("usage", {})
-        if isinstance(usage, dict):
-            total_tokens = usage.get("total_tokens")
-            if isinstance(total_tokens, int):
-                token_usage = total_tokens
-
-        delta = data.get("delta")
-        if isinstance(delta, dict):
-            delta_text = delta.get("text")
-            if isinstance(delta_text, str):
-                text_chunk += delta_text
-
-        output_text = data.get("output_text")
-        if isinstance(output_text, str):
-            text_chunk += output_text
-
-        output = data.get("output")
-        if isinstance(output, list):
-            for output_item in output:
-                if (
-                    isinstance(output_item, dict)
-                    and output_item.get("type") == "message"
-                    and output_item.get("role") == "assistant"
-                ):
-                    for content_item in output_item.get("content", []):
-                        if (
-                            isinstance(content_item, dict)
-                            and content_item.get("type") in ("output_text", "text_delta")
-                        ):
-                            value = content_item.get("text")
-                            if isinstance(value, str):
-                                text_chunk += value
-
-        return text_chunk, token_usage
 
     def _record_telemetry(
         self,
