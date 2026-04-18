@@ -12,3 +12,5 @@ tqdm~=4.67.3
 APScheduler~=3.11.2
 cachetools~=7.0.5
 snownlp~=0.12.3
+passlib[bcrypt]~=1.7.4
+bcrypt<4.1

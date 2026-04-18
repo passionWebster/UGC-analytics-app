@@ -62,6 +62,43 @@ def validate_password_complexity(cls, value: str) -> str:
     return value
 
 
+class UserPasswordUpdate(BaseModel):
+    """用户修改密码请求"""
+    old_password: str = Field(min_length=6, max_length=255)
+    new_password: str = Field(min_length=8, max_length=255)
+
+    @field_validator("new_password")
+    def validate_new_password_complexity(cls, value: str) -> str:
+        if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
+            raise ValueError("new_password must contain at least one letter and one digit")
+        return value
+
+
+class FavoriteToggleRequest(BaseModel):
+    """用户追番收藏新增/取消请求"""
+    season_id: int
+    status: str = Field(default="watching")
+
+    @field_validator("status")
+    def validate_status(cls, value: str) -> str:
+        allowed = {"watching", "plan", "completed"}
+        if value not in allowed:
+            raise ValueError("status must be one of: watching, plan, completed")
+        return value
+
+
+class FavoriteStatusUpdateRequest(BaseModel):
+    """用户追番状态更新请求"""
+    status: str
+
+    @field_validator("status")
+    def validate_status(cls, value: str) -> str:
+        allowed = {"watching", "plan", "completed"}
+        if value not in allowed:
+            raise ValueError("status must be one of: watching, plan, completed")
+        return value
+
+
 class AnimeResponse(BaseModel):
     """番剧信息响应模型"""
     season_id: int

@@ -10,6 +10,8 @@ export const useAuthStore = defineStore('auth', () => {
   // 状态
   const username = ref<string>('')
   const email = ref<string>('')
+  const userId = ref<number | null>(null)
+  const createdAt = ref<string>('')
   const isLoggedIn = ref<boolean>(false)
   const isAdmin = ref<boolean>(false)
   const isActive = ref<boolean>(true)
@@ -19,8 +21,10 @@ export const useAuthStore = defineStore('auth', () => {
   // 计算属性
   const hasPreferences = computed(() => preferences.value.length > 0)
   const user = computed(() => ({
+    id: userId.value,
     username: username.value,
     email: email.value,
+    created_at: createdAt.value,
     isAdmin: isAdmin.value,
     isActive: isActive.value
   }))
@@ -47,7 +51,9 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const response = await authAPI.getUserInfo(usernameParam)
       if (response.success && response.user) {
+        userId.value = response.user.id
         email.value = response.user.email
+        createdAt.value = response.user.created_at
         preferences.value = response.user.preferences || []
         isAdmin.value = response.user.is_admin
         isActive.value = response.user.is_active
@@ -65,7 +71,9 @@ export const useAuthStore = defineStore('auth', () => {
       if (response.success) {
         // 保存状态
         username.value = response.user.username
+        userId.value = response.user.id
         email.value = response.user.email
+        createdAt.value = response.user.created_at
         isAdmin.value = response.user.is_admin
         isActive.value = response.user.is_active
         accessToken.value = response.access_token
@@ -137,6 +145,8 @@ export const useAuthStore = defineStore('auth', () => {
   const logout = () => {
     username.value = ''
     email.value = ''
+    userId.value = null
+    createdAt.value = ''
     accessToken.value = ''
     isLoggedIn.value = false
     isAdmin.value = false
@@ -152,6 +162,8 @@ export const useAuthStore = defineStore('auth', () => {
     // 状态
     username,
     email,
+    userId,
+    createdAt,
     isLoggedIn,
     isAdmin,
     isActive,
