@@ -201,6 +201,14 @@ const sampleQuestionsVisible = ref(false)         // 服务在线后是否显示
 const mode = ref<'chat' | 'sql'>('chat')          // 当前交互模式
 const sqlResult = ref<TextToSQLResponse | null>(null) // Text-to-SQL 查询结果
 
+const escapeHtml = (unsafe: string) =>
+  unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+
 const md = new MarkdownIt({
   html: false,
   linkify: true,
@@ -209,7 +217,7 @@ const md = new MarkdownIt({
     if (language && hljs.getLanguage(language)) {
       return `<pre><code class="hljs">${hljs.highlight(code, { language }).value}</code></pre>`
     }
-    return `<pre><code class="hljs">${md.utils.escapeHtml(code)}</code></pre>`
+    return `<pre><code class="hljs">${escapeHtml(code)}</code></pre>`
   },
 })
 
