@@ -15,6 +15,7 @@ from sqlmodel import Session
 from ..ai_service import AIService
 from ..database import get_session, engine
 from ..analytics import get_sentiment_timeline, get_top_comments
+from ..logger import app_logger
 
 router = APIRouter(prefix="/api", tags=["AI助手"])
 
@@ -101,8 +102,9 @@ def chat_with_ai_stream(chat_message: ChatMessage):
             )
             yield f"data: {payload}\n\n"
         except Exception as exc:
+            app_logger.exception("AI 流式接口异常: {}", exc)
             payload = json.dumps(
-                {"type": "error", "error": f"系统内部错误: {str(exc)}"},
+                {"type": "error", "error": "系统内部错误，请稍后重试"},
                 ensure_ascii=False,
             )
             yield f"data: {payload}\n\n"
