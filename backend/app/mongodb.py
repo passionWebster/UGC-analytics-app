@@ -146,7 +146,7 @@ class DanmakuMongoRepository:
                 "$group": {
                     "_id": {
                         "$multiply": [
-                            {"$floor": {"$divide": ["$_progress_seconds", bucket]}},
+                            {"$floor": {"$divide": ["$_progress_seconds", bucket_size]}},
                             bucket_size,
                         ]
                     },

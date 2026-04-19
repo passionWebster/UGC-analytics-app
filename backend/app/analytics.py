@@ -13,6 +13,7 @@ from sqlalchemy import func as sa_func
 
 from .models import DanmuRecord, CommentRecord, EpisodeStats
 from .logger import app_logger as logger
+from .mongodb import DanmakuMongoRepository
 
 # ── SnowNLP 懒加载，避免在 import 阶段引发异常 ──────────────────────────────
 try:
@@ -124,7 +125,14 @@ def get_sentiment_timeline(session: Session, season_id: int) -> List[Dict[str, A
     Returns:
         列表，每项为 {"episode_number": int, "avg_sentiment": float, "danmu_count": int}
     """
-    rows = session.exec(
+    episodes = sorted(
+        session.exec(select(EpisodeStats).where(EpisodeStats.season_id == season_id)).all(),
+        key=_episode_sort_key,
+    )
+    if not episodes:
+        return []
+
+    sqlite_rows = session.exec(
         select(
             DanmuRecord.episode_number,
             sa_func.avg(DanmuRecord.sentiment_score).label("avg_sentiment"),
@@ -135,15 +143,39 @@ def get_sentiment_timeline(session: Session, season_id: int) -> List[Dict[str, A
         .group_by(DanmuRecord.episode_number)
         .order_by(DanmuRecord.episode_number)
     ).all()
-
-    return [
-        {
-            "episode_number": row[0],
+    sqlite_map = {
+        int(row[0]): {
+            "episode_number": int(row[0]),
             "avg_sentiment": round(float(row[1]), 4) if row[1] is not None else None,
-            "danmu_count": row[2],
+            "danmu_count": int(row[2] or 0),
         }
-        for row in rows
-    ]
+        for row in sqlite_rows
+    }
+
+    timeline: List[Dict[str, Any]] = []
+    for idx, episode in enumerate(episodes, start=1):
+        mongo_items = _get_mongo_episode_items(episode.cid)
+        if mongo_items:
+            sentiments = [
+                sentiment
+                for sentiment in (_get_mongo_item_sentiment(item) for item in mongo_items)
+                if sentiment is not None
+            ]
+            if sentiments:
+                timeline.append(
+                    {
+                        "episode_number": idx,
+                        "avg_sentiment": round(sum(sentiments) / len(sentiments), 4),
+                        "danmu_count": len(sentiments),
+                    }
+                )
+                continue
+
+        fallback = sqlite_map.get(idx)
+        if fallback:
+            timeline.append(fallback)
+
+    return timeline
 
 
 def get_top_comments(session: Session, season_id: int, limit: int = 50) -> List[Dict[str, Any]]:
@@ -309,6 +341,7 @@ _EPISODE_NUM_RE = re.compile(r"\d+")
 _MAX_EPISODE_SORT_KEY = 10**9
 _WORDCLOUD_FALLBACK_BATCH_SIZE = 2000
 _INSIGHT_SAMPLE_MAX_LEN = 180
+_MONGO_DANMAKU_REPO = DanmakuMongoRepository()
 _COMMENT_TOPIC_KEYWORDS: Dict[str, List[str]] = {
     "改编与原作": ["原作", "改编", "漫画", "小说", "还原", "删减", "魔改"],
     "剧情讨论": ["剧情", "节奏", "反转", "伏笔", "结局", "发展", "设定"],
@@ -352,6 +385,50 @@ def _episode_sort_key(ep: EpisodeStats) -> tuple:
     return _MAX_EPISODE_SORT_KEY, ep.id or 0
 
 
+def _get_mongo_episode_items(cid: Optional[str]) -> Optional[List[Dict[str, Any]]]:
+    if not cid:
+        return None
+    doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(str(cid))
+    if not doc:
+        return None
+    items = doc.get("danmaku_items")
+    if not isinstance(items, list):
+        return None
+    normalized = [item for item in items if isinstance(item, dict)]
+    return normalized or None
+
+
+def _get_mongo_item_video_time(item: Dict[str, Any]) -> Optional[float]:
+    video_time = item.get("video_time")
+    if video_time is not None:
+        try:
+            return float(video_time)
+        except (TypeError, ValueError):
+            pass
+    progress = item.get("progress")
+    if progress is None:
+        return None
+    try:
+        progress_value = float(progress)
+    except (TypeError, ValueError):
+        return None
+    if progress_value > 1000:
+        return progress_value / 1000.0
+    return progress_value
+
+
+def _get_mongo_item_sentiment(item: Dict[str, Any]) -> Optional[float]:
+    for key in ("nlp_sentiment_score", "sentiment_score", "sentiment"):
+        value = item.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def get_episode_timeline_bins(
     session: Session,
     cid: str,
@@ -369,35 +446,56 @@ def get_episode_timeline_bins(
     episode_index_map = {ep.id: idx + 1 for idx, ep in enumerate(episodes)}
     episode_number = episode_index_map.get(target_ep.id, 1)
 
-    records = session.exec(
-        select(DanmuRecord)
-        .where(
-            DanmuRecord.season_id == target_ep.season_id,
-            DanmuRecord.cid == cid,
-            DanmuRecord.video_time.is_not(None),
-        )
-        .order_by(DanmuRecord.video_time)
-    ).all()
-
     bins: Dict[int, Dict[str, Any]] = defaultdict(
         lambda: {"count": 0, "sent_sum": 0.0, "sent_count": 0, "token_counter": Counter()}
     )
+    total_danmaku = 0
 
-    for record in records:
-        if record.video_time is None:
-            continue
-        bin_start = int(record.video_time // bin_size) * bin_size
-        bucket = bins[bin_start]
-        bucket["count"] += 1
-        score = record.nlp_sentiment_score
-        if score is None:
-            score = record.sentiment_score
-        if score is not None:
-            bucket["sent_sum"] += float(score)
-            bucket["sent_count"] += 1
-        text = record.cleaned_content or record.content
-        for token in _extract_tokens(text):
-            bucket["token_counter"][token] += 1
+    mongo_items = _get_mongo_episode_items(cid)
+    if mongo_items:
+        source = "mongodb"
+        for item in mongo_items:
+            video_time = _get_mongo_item_video_time(item)
+            if video_time is None:
+                continue
+            total_danmaku += 1
+            bin_start = int(video_time // bin_size) * bin_size
+            bucket = bins[bin_start]
+            bucket["count"] += 1
+            score = _get_mongo_item_sentiment(item)
+            if score is not None:
+                bucket["sent_sum"] += float(score)
+                bucket["sent_count"] += 1
+            text = str(item.get("cleaned_content") or item.get("content") or "").strip()
+            for token in _extract_tokens(text):
+                bucket["token_counter"][token] += 1
+    else:
+        source = "sqlite"
+        records = session.exec(
+            select(DanmuRecord)
+            .where(
+                DanmuRecord.season_id == target_ep.season_id,
+                DanmuRecord.cid == cid,
+                DanmuRecord.video_time.is_not(None),
+            )
+            .order_by(DanmuRecord.video_time)
+        ).all()
+        total_danmaku = len(records)
+        for record in records:
+            if record.video_time is None:
+                continue
+            bin_start = int(record.video_time // bin_size) * bin_size
+            bucket = bins[bin_start]
+            bucket["count"] += 1
+            score = record.nlp_sentiment_score
+            if score is None:
+                score = record.sentiment_score
+            if score is not None:
+                bucket["sent_sum"] += float(score)
+                bucket["sent_count"] += 1
+            text = record.cleaned_content or record.content
+            for token in _extract_tokens(text):
+                bucket["token_counter"][token] += 1
 
     timeline = []
     for time_start in sorted(bins.keys()):
@@ -417,14 +515,16 @@ def get_episode_timeline_bins(
             }
         )
 
-    return {
+    payload = {
         "season_id": target_ep.season_id,
         "cid": cid,
         "episode_number": episode_number,
         "bin_size": bin_size,
-        "total_danmaku": len(records),
+        "total_danmaku": total_danmaku,
         "timeline": timeline,
     }
+    logger.info("📊 单集时间线聚合完成 cid={} source={} bins={}", cid, source, len(timeline))
+    return payload
 
 
 def get_season_wordcloud(
