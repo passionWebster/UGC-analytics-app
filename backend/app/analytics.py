@@ -236,9 +236,12 @@ def update_episode_sentiment_aggregates(session: Session, season_id: int) -> int
     return updated
 
 
-_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9]{3,}")
+_CJK_UNIFIED_IDEOGRAPHS_RANGE = r"\u4e00-\u9fff"
+_TOKEN_RE = re.compile(rf"[{_CJK_UNIFIED_IDEOGRAPHS_RANGE}]{{2,}}|[A-Za-z0-9]{{3,}}")
 _TIMELINE_STOPWORDS = {"这个", "那个", "真的", "感觉", "就是", "你们", "我们", "他们", "一个", "不是", "没有"}
 _EPISODE_NUM_RE = re.compile(r"\d+")
+_MAX_EPISODE_SORT_KEY = 10**9
+_WORDCLOUD_FALLBACK_BATCH_SIZE = 2000
 
 
 def _safe_json_load(value: Any, default: Any) -> Any:
@@ -271,7 +274,7 @@ def _episode_sort_key(ep: EpisodeStats) -> tuple:
     match = _EPISODE_NUM_RE.search(title)
     if match:
         return int(match.group()), ep.id or 0
-    return 10**9, ep.id or 0
+    return _MAX_EPISODE_SORT_KEY, ep.id or 0
 
 
 def get_episode_timeline_bins(
@@ -383,17 +386,16 @@ def get_season_wordcloud(
         if cid:
             record_query = record_query.where(DanmuRecord.cid == cid)
         offset = 0
-        batch_size = 2000
         while True:
             batch = session.exec(
-                record_query.order_by(DanmuRecord.id).offset(offset).limit(batch_size)
+                record_query.order_by(DanmuRecord.id).offset(offset).limit(_WORDCLOUD_FALLBACK_BATCH_SIZE)
             ).all()
             if not batch:
                 break
             for rec in batch:
                 for token in _extract_tokens(rec.cleaned_content or rec.content):
                     counter[token] += 1
-            offset += batch_size
+            offset += _WORDCLOUD_FALLBACK_BATCH_SIZE
 
     items = [{"text": text, "weight": weight} for text, weight in counter.most_common(top_n)]
     return {
