@@ -271,3 +271,56 @@ class RecommendationStrategyUpdate(BaseModel):
     tmdb_weight: float = Field(ge=0, le=1)
     diversity_weight: float = Field(ge=0, le=1)
     enabled: bool = True
+
+
+class TimelineBin(BaseModel):
+    """时间窗聚合后的弹幕切片"""
+    time_start: int
+    danmaku_count: int
+    avg_sentiment: float
+    top_keywords: List[str]
+
+
+class EpisodeTimelineResponse(BaseModel):
+    """单集时间轴聚合数据"""
+    season_id: int
+    cid: str
+    episode_number: int
+    bin_size: int
+    total_danmaku: int
+    timeline: List[TimelineBin]
+
+
+class WordcloudItem(BaseModel):
+    """词云词条"""
+    text: str
+    weight: int
+
+
+class SeasonWordcloudResponse(BaseModel):
+    """整季/单集词云聚合数据"""
+    season_id: int
+    cid: Optional[str] = None
+    total_terms: int
+    items: List[WordcloudItem]
+
+
+class CharacterTrendPoint(BaseModel):
+    """角色讨论度单集点位"""
+    episode_number: int
+    episode_title: str
+    count: int
+
+
+class CharacterTrendItem(BaseModel):
+    """角色讨论趋势"""
+    character: str
+    total_count: int
+    trend: List[CharacterTrendPoint]
+
+
+class SeasonCharacterTrendsResponse(BaseModel):
+    """整季核心角色讨论趋势"""
+    season_id: int
+    total_episodes: int
+    items: List[CharacterTrendItem]

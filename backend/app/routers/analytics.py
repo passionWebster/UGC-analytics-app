@@ -17,11 +17,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select as sql_select
 
+from ..analytics import (
+    get_episode_timeline_bins,
+    get_season_character_trends,
+    get_season_wordcloud,
+)
 from ..auth import get_current_user
 from ..database import get_session
 from ..crud import AnalyticsService
 from ..models import Anime, TmdbAnimeInfo, User
 from ..schemas import (
+    EpisodeTimelineResponse,
+    SeasonWordcloudResponse,
+    SeasonCharacterTrendsResponse,
     EpisodeBehaviorAnalysisResponse,
     LifecycleGrowthResponse,
     CompetitiveLandscapeResponse,
@@ -32,6 +40,7 @@ from ..schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analytics", tags=["数据分析"])
+v1_router = APIRouter(prefix="/api/v1/analytics", tags=["数据分析v1"])
 # 图片代理路由（路径为 /api/image_proxy，与 analytics 路由独立）
 proxy_router = APIRouter(prefix="/api", tags=["图片代理"])
 
@@ -102,6 +111,82 @@ def _parse_areas_param(areas: Optional[str]) -> Optional[List[str]]:
         allowed_text = "、".join(sorted(allowed_values))
         raise HTTPException(status_code=400, detail=f"非法的 areas 参数，仅允许：{allowed_text}")
     return items
+
+
+@router.get("/episode/{cid}/timeline", response_model=dict)
+@v1_router.get("/episode/{cid}/timeline", response_model=dict)
+def get_episode_timeline(
+    cid: str,
+    bin_size: int = Query(10, ge=1, le=300, description="时间窗大小（秒）"),
+    keyword_topk: int = Query(5, ge=1, le=20, description="每个切片返回关键词数量"),
+    session: Session = Depends(get_session),
+):
+    """
+    获取单集按时间窗切片后的弹幕聚合数据。
+    """
+    try:
+        data = get_episode_timeline_bins(
+            session=session,
+            cid=cid,
+            bin_size=bin_size,
+            keyword_topk=keyword_topk,
+        )
+    except ValueError as exc:
+        if str(exc) == "episode_not_found":
+            raise HTTPException(status_code=404, detail="未找到对应 CID 的剧集数据")
+        raise
+    payload = EpisodeTimelineResponse.model_validate(data)
+    return {"success": True, "data": payload}
+
+
+@router.get("/season/{season_id}/wordcloud", response_model=dict)
+@v1_router.get("/season/{season_id}/wordcloud", response_model=dict)
+def get_season_wordcloud_api(
+    season_id: int,
+    cid: Optional[str] = Query(None, description="可选：按单集 CID 聚合词云"),
+    top_n: int = Query(120, ge=10, le=500, description="返回词条数量上限"),
+    session: Session = Depends(get_session),
+):
+    """
+    获取整季（或单集）词云权重数据。
+    """
+    try:
+        data = get_season_wordcloud(
+            session=session,
+            season_id=season_id,
+            cid=cid,
+            top_n=top_n,
+        )
+    except ValueError as exc:
+        if str(exc) == "episode_not_found":
+            raise HTTPException(status_code=404, detail="未找到可用于词云聚合的剧集数据")
+        raise
+    payload = SeasonWordcloudResponse.model_validate(data)
+    return {"success": True, "data": payload}
+
+
+@router.get("/season/{season_id}/characters", response_model=dict)
+@v1_router.get("/season/{season_id}/characters", response_model=dict)
+def get_season_characters_api(
+    season_id: int,
+    top_n: int = Query(8, ge=1, le=30, description="返回角色数量上限"),
+    session: Session = Depends(get_session),
+):
+    """
+    获取整季核心角色讨论度趋势。
+    """
+    try:
+        data = get_season_character_trends(
+            session=session,
+            season_id=season_id,
+            top_n=top_n,
+        )
+    except ValueError as exc:
+        if str(exc) == "season_not_found":
+            raise HTTPException(status_code=404, detail="未找到该 season_id 的剧集数据")
+        raise
+    payload = SeasonCharacterTrendsResponse.model_validate(data)
+    return {"success": True, "data": payload}
 
 
 @proxy_router.get("/image_proxy")
