@@ -434,6 +434,7 @@ def get_episode_analysis_with_cache(
             return {
                 "success": True,
                 "cached": True,
+                "stale": True,
                 "refresh_scheduled": True,
                 "age_days": age_days,
                 "message": "检测到该集情感数据待刷新，已触发后台 NLP，当前先返回缓存结果",
@@ -445,7 +446,6 @@ def get_episode_analysis_with_cache(
             "refresh_scheduled": True,
             "age_days": age_days,
             "message": "已触发后台 NLP 分析，请稍后重试",
-            "data": {"timeline": {}, "wordcloud": {}},
         }
 
     if cache_row is not None:
