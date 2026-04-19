@@ -76,6 +76,13 @@ class BilibiliBangumiCrawler:
         2: '日本',
         3: '美国',
     }
+    # 历史弹幕索引接口错误码（命中后无需继续请求更多月份）
+    DM_HISTORY_STOP_CODES = {
+        -101,  # 未登录
+        -111,  # csrf 校验失败
+        -400,  # 参数错误
+        -412,  # 风控拦截
+    }
 
     def __init__(self, session: Session):
         """
@@ -1384,8 +1391,7 @@ class BilibiliBangumiCrawler:
                     payload.get("message"),
                 )
                 # 未登录或权限不足时，无需继续请求更多月份
-                # -101 未登录 / -111 csrf 校验失败 / -400 参数错误 / -412 风控拦截
-                if code in {-101, -111, -400, -412}:
+                if code in self.DM_HISTORY_STOP_CODES:
                     break
                 continue
             day_list = payload.get("data") or []
@@ -1395,11 +1401,11 @@ class BilibiliBangumiCrawler:
             return []
 
         history_items: List[Dict[str, Any]] = []
-        seen_dates: Set[str] = set()
+        processed_dates: Set[str] = set()
         for date_str in all_dates:
-            if date_str in seen_dates:
+            if date_str in processed_dates:
                 continue
-            seen_dates.add(date_str)
+            processed_dates.add(date_str)
             resp = self._request_get(
                 history_url,
                 params={"type": 1, "oid": str(cid), "date": date_str},
@@ -1431,7 +1437,7 @@ class BilibiliBangumiCrawler:
                     source=f"history:{date_str}",
                 )
             )
-        logger.info("🕰️ 历史弹幕抓取完成 cid={} dates={} items={}", cid, len(seen_dates), len(history_items))
+        logger.info("🕰️ 历史弹幕抓取完成 cid={} dates={} items={}", cid, len(processed_dates), len(history_items))
         return history_items
 
     def fetch_comment_replies(
@@ -1681,7 +1687,7 @@ class BilibiliBangumiCrawler:
                     raw_danmaku = current_danmaku + history_danmaku
 
                     # 去重：同一集中仅移除完全重复的弹幕（文本+时间+发送者）
-                    seen_keys: set = set()
+                    seen_keys: Set[Tuple[str, Any, Any, str]] = set()
                     dedup: List[Dict] = []
                     for d in raw_danmaku:
                         # video_time 表示视频内时间点；timestamp 表示发送时间，两者共同用于精确去重。
