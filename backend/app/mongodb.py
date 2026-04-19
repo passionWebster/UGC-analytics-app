@@ -2,7 +2,7 @@
 MongoDB 数据访问模块
 用于存储原始弹幕文档，减轻关系型数据库压力。
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .config import settings
@@ -88,7 +88,7 @@ class DanmakuMongoRepository:
             "bvid": bvid,
             "danmaku_items": danmaku_items,
             "danmaku_count": len(danmaku_items),
-            "updated_at": datetime.utcnow(),
+            "updated_at": datetime.now(timezone.utc),
         }
         try:
             collection.update_one({"cid": str(cid)}, {"$set": payload}, upsert=True)
@@ -96,4 +96,3 @@ class DanmakuMongoRepository:
         except PyMongoError as exc:
             logger.warning("⚠️ 写入 MongoDB 失败 cid={}: {}", cid, exc)
             return False
-

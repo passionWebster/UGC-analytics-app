@@ -218,7 +218,13 @@ def update_episode_sentiment_aggregates(session: Session, season_id: int) -> int
                 continue
             second = int(round(r.video_time))
             bins[second] = bins.get(second, 0) + 1
-        target.peak_danmaku_time = float(max(bins, key=bins.get)) if bins else None
+        if bins:
+            max_count = max(bins.values())
+            # 并列峰值时取最早时间点，便于时间轴可视化对齐
+            peak_second = min(sec for sec, count in bins.items() if count == max_count)
+            target.peak_danmaku_time = float(peak_second)
+        else:
+            target.peak_danmaku_time = None
         updated += 1
 
     if updated:

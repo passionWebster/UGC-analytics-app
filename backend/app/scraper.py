@@ -1266,7 +1266,8 @@ class BilibiliBangumiCrawler:
             cid: 分 P 的弹幕 ID
 
         Returns:
-            弹幕记录列表，每条包含 content（文字）和 video_time（出现时间，秒）
+            弹幕记录列表。
+            其中 progress/ctime/sender_hash 为新字段，video_time/timestamp 为兼容字段。
         """
         url = f"https://comment.bilibili.com/{cid}.xml"
         danmaku_list: List[Dict[str, Any]] = []
@@ -1284,7 +1285,7 @@ class BilibiliBangumiCrawler:
                 # p 属性格式: 时间,类型,大小,颜色,时间戳,弹幕池,用户ID,弹幕ID
                 parts = attrs.split(',')
                 try:
-                    progress = float(parts[0]) if parts and parts[0] else 0.0
+                    video_time = float(parts[0]) if parts and parts[0] else 0.0
                     ts_unix = int(parts[4]) if len(parts) > 4 and parts[4] else 0
                     sender_hash = parts[6] if len(parts) > 6 else None
                 except (TypeError, ValueError):
@@ -1293,11 +1294,11 @@ class BilibiliBangumiCrawler:
                 ctime = datetime.fromtimestamp(ts_unix) if ts_unix else None
                 danmaku_list.append({
                     'content': text,
-                    'video_time': progress,  # 保持兼容旧字段
-                    'progress': progress,
+                    'video_time': video_time,  # 保持兼容旧字段
+                    'progress': video_time,
                     'timestamp': ctime,      # 保持兼容旧字段
                     'ctime': ctime,
-                    'sender_hash': sender_hash,
+                    'sender_hash': sender_hash,  # B站匿名用户哈希
                 })
         except ET.ParseError as exc:
             logger.warning("⚠️ 解析弹幕 XML 失败 cid={}: {}", cid, exc)
@@ -1313,7 +1314,18 @@ class BilibiliBangumiCrawler:
         limit: int,
         page_size: int,
     ) -> List[Dict[str, Any]]:
-        """抓取指定主楼下的楼中楼评论。"""
+        """
+        抓取指定主楼下的楼中楼评论。
+
+        Args:
+            avid: 视频 avid（oid）
+            root_rpid: 主楼评论 ID
+            limit: 楼中楼最多抓取条数
+            page_size: 每页抓取条数
+
+        Returns:
+            楼中楼评论列表（含层级和父子关系字段）
+        """
         url = "https://api.bilibili.com/x/v2/reply/reply"
         nested: List[Dict[str, Any]] = []
         max_pages = max(1, settings.crawler_nested_reply_pages)
@@ -1343,13 +1355,13 @@ class BilibiliBangumiCrawler:
                     continue
                 current_rpid = str(r.get("rpid") or "")
                 parent_info = r.get("parent_info") or {}
-                parent_rpid = str(parent_info.get("rpid") or root_rpid_str)
+                parent_rpid = str(parent_info.get("rpid") or "")
                 nested.append({
                     "content": content,
                     "likes": r.get("like", 0),
                     "replies": r.get("rcount", 0),
                     "root_rpid": root_rpid_str,
-                    "parent_rpid": parent_rpid,
+                    "parent_rpid": parent_rpid or root_rpid_str,
                     "level": 1,
                     "is_top_level": False,
                     "rpid": current_rpid,
@@ -1429,6 +1441,15 @@ class BilibiliBangumiCrawler:
                 break
         return comment_list[:limit]
 
+    @staticmethod
+    def _make_comment_dedup_key(comment: Dict[str, Any]) -> Tuple[str, str, str]:
+        """构造评论去重键：(root_rpid, parent_rpid, content)。"""
+        return (
+            str(comment.get("root_rpid") or ""),
+            str(comment.get("parent_rpid") or ""),
+            str(comment.get("content") or ""),
+        )
+
     def scrape_danmaku_and_comments(
         self,
         season_id: int,
@@ -1459,7 +1480,7 @@ class BilibiliBangumiCrawler:
         Returns:
             统计字典，包含写入数量与请求重试指标
         """
-        self.override_retry_attempts = max(1, retry_attempts) if retry_attempts is not None else None
+        self.override_retry_attempts = max(1, retry_attempts) if retry_attempts else None
         logger.info(f"🎯 开始抓取弹幕/评论 season_id={season_id}（最多 {max_episodes} 集）")
         self.request_counters = {"requests": 0, "retries": 0, "failed": 0}
 
@@ -1476,13 +1497,13 @@ class BilibiliBangumiCrawler:
             .where(EpisodeStats.season_id == season_id)
             .order_by(EpisodeStats.id)
         ).all()
-        if max_episodes and max_episodes > 0:
+        if max_episodes:
             episodes = episodes[:max_episodes]
 
         if not episodes:
             logger.warning(f"  ⚠️ season_id={season_id} 尚无剧集数据，请先执行 fetch_and_save_episodes")
             crawl_log.status = "failed"
-            crawl_log.failed_reason = "episode_stats not found"
+            crawl_log.failed_reason = "EpisodeStats records not found"
             crawl_log.completed_at = datetime.now()
             self.session.commit()
             self.override_retry_attempts = None
@@ -1582,16 +1603,20 @@ class BilibiliBangumiCrawler:
                     existing_comment_keys = set()
                     if mode != "full":
                         existing_comment_keys = {
-                            (str(x.root_rpid or ""), str(x.parent_rpid or ""), x.content)
-                            for x in self.session.exec(
-                                select(CommentRecord).where(
+                            (str(row[0] or ""), str(row[1] or ""), row[2])
+                            for row in self.session.exec(
+                                select(
+                                    CommentRecord.root_rpid,
+                                    CommentRecord.parent_rpid,
+                                    CommentRecord.content,
+                                ).where(
                                     CommentRecord.season_id == season_id,
                                     CommentRecord.avid == avid,
                                 )
                             ).all()
                         }
                     for c in raw_comments:
-                        key = (str(c.get("root_rpid") or ""), str(c.get("parent_rpid") or ""), c["content"])
+                        key = self._make_comment_dedup_key(c)
                         if key in existing_comment_keys:
                             continue
                         score = sentiment_fn(c['content']) if sentiment_fn else None

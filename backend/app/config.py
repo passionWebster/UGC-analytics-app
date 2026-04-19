@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     
     # AI 服务配置
     doubao_api_url: str = "https://ark.cn-beijing.volces.com/api/v3/responses"
-    doubao_api_key: str = os.getenv('doubao_api_key')
+    doubao_api_key: Optional[str] = os.getenv("DOUBAO_API_KEY")
     doubao_model: str = "doubao-seed-1-6-250615"
 
     # TMDB API 配置
