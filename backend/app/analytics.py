@@ -262,6 +262,10 @@ def _extract_tokens(text: str) -> List[str]:
     return [token for token in tokens if token not in _TIMELINE_STOPWORDS]
 
 
+def _normalize_term(text: str) -> str:
+    return (text or "").strip().lower()
+
+
 def _episode_sort_key(ep: EpisodeStats) -> tuple:
     title = ep.episode_title or ""
     match = _EPISODE_NUM_RE.search(title)
@@ -363,24 +367,33 @@ def get_season_wordcloud(
     for ep in episodes:
         entities = _safe_json_load(ep.nlp_entities, [])
         for item in entities:
-            text = str(item.get("text", "")).strip()
+            text = _normalize_term(str(item.get("text", "")))
             count = int(item.get("count", 0) or 0)
             if text and count > 0:
-                counter[text.lower()] += count
+                counter[text] += count
 
         keywords = _safe_json_load(ep.nlp_keywords, [])
         for kw in keywords:
-            text = str(kw).strip()
+            text = _normalize_term(str(kw))
             if text:
-                counter[text.lower()] += 1
+                counter[text] += 1
 
     if not counter:
         record_query = select(DanmuRecord).where(DanmuRecord.season_id == season_id)
         if cid:
             record_query = record_query.where(DanmuRecord.cid == cid)
-        for rec in session.exec(record_query).all():
-            for token in _extract_tokens(rec.cleaned_content or rec.content):
-                counter[token] += 1
+        offset = 0
+        batch_size = 2000
+        while True:
+            batch = session.exec(
+                record_query.order_by(DanmuRecord.id).offset(offset).limit(batch_size)
+            ).all()
+            if not batch:
+                break
+            for rec in batch:
+                for token in _extract_tokens(rec.cleaned_content or rec.content):
+                    counter[token] += 1
+            offset += batch_size
 
     items = [{"text": text, "weight": weight} for text, weight in counter.most_common(top_n)]
     return {
@@ -412,7 +425,7 @@ def get_season_character_trends(
         counter = Counter()
         entities = _safe_json_load(ep.nlp_entities, [])
         for item in entities:
-            text = str(item.get("text", "")).strip().lower()
+            text = _normalize_term(str(item.get("text", "")))
             count = int(item.get("count", 0) or 0)
             if text and count > 0:
                 counter[text] += count
