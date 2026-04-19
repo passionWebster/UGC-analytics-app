@@ -26,7 +26,7 @@ from ..analytics import (
     get_season_character_trends,
     get_season_wordcloud,
 )
-from ..tasks import run_episode_nlp_analysis
+from ..tasks import enqueue_episode_nlp_task
 from ..auth import get_current_user
 from ..database import get_session, engine
 from ..crud import AnalyticsService
@@ -423,45 +423,29 @@ def get_episode_analysis_with_cache(
     needs_nlp_refresh = _episode_needs_nlp_refresh(session, target_ep, cid, season_id)
 
     if needs_nlp_refresh:
-        try:
-            run_episode_nlp_analysis(
-                season_id=season_id,
-                episode_number=_resolve_episode_number(session, target_ep),
-                cid=cid,
-            )
-            session.refresh(target_ep)
-        except Exception as exc:
-            logger.warning("⚠️ episode NLP refresh failed season_id={} cid={} err={}", season_id, cid, exc)
-
-        timeline_data = get_episode_timeline_bins(
-            session=session,
-            cid=cid,
-            bin_size=bin_size,
-            keyword_topk=keyword_topk,
+        episode_number = _resolve_episode_number(session, target_ep)
+        background_tasks.add_task(
+            enqueue_episode_nlp_task,
+            season_id,
+            episode_number,
+            cid,
         )
-        wordcloud_data = get_season_wordcloud(
-            session=session,
-            season_id=season_id,
-            cid=cid,
-            top_n=top_n,
-        )
-        _upsert_episode_analysis_cache(
-            session,
-            season_id=season_id,
-            cid=cid,
-            episode_number=int(timeline_data.get("episode_number", 1)),
-            timeline_data=timeline_data,
-            wordcloud_data=wordcloud_data,
-        )
+        if cache_row is not None:
+            return {
+                "success": True,
+                "cached": True,
+                "refresh_scheduled": True,
+                "age_days": age_days,
+                "message": "检测到该集情感数据待刷新，已触发后台 NLP，当前先返回缓存结果",
+                "data": _load_episode_analysis_cache_payload(cache_row),
+            }
         return {
-            "success": True,
-            "cached": False,
-            "refresh_scheduled": False,
+            "success": False,
+            "pending": True,
+            "refresh_scheduled": True,
             "age_days": age_days,
-            "data": {
-                "timeline": timeline_data,
-                "wordcloud": wordcloud_data,
-            },
+            "message": "已触发后台 NLP 分析，请稍后重试",
+            "data": {"timeline": {}, "wordcloud": {}},
         }
 
     if cache_row is not None:
