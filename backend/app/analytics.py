@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from sqlmodel import Session, select
 from sqlalchemy import func as sa_func
 
-from .models import DanmuRecord, CommentRecord
+from .models import DanmuRecord, CommentRecord, EpisodeStats
 from .logger import app_logger as logger
 
 # ── SnowNLP 懒加载，避免在 import 阶段引发异常 ──────────────────────────────
@@ -172,3 +172,56 @@ def get_top_comments(session: Session, season_id: int, limit: int = 50) -> List[
         }
         for r in records
     ]
+
+
+def update_episode_sentiment_aggregates(session: Session, season_id: int) -> int:
+    """
+    回填 EpisodeStats 聚合字段：
+    - avg_sentiment_score
+    - peak_danmaku_time
+    """
+    episodes = session.exec(
+        select(EpisodeStats)
+        .where(EpisodeStats.season_id == season_id)
+        .order_by(EpisodeStats.id)
+    ).all()
+    if not episodes:
+        return 0
+
+    danmu_records = session.exec(
+        select(DanmuRecord)
+        .where(DanmuRecord.season_id == season_id)
+        .order_by(DanmuRecord.episode_number)
+    ).all()
+    if not danmu_records:
+        return 0
+
+    ep_by_number = {idx + 1: ep for idx, ep in enumerate(episodes)}
+    grouped: Dict[int, List[DanmuRecord]] = {}
+    for rec in danmu_records:
+        grouped.setdefault(rec.episode_number, []).append(rec)
+
+    updated = 0
+    for ep_number, records in grouped.items():
+        target = ep_by_number.get(ep_number)
+        if not target:
+            continue
+
+        sentiment_values = [r.sentiment_score for r in records if r.sentiment_score is not None]
+        target.avg_sentiment_score = (
+            round(sum(sentiment_values) / len(sentiment_values), 4) if sentiment_values else None
+        )
+
+        bins: Dict[int, int] = {}
+        for r in records:
+            if r.video_time is None:
+                continue
+            second = int(round(r.video_time))
+            bins[second] = bins.get(second, 0) + 1
+        target.peak_danmaku_time = float(max(bins, key=bins.get)) if bins else None
+        updated += 1
+
+    if updated:
+        session.commit()
+    logger.info("✅ 单集聚合指标回填完成：season_id={} updated={}", season_id, updated)
+    return updated

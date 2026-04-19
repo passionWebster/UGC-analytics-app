@@ -40,6 +40,21 @@ class Settings(BaseSettings):
     bilibili_api_base_url: str = "https://api.bilibili.com"
     bilibili_request_timeout: int = 15
     bilibili_request_delay: float = 2.0  # 请求间隔（秒）
+    bilibili_retry_attempts: int = 3
+    bilibili_retry_backoff_base: float = 0.8
+    bilibili_retry_backoff_max: float = 8.0
+    bilibili_request_jitter: float = 0.4
+    crawler_proxy_enabled: bool = False
+    crawler_proxy_pool: Optional[str] = os.getenv("CRAWLER_PROXY_POOL")
+    crawler_comment_page_size: int = 20
+    crawler_nested_reply_limit: int = 20
+    crawler_nested_reply_pages: int = 2
+
+    # MongoDB 配置（原始弹幕文档存储）
+    mongodb_uri: Optional[str] = os.getenv("MONGODB_URI")
+    mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "bilibili_analytics")
+    mongodb_danmaku_collection: str = os.getenv("MONGODB_DANMAKU_COLLECTION", "danmaku_raw")
+    mongodb_connect_timeout_ms: int = 3000
     
     # 爬虫配置
     crawler_pages_to_fetch: int = 5  # 每个分类抓取的页数

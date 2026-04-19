@@ -4,7 +4,7 @@
 """
 from fastapi import APIRouter, Depends, BackgroundTasks
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Literal
 from sqlmodel import Session
 
 from ..database import get_session, engine
@@ -106,15 +106,23 @@ def search_anime_id(title: str, session: Session = Depends(get_session)):
 class ScrapeDanmakuRequest(BaseModel):
     """弹幕/评论抓取请求模型"""
     season_id: int
+    mode: Literal["incremental", "full"] = "incremental"
     max_episodes: Optional[int] = 3      # 最多抓取前 N 集，默认 3
     comment_limit: Optional[int] = 50    # 每集最多评论条数，默认 50
+    include_comment_replies: Optional[bool] = True
+    nested_reply_limit: Optional[int] = 20
+    retry_attempts: Optional[int] = None
     run_sentiment: Optional[bool] = True  # 是否在抓取后立即进行情感分析
 
 
 def _scrape_and_score(
     season_id: int,
+    mode: str,
     max_episodes: int,
     comment_limit: int,
+    include_comment_replies: bool,
+    nested_reply_limit: int,
+    retry_attempts: Optional[int],
     run_sentiment: bool,
 ) -> None:
     """后台任务：抓取弹幕/评论，并可选地进行情感分析打分"""
@@ -127,6 +135,10 @@ def _scrape_and_score(
             season_id=season_id,
             max_episodes=max_episodes,
             comment_limit=comment_limit,
+            include_comment_replies=include_comment_replies,
+            nested_reply_limit=nested_reply_limit,
+            mode=mode,
+            retry_attempts=retry_attempts,
             sentiment_fn=sentiment_fn,
         )
         # 对已有但未打分的历史记录补分
@@ -159,14 +171,20 @@ def trigger_danmaku_scrape(
     background_tasks.add_task(
         _scrape_and_score,
         season_id=req.season_id,
+        mode=req.mode,
         max_episodes=req.max_episodes,
         comment_limit=req.comment_limit,
+        include_comment_replies=req.include_comment_replies,
+        nested_reply_limit=req.nested_reply_limit,
+        retry_attempts=req.retry_attempts,
         run_sentiment=req.run_sentiment,
     )
     return {
         "success": True,
         "message": (
             f"弹幕/评论抓取任务已启动 (season_id={req.season_id}, "
-            f"前 {req.max_episodes} 集, 情感分析={'开启' if req.run_sentiment else '关闭'})"
+            f"mode={req.mode}, 前 {req.max_episodes} 集, "
+            f"楼中楼={'开启' if req.include_comment_replies else '关闭'}, "
+            f"情感分析={'开启' if req.run_sentiment else '关闭'})"
         ),
     }

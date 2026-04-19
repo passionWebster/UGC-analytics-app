@@ -83,6 +83,24 @@ _NEW_CRAWL_LOG_COLUMNS: list = [
     ("final_inserted", "INTEGER"),
     ("failed_reason", "VARCHAR(1000)"),
     ("duration", "REAL"),
+    ("retry_count", "INTEGER DEFAULT 0"),
+    ("failed_count", "INTEGER DEFAULT 0"),
+]
+
+_NEW_EPISODE_STATS_COLUMNS: list = [
+    ("avg_sentiment_score", "REAL"),
+    ("peak_danmaku_time", "REAL"),
+]
+
+_NEW_DANMU_RECORD_COLUMNS: list = [
+    ("sender_hash", "VARCHAR(64)"),
+]
+
+_NEW_COMMENT_RECORD_COLUMNS: list = [
+    ("root_rpid", "VARCHAR(32)"),
+    ("parent_rpid", "VARCHAR(32)"),
+    ("level", "INTEGER DEFAULT 0"),
+    ("is_top_level", "BOOLEAN DEFAULT 1"),
 ]
 
 
@@ -148,6 +166,54 @@ def _add_missing_columns():
                     logger.info(f"  ✅ 迁移：已向 crawl_logs 表添加列 {col_name}")
                 except Exception as exc:
                     logger.warning(f"  ⚠️ 向 crawl_logs 表添加列 {col_name} 失败: {exc}")
+
+        # 单集统计表增量列迁移
+        episode_existing = {
+            row[1]
+            for row in conn.execute(sa_text("PRAGMA table_info(episode_stats)"))
+        }
+        for col_name, col_type in _NEW_EPISODE_STATS_COLUMNS:
+            if col_name not in episode_existing:
+                try:
+                    conn.execute(
+                        sa_text(f"ALTER TABLE episode_stats ADD COLUMN {col_name} {col_type} DEFAULT NULL")
+                    )
+                    conn.commit()
+                    logger.info(f"  ✅ 迁移：已向 episode_stats 表添加列 {col_name}")
+                except Exception as exc:
+                    logger.warning(f"  ⚠️ 向 episode_stats 表添加列 {col_name} 失败: {exc}")
+
+        # 弹幕记录表增量列迁移
+        danmu_existing = {
+            row[1]
+            for row in conn.execute(sa_text("PRAGMA table_info(danmu_records)"))
+        }
+        for col_name, col_type in _NEW_DANMU_RECORD_COLUMNS:
+            if col_name not in danmu_existing:
+                try:
+                    conn.execute(
+                        sa_text(f"ALTER TABLE danmu_records ADD COLUMN {col_name} {col_type} DEFAULT NULL")
+                    )
+                    conn.commit()
+                    logger.info(f"  ✅ 迁移：已向 danmu_records 表添加列 {col_name}")
+                except Exception as exc:
+                    logger.warning(f"  ⚠️ 向 danmu_records 表添加列 {col_name} 失败: {exc}")
+
+        # 评论记录表增量列迁移
+        comment_existing = {
+            row[1]
+            for row in conn.execute(sa_text("PRAGMA table_info(comment_records)"))
+        }
+        for col_name, col_type in _NEW_COMMENT_RECORD_COLUMNS:
+            if col_name not in comment_existing:
+                try:
+                    conn.execute(
+                        sa_text(f"ALTER TABLE comment_records ADD COLUMN {col_name} {col_type}")
+                    )
+                    conn.commit()
+                    logger.info(f"  ✅ 迁移：已向 comment_records 表添加列 {col_name}")
+                except Exception as exc:
+                    logger.warning(f"  ⚠️ 向 comment_records 表添加列 {col_name} 失败: {exc}")
 
 
 def get_session() -> Generator[Session, None, None]:

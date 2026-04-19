@@ -14,11 +14,13 @@ from datetime import datetime, timedelta
 from functools import reduce
 from typing import Tuple, List, Dict, Any, Optional
 import requests
+from requests import Response
 from sqlmodel import Session, select
 from tqdm import tqdm
 
 from .models import Anime, DailyStats, EpisodeStats, CrawlLog, DanmuRecord, CommentRecord
 from .config import settings
+from .mongodb import DanmakuMongoRepository
 from .logger import scraper_logger as logger
 
 # SQLite 写入互斥锁：用于本模块内的爬虫写入操作，防止多线程并发写入时产生数据库锁冲突。
@@ -89,7 +91,86 @@ class BilibiliBangumiCrawler:
             'Accept': 'application/json, text/plain, */*',
             'Referer': 'https://www.bilibili.com/'
         })
+        self.mongo_repo = DanmakuMongoRepository()
+        self.override_retry_attempts: Optional[int] = None
+        self.request_counters: Dict[str, int] = {"requests": 0, "retries": 0, "failed": 0}
         logger.info('✅ 爬虫已初始化')
+
+    def _build_proxy(self) -> Optional[Dict[str, str]]:
+        """根据配置构建单次请求代理。"""
+        if not settings.crawler_proxy_enabled:
+            return None
+        pool = (settings.crawler_proxy_pool or "").strip()
+        if not pool:
+            return None
+        candidates = [p.strip() for p in pool.split(",") if p.strip()]
+        if not candidates:
+            return None
+        proxy = random.choice(candidates)
+        return {"http": proxy, "https": proxy}
+
+    def _throttle(self, *, force_base_delay: bool = False):
+        """统一节流，支持随机抖动。"""
+        if not force_base_delay and settings.bilibili_request_delay <= 0:
+            return
+        base = max(settings.bilibili_request_delay, 0.0)
+        jitter = max(settings.bilibili_request_jitter, 0.0)
+        sleep_seconds = base + (random.uniform(0, jitter) if jitter > 0 else 0.0)
+        if sleep_seconds > 0:
+            time.sleep(sleep_seconds)
+
+    def _request_get(
+        self,
+        url: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        timeout: Optional[int] = None,
+        retry_attempts: Optional[int] = None,
+        force_base_delay: bool = True,
+    ) -> Optional[Response]:
+        """
+        带重试、退避、代理、节流的统一 GET 请求入口。
+        """
+        attempts = (
+            retry_attempts
+            if retry_attempts is not None
+            else (self.override_retry_attempts or settings.bilibili_retry_attempts)
+        )
+        attempts = max(1, attempts)
+        timeout = timeout or settings.bilibili_request_timeout
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, attempts + 1):
+            self._throttle(force_base_delay=force_base_delay)
+            self.request_counters["requests"] += 1
+            try:
+                response = self.http_session.get(
+                    url,
+                    params=params,
+                    timeout=timeout,
+                    proxies=self._build_proxy(),
+                )
+                response.raise_for_status()
+                return response
+            except Exception as exc:
+                last_exc = exc
+                if attempt < attempts:
+                    self.request_counters["retries"] += 1
+                    backoff = min(
+                        settings.bilibili_retry_backoff_base * (2 ** (attempt - 1)),
+                        settings.bilibili_retry_backoff_max,
+                    )
+                    logger.warning(
+                        "⚠️ 请求失败，准备重试 attempt={}/{} url={} error={}",
+                        attempt,
+                        attempts,
+                        url,
+                        exc,
+                    )
+                    time.sleep(backoff)
+                else:
+                    self.request_counters["failed"] += 1
+        logger.warning("❌ 请求最终失败 url={} error={}", url, last_exc)
+        return None
     
     @staticmethod
     def _convert_order_to_int(order_str: Any) -> int:
@@ -206,12 +287,13 @@ class BilibiliBangumiCrawler:
             current_params.update({'page': page, 'pagesize': settings.crawler_page_size})
             
             try:
-                response = self.http_session.get(
+                response = self._request_get(
                     self.BASE_API_URL,
                     params=current_params,
-                    timeout=settings.bilibili_request_timeout
+                    timeout=settings.bilibili_request_timeout,
                 )
-                response.raise_for_status()
+                if response is None:
+                    break
                 data = response.json()
                 
                 if data.get('code') == 0 and 'data' in data:
@@ -221,8 +303,6 @@ class BilibiliBangumiCrawler:
                     
                     if not api_data.get('has_next', 0):
                         break
-                    
-                    time.sleep(settings.bilibili_request_delay)
                 else:
                     logger.warning('  ❌ API 返回错误: {}', data.get('message', '未知错误'))
                     break
@@ -650,8 +730,9 @@ class BilibiliBangumiCrawler:
         """
         url = f"https://api.bilibili.com/pgc/view/web/season?season_id={season_id}"
         try:
-            response = self.http_session.get(url, timeout=settings.bilibili_request_timeout)
-            response.raise_for_status()
+            response = self._request_get(url, timeout=settings.bilibili_request_timeout)
+            if response is None:
+                return None
             data = response.json()
             
             if data.get('code') == 0 and 'result' in data:
@@ -790,8 +871,9 @@ class BilibiliBangumiCrawler:
         """
         url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
         try:
-            response = self.http_session.get(url, timeout=settings.bilibili_request_timeout)
-            response.raise_for_status()
+            response = self._request_get(url, timeout=settings.bilibili_request_timeout)
+            if response is None:
+                return {}
             data = response.json()
             if data.get('code') == 0:
                 # 返回完整 data 字典，以便调用方同时获取 stat 和 duration
@@ -840,8 +922,9 @@ class BilibiliBangumiCrawler:
         url = "https://api.bilibili.com/x/player/online/total"
         params = {'bvid': bvid, 'cid': str(cid)}
         try:
-            response = self.http_session.get(url, params=params, timeout=settings.bilibili_request_timeout)
-            response.raise_for_status()
+            response = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+            if response is None:
+                return None
             data = response.json()
             if data.get('code') == 0 and 'data' in data:
                 return self._convert_order_to_int(str(data['data'].get('total', 0)))
@@ -871,7 +954,7 @@ class BilibiliBangumiCrawler:
                 ep.hourly_online_history = json.dumps(history, ensure_ascii=False)
                 ep.updated_at = datetime.now()
                 updated += 1
-            time.sleep(settings.bilibili_request_delay)  # 严格控制请求频率，防止触发 B站风控
+            self._throttle()  # 严格控制请求频率，防止触发 B站风控
 
         self.session.commit()
         logger.info(f"✅ 在线人数记录完成，成功更新 {updated}/{len(episodes)} 个剧集")
@@ -889,8 +972,9 @@ class BilibiliBangumiCrawler:
         url = "https://api.bilibili.com/x/web-interface/search/type"
         params = {'keyword': keyword, 'search_type': 'media_bangumi'}
         try:
-            response = self.http_session.get(url, params=params, timeout=settings.bilibili_request_timeout)
-            response.raise_for_status()
+            response = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+            if response is None:
+                return None
             data = response.json()
             if data.get('code') == 0 and 'data' in data:
                 results = data['data'].get('result', [])
@@ -1119,8 +1203,9 @@ class BilibiliBangumiCrawler:
 
         url = "https://api.bilibili.com/x/web-interface/nav"
         try:
-            resp = self.http_session.get(url, timeout=settings.bilibili_request_timeout)
-            resp.raise_for_status()
+            resp = self._request_get(url, timeout=settings.bilibili_request_timeout)
+            if resp is None:
+                return '', ''
             nav = resp.json().get('data', {})
             img_url: str = nav.get('wbi_img', {}).get('img_url', '')
             sub_url: str = nav.get('wbi_img', {}).get('sub_url', '')
@@ -1186,8 +1271,9 @@ class BilibiliBangumiCrawler:
         url = f"https://comment.bilibili.com/{cid}.xml"
         danmaku_list: List[Dict[str, Any]] = []
         try:
-            resp = self.http_session.get(url, timeout=settings.bilibili_request_timeout)
-            resp.raise_for_status()
+            resp = self._request_get(url, timeout=settings.bilibili_request_timeout)
+            if resp is None:
+                return danmaku_list
             resp.encoding = 'utf-8'
             root = ET.fromstring(resp.text)
             for d in root.findall('d'):
@@ -1198,16 +1284,20 @@ class BilibiliBangumiCrawler:
                 # p 属性格式: 时间,类型,大小,颜色,时间戳,弹幕池,用户ID,弹幕ID
                 parts = attrs.split(',')
                 try:
-                    video_time = float(parts[0]) if parts and parts[0] else 0.0
+                    progress = float(parts[0]) if parts and parts[0] else 0.0
                     ts_unix = int(parts[4]) if len(parts) > 4 and parts[4] else 0
+                    sender_hash = parts[6] if len(parts) > 6 else None
                 except (TypeError, ValueError):
                     logger.debug("跳过异常弹幕元数据 cid={} attrs={}", cid, attrs)
                     continue
-                timestamp = datetime.fromtimestamp(ts_unix) if ts_unix else None
+                ctime = datetime.fromtimestamp(ts_unix) if ts_unix else None
                 danmaku_list.append({
                     'content': text,
-                    'video_time': video_time,
-                    'timestamp': timestamp,
+                    'video_time': progress,  # 保持兼容旧字段
+                    'progress': progress,
+                    'timestamp': ctime,      # 保持兼容旧字段
+                    'ctime': ctime,
+                    'sender_hash': sender_hash,
                 })
         except ET.ParseError as exc:
             logger.warning("⚠️ 解析弹幕 XML 失败 cid={}: {}", cid, exc)
@@ -1215,54 +1305,141 @@ class BilibiliBangumiCrawler:
             logger.exception("❌ 获取弹幕失败 cid={}: {}", cid, exc)
         return danmaku_list
 
-    def fetch_comments(self, avid: int, limit: int = 50) -> List[Dict[str, Any]]:
+    def fetch_comment_replies(
+        self,
+        avid: int,
+        root_rpid: str,
+        *,
+        limit: int,
+        page_size: int,
+    ) -> List[Dict[str, Any]]:
+        """抓取指定主楼下的楼中楼评论。"""
+        url = "https://api.bilibili.com/x/v2/reply/reply"
+        nested: List[Dict[str, Any]] = []
+        max_pages = max(1, settings.crawler_nested_reply_pages)
+        root_rpid_str = str(root_rpid)
+        for page in range(1, max_pages + 1):
+            if len(nested) >= limit:
+                break
+            params = self._sign_wbi_params({
+                "type": 1,
+                "oid": avid,
+                "root": root_rpid_str,
+                "ps": page_size,
+                "pn": page,
+            })
+            resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+            if resp is None:
+                break
+            data = resp.json()
+            if data.get("code") != 0:
+                break
+            replies = (data.get("data") or {}).get("replies") or []
+            if not replies:
+                break
+            for r in replies:
+                content = (r.get("content") or {}).get("message", "").strip()
+                if not content:
+                    continue
+                current_rpid = str(r.get("rpid") or "")
+                parent_info = r.get("parent_info") or {}
+                parent_rpid = str(parent_info.get("rpid") or root_rpid_str)
+                nested.append({
+                    "content": content,
+                    "likes": r.get("like", 0),
+                    "replies": r.get("rcount", 0),
+                    "root_rpid": root_rpid_str,
+                    "parent_rpid": parent_rpid,
+                    "level": 1,
+                    "is_top_level": False,
+                    "rpid": current_rpid,
+                })
+                if len(nested) >= limit:
+                    break
+        return nested
+
+    def fetch_comments(
+        self,
+        avid: int,
+        *,
+        limit: int = 50,
+        include_replies: bool = True,
+        nested_reply_limit: int = 20,
+    ) -> List[Dict[str, Any]]:
         """
-        通过 B站评论接口（/x/v2/reply/main）获取高赞评论。
+        通过 B站评论接口抓取主楼评论，并可选抓取楼中楼回复。
 
         Args:
             avid:  视频 avid（即 oid）
             limit: 最多返回评论条数（按热门排序）
 
         Returns:
-            评论列表，每条包含 content、likes、replies 字段
+            评论列表，包含层级和父子关系字段
         """
         url = "https://api.bilibili.com/x/v2/reply/main"
-        params = self._sign_wbi_params({
-            'type': 1,
-            'oid': avid,
-            'mode': 3,  # 3 = 热门模式（按点赞数排序）
-            'ps': min(limit, 20),
-            'pn': 1,
-        })
+        page_size = min(max(1, settings.crawler_comment_page_size), 20)
         comment_list: List[Dict[str, Any]] = []
-        try:
-            resp = self.http_session.get(url, params=params, timeout=settings.bilibili_request_timeout)
-            resp.raise_for_status()
+        page = 1
+        while len(comment_list) < limit:
+            params = self._sign_wbi_params({
+                'type': 1,
+                'oid': avid,
+                'mode': 3,  # 3 = 热门模式（按点赞数排序）
+                'ps': page_size,
+                'pn': page,
+            })
+            resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+            if resp is None:
+                break
             data = resp.json()
             if data.get('code') == 0:
                 replies = (data.get('data') or {}).get('replies') or []
-                for r in replies[:limit]:
+                if not replies:
+                    break
+                for r in replies:
                     content = r.get('content', {}).get('message', '').strip()
                     if not content:
                         continue
+                    root_rpid = str(r.get("rpid") or "")
                     comment_list.append({
                         'content': content,
                         'likes': r.get('like', 0),
                         'replies': r.get('rcount', 0),
+                        'root_rpid': root_rpid,
+                        'parent_rpid': None,
+                        'level': 0,
+                        'is_top_level': True,
                     })
+                    if include_replies and root_rpid and nested_reply_limit > 0:
+                        comment_list.extend(
+                            self.fetch_comment_replies(
+                                avid,
+                                root_rpid,
+                                limit=nested_reply_limit,
+                                page_size=page_size,
+                            )
+                        )
+                    if len(comment_list) >= limit:
+                        break
+                page += 1
+                if len(replies) < page_size:
+                    break
             else:
                 logger.warning("⚠️ 评论 API 返回错误 avid={}: code={}", avid, data.get('code'))
-        except Exception as exc:
-            logger.exception("❌ 获取评论失败 avid={}: {}", avid, exc)
-        return comment_list
+                break
+        return comment_list[:limit]
 
     def scrape_danmaku_and_comments(
         self,
         season_id: int,
         max_episodes: int = 3,
         comment_limit: int = 50,
+        include_comment_replies: bool = True,
+        nested_reply_limit: int = 20,
+        mode: str = "incremental",
+        retry_attempts: Optional[int] = None,
         sentiment_fn: Optional[Any] = None,
-    ) -> Dict[str, int]:
+    ) -> Dict[str, Any]:
         """
         对指定番剧抓取弹幕和评论，进行初步清洗后写入数据库。
 
@@ -1280,22 +1457,54 @@ class BilibiliBangumiCrawler:
             sentiment_fn:  可选的情感打分函数，签名为 (text: str) -> float
 
         Returns:
-            统计字典 {"danmu_saved": int, "comment_saved": int}
+            统计字典，包含写入数量与请求重试指标
         """
+        self.override_retry_attempts = max(1, retry_attempts) if retry_attempts is not None else None
         logger.info(f"🎯 开始抓取弹幕/评论 season_id={season_id}（最多 {max_episodes} 集）")
+        self.request_counters = {"requests": 0, "retries": 0, "failed": 0}
+
+        crawl_log = CrawlLog(
+            task_type=f"scrape_danmaku_comments:{mode}",
+            status="running",
+            started_at=datetime.now(),
+        )
+        self.session.add(crawl_log)
+        self.session.commit()
+
         episodes = self.session.exec(
             select(EpisodeStats)
             .where(EpisodeStats.season_id == season_id)
             .order_by(EpisodeStats.id)
-            .limit(max_episodes)
         ).all()
+        if max_episodes and max_episodes > 0:
+            episodes = episodes[:max_episodes]
 
         if not episodes:
             logger.warning(f"  ⚠️ season_id={season_id} 尚无剧集数据，请先执行 fetch_and_save_episodes")
+            crawl_log.status = "failed"
+            crawl_log.failed_reason = "episode_stats not found"
+            crawl_log.completed_at = datetime.now()
+            self.session.commit()
+            self.override_retry_attempts = None
             return {"danmu_saved": 0, "comment_saved": 0}
+
+        if mode == "full":
+            old_danmu = self.session.exec(
+                select(DanmuRecord).where(DanmuRecord.season_id == season_id)
+            ).all()
+            old_comments = self.session.exec(
+                select(CommentRecord).where(CommentRecord.season_id == season_id)
+            ).all()
+            with sqlite_write_lock:
+                for record in old_danmu:
+                    self.session.delete(record)
+                for record in old_comments:
+                    self.session.delete(record)
+                self.session.commit()
 
         danmu_saved = 0
         comment_saved = 0
+        mongo_saved = 0
 
         for ep_index, ep in enumerate(episodes, start=1):
             # ── 弹幕 ───────────────────────────────────────────────────────
@@ -1311,7 +1520,20 @@ class BilibiliBangumiCrawler:
                         dedup.append(d)
 
                 records = []
+                existing_texts = set()
+                if mode != "full":
+                    existing_texts = {
+                        row[0]
+                        for row in self.session.exec(
+                            select(DanmuRecord.content).where(
+                                DanmuRecord.season_id == season_id,
+                                DanmuRecord.cid == ep.cid,
+                            )
+                        ).all()
+                    }
                 for d in dedup:
+                    if d['content'] in existing_texts:
+                        continue
                     score = sentiment_fn(d['content']) if sentiment_fn else None
                     records.append(DanmuRecord(
                         season_id=season_id,
@@ -1320,6 +1542,7 @@ class BilibiliBangumiCrawler:
                         content=d['content'],
                         video_time=d.get('video_time'),
                         timestamp=d.get('timestamp'),
+                        sender_hash=d.get('sender_hash'),
                         sentiment_score=score,
                     ))
 
@@ -1328,8 +1551,16 @@ class BilibiliBangumiCrawler:
                         self.session.add(r)
                     self.session.commit()
                 danmu_saved += len(records)
+                if raw_danmaku and self.mongo_repo.upsert_episode_danmaku(
+                    cid=str(ep.cid),
+                    season_id=season_id,
+                    episode_number=ep_index,
+                    bvid=ep.bvid,
+                    danmaku_items=raw_danmaku,
+                ):
+                    mongo_saved += 1
                 logger.info(f"  ✅ 弹幕已写入 episode={ep_index} cid={ep.cid} count={len(records)}")
-                time.sleep(settings.bilibili_request_delay)
+                self._throttle()
 
             # ── 评论 ───────────────────────────────────────────────────────
             # 将 bvid 转换为 avid；B站不提供直接转换 API，使用 /x/web-interface/view
@@ -1341,13 +1572,36 @@ class BilibiliBangumiCrawler:
                     avid = None
 
                 if avid:
-                    raw_comments = self.fetch_comments(avid, limit=comment_limit)
+                    raw_comments = self.fetch_comments(
+                        avid,
+                        limit=comment_limit,
+                        include_replies=include_comment_replies,
+                        nested_reply_limit=nested_reply_limit,
+                    )
                     c_records = []
+                    existing_comment_keys = set()
+                    if mode != "full":
+                        existing_comment_keys = {
+                            (str(x.root_rpid or ""), str(x.parent_rpid or ""), x.content)
+                            for x in self.session.exec(
+                                select(CommentRecord).where(
+                                    CommentRecord.season_id == season_id,
+                                    CommentRecord.avid == avid,
+                                )
+                            ).all()
+                        }
                     for c in raw_comments:
+                        key = (str(c.get("root_rpid") or ""), str(c.get("parent_rpid") or ""), c["content"])
+                        if key in existing_comment_keys:
+                            continue
                         score = sentiment_fn(c['content']) if sentiment_fn else None
                         c_records.append(CommentRecord(
                             season_id=season_id,
                             avid=avid,
+                            root_rpid=c.get('root_rpid'),
+                            parent_rpid=c.get('parent_rpid'),
+                            level=c.get('level', 0),
+                            is_top_level=c.get('is_top_level', True),
                             content=c['content'],
                             likes=c.get('likes', 0),
                             replies=c.get('replies', 0),
@@ -1359,12 +1613,34 @@ class BilibiliBangumiCrawler:
                         self.session.commit()
                     comment_saved += len(c_records)
                     logger.info(f"  ✅ 评论已写入 episode={ep_index} avid={avid} count={len(c_records)}")
-                    time.sleep(settings.bilibili_request_delay)
+                    self._throttle()
 
+        try:
+            from .analytics import update_episode_sentiment_aggregates
+            update_episode_sentiment_aggregates(self.session, season_id)
+        except Exception as exc:
+            logger.warning("⚠️ 回填 EpisodeStats 聚合字段失败 season_id={}: {}", season_id, exc)
+
+        crawl_log.status = "success"
+        crawl_log.items_count = danmu_saved + comment_saved
+        crawl_log.total_scraped = danmu_saved + comment_saved
+        crawl_log.final_inserted = danmu_saved + comment_saved
+        crawl_log.retry_count = self.request_counters["retries"]
+        crawl_log.failed_count = self.request_counters["failed"]
+        crawl_log.completed_at = datetime.now()
+        crawl_log.duration = (crawl_log.completed_at - crawl_log.started_at).total_seconds()
+        self.session.commit()
+        self.override_retry_attempts = None
         logger.info(
             f"🎉 弹幕/评论抓取完成 season_id={season_id} danmu={danmu_saved} comments={comment_saved}"
         )
-        return {"danmu_saved": danmu_saved, "comment_saved": comment_saved}
+        return {
+            "danmu_saved": danmu_saved,
+            "comment_saved": comment_saved,
+            "mongo_saved": mongo_saved,
+            "retry_count": self.request_counters["retries"],
+            "failed_requests": self.request_counters["failed"],
+        }
 
 
 def create_crawler(session: Session = None) -> BilibiliBangumiCrawler:

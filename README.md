@@ -45,7 +45,7 @@
 | **HTTP 客户端** | Axios |
 | **后端框架** | FastAPI |
 | **ORM** | SQLModel (SQLAlchemy + Pydantic) |
-| **数据库** | SQLite |
+| **数据库** | SQLite（聚合层） + MongoDB（原始弹幕文档，可选） |
 | **任务调度** | APScheduler |
 | **认证** | JWT (python-jose) |
 | **AI 服务** | 豆包大模型 (Ark API) |
@@ -77,6 +77,9 @@ cp .env.example backend/.env
 SECRET_KEY="your-strong-random-secret"   # 用于 JWT 签名，必须修改
 DOUBAO_API_KEY="your-doubao-api-key"      # AI 助手功能所需（可选）
 DOUBAO_MODEL="your-model-endpoint-id"    # AI 模型端点 ID（可选）
+MONGODB_URI="mongodb+srv://<user>:<password>@<cluster>/<db>?retryWrites=true&w=majority"  # 原始弹幕文档（推荐）
+MONGODB_DB_NAME="bilibili_analytics"
+MONGODB_DANMAKU_COLLECTION="danmaku_raw"
 ```
 
 > ⚠️ `backend/.env` 已加入 `.gitignore`，切勿提交到版本控制。
