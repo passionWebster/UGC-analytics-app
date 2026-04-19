@@ -122,7 +122,7 @@ class DanmakuMongoRepository:
         collection = self._ensure_collection()
         if collection is None:
             return []
-        bucket = max(1, int(bin_seconds))
+        bucket_size = max(1, int(bin_seconds))
         pipeline = [
             {"$match": {"cid": str(cid)}},
             {"$unwind": "$danmaku_items"},
@@ -147,7 +147,7 @@ class DanmakuMongoRepository:
                     "_id": {
                         "$multiply": [
                             {"$floor": {"$divide": ["$_progress_seconds", bucket]}},
-                            bucket,
+                            bucket_size,
                         ]
                     },
                     "count": {"$sum": 1},

@@ -17,7 +17,7 @@ _mongo_repo = DanmakuMongoRepository()
 def _load_episode_texts_from_mongo(cid: Optional[str]) -> Optional[list[str]]:
     if not cid:
         return None
-    doc = _mongo_repo.get_danmaku_by_cid(str(cid))
+    doc = _mongo_repo.get_danmaku_by_cid(cid)
     if not doc:
         return None
     items = doc.get("danmaku_items")
@@ -51,21 +51,26 @@ def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[
             session.add(ep)
             session.commit()
 
-        records = session.exec(
+        sqlite_records = session.exec(
             select(DanmuRecord).where(
                 DanmuRecord.season_id == season_id,
                 DanmuRecord.episode_number == episode_number,
             )
         ).all()
 
-        mongo_texts = _load_episode_texts_from_mongo(str(ep.cid) if ep and ep.cid else cid)
+        cid_candidate = None
+        if ep and ep.cid:
+            cid_candidate = str(ep.cid)
+        elif cid is not None:
+            cid_candidate = str(cid)
+        mongo_texts = _load_episode_texts_from_mongo(cid_candidate)
         source = "mongodb" if mongo_texts else "sqlite"
 
         if source == "mongodb":
-            processed = [process_text_record(text) for text in (mongo_texts or [])]
+            processed = [process_text_record(text) for text in mongo_texts]
             aggregate = aggregate_episode_nlp(processed)
-        elif records:
-            processed = [process_text_record(r.content) for r in records]
+        elif sqlite_records:
+            processed = [process_text_record(r.content) for r in sqlite_records]
             aggregate = aggregate_episode_nlp(processed)
         else:
             if ep:
@@ -78,7 +83,7 @@ def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[
             return {"season_id": season_id, "episode_number": episode_number, "processed": 0}
 
         if source == "sqlite":
-            for rec, item in zip(records, processed):
+            for rec, item in zip(sqlite_records, processed):
                 rec.cleaned_content = item.get("cleaned_text")
                 rec.emotion_label = item.get("emotion_label")
                 rec.nlp_sentiment_score = item.get("sentiment_score")
@@ -106,7 +111,7 @@ def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[
         return {
             "season_id": season_id,
             "episode_number": episode_number,
-            "processed": aggregate.get("sample_size", len(records)),
+            "processed": aggregate.get("sample_size", 0),
             "sample_size": aggregate.get("sample_size"),
             "source": source,
         }
