@@ -3,12 +3,12 @@ from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
 
-from .celery_app import celery_app
 from .config import settings
 from .database import engine
 from .logger import app_logger as logger
 from .models import DanmuRecord, EpisodeStats
 from .nlp_pipeline import aggregate_episode_nlp, process_text_record
+from .nlp_worker_pool import enqueue_nlp_task
 
 
 def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[str] = None) -> Dict[str, Any]:
@@ -80,27 +80,15 @@ def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[
         }
 
 
-@celery_app.task(name="app.tasks.analyze_episode_nlp")
-def analyze_episode_nlp(season_id: int, episode_number: int, cid: Optional[str] = None) -> Dict[str, Any]:
-    return run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number, cid=cid)
-
-
 def enqueue_episode_nlp_task(season_id: int, episode_number: int, cid: Optional[str] = None) -> Optional[str]:
-    if not settings.celery_enabled:
-        if settings.nlp_async_fallback_local:
-            run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number, cid=cid)
-        return None
-
-    try:
-        task = analyze_episode_nlp.delay(season_id=season_id, episode_number=episode_number, cid=cid)
-        return task.id
-    except Exception as exc:
+    task_id = enqueue_nlp_task(season_id=season_id, episode_number=episode_number, cid=cid)
+    if task_id:
+        return task_id
+    if settings.nlp_async_fallback_local:
         logger.warning(
-            "⚠️ Celery NLP 任务派发失败，降级本地执行 season_id={} episode={} error={}",
+            "⚠️ NLP 任务入队失败，降级本地执行 season_id={} episode={}",
             season_id,
             episode_number,
-            exc,
         )
-        if settings.nlp_async_fallback_local:
-            run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number, cid=cid)
-        return None
+        run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number, cid=cid)
+    return None

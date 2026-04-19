@@ -79,11 +79,12 @@ class Settings(BaseSettings):
     tmdb_request_timeout: int = 10  # 单次请求超时秒数
     tmdb_enrichment_concurrency: int = 5  # 后台富集任务并发上限
 
-    # Celery + Redis（异步 NLP 任务）
-    celery_enabled: bool = False
-    celery_broker_url: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
-    celery_result_backend: str = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
-    celery_task_always_eager: bool = False
+    # Multiprocessing（异步 NLP 任务）
+    nlp_worker_pool_enabled: bool = True
+    nlp_worker_start_method: str = os.getenv("NLP_WORKER_START_METHOD", "spawn")
+    nlp_worker_processes: int = max(1, int(os.getenv("NLP_WORKER_PROCESSES", "2")))
+    nlp_worker_queue_maxsize: int = max(1, int(os.getenv("NLP_WORKER_QUEUE_MAXSIZE", "1000")))
+    nlp_worker_shutdown_timeout: int = max(1, int(os.getenv("NLP_WORKER_SHUTDOWN_TIMEOUT", "5")))
     nlp_async_fallback_local: bool = True
 
     # NLP 配置

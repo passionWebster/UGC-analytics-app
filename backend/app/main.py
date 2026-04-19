@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from .database import init_database
 from .config import settings
 from .logger import app_logger
+from .nlp_worker_pool import start_nlp_worker_pool, stop_nlp_worker_pool
 from .routers import auth, analytics, ai, crawler, admin, user_space
 from .scheduler import create_scheduler
 
@@ -130,6 +131,7 @@ async def startup_event():
     # 将 scheduler 挂载到 app.state，以便 shutdown 时停止
     app.state.scheduler = scheduler
     app_logger.info("⏰ 定时任务已启动：每 1 小时刷新剧集在线人数；每月 1 日 2:00 生成月度快照")
+    start_nlp_worker_pool()
 
     app_logger.info("✅ 服务器启动成功")
     app_logger.info("📖 API 文档: http://{}:{}/api/docs", settings.host, settings.port)
@@ -143,6 +145,7 @@ async def shutdown_event():
     if scheduler and scheduler.running:
         scheduler.shutdown(wait=False)
         app_logger.info("⏰ 定时任务已停止")
+    stop_nlp_worker_pool()
 
 
 @app.get("/")

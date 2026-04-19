@@ -16,6 +16,4 @@ passlib[bcrypt]~=1.7.4
 bcrypt<4.1
 pymongo~=4.15.2
 dnspython~=2.8.0
-celery~=5.4.0
-redis~=5.2.1
 jieba~=0.42.1
