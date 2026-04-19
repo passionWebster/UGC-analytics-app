@@ -132,14 +132,17 @@ def get_sentiment_timeline(session: Session, season_id: int) -> List[Dict[str, A
     if not episodes:
         return []
 
+    sentiment_expr = sa_func.coalesce(DanmuRecord.nlp_sentiment_score, DanmuRecord.sentiment_score)
     sqlite_rows = session.exec(
         select(
             DanmuRecord.cid,
-            sa_func.avg(DanmuRecord.sentiment_score).label("avg_sentiment"),
+            sa_func.avg(sentiment_expr).label("avg_sentiment"),
             sa_func.count(DanmuRecord.id).label("danmu_count"),
         )
         .where(DanmuRecord.season_id == season_id)
-        .where(DanmuRecord.sentiment_score != None)  # noqa: E711
+        .where(  # noqa: E711
+            (DanmuRecord.nlp_sentiment_score != None) | (DanmuRecord.sentiment_score != None)
+        )
         .group_by(DanmuRecord.cid)
         .order_by(DanmuRecord.cid)
     ).all()
@@ -314,7 +317,11 @@ def update_episode_sentiment_aggregates(session: Session, season_id: int) -> int
         if not target:
             continue
 
-        sentiment_values = [r.sentiment_score for r in records if r.sentiment_score is not None]
+        sentiment_values = [
+            r.nlp_sentiment_score if r.nlp_sentiment_score is not None else r.sentiment_score
+            for r in records
+            if (r.nlp_sentiment_score is not None or r.sentiment_score is not None)
+        ]
         target.avg_sentiment_score = (
             round(sum(sentiment_values) / len(sentiment_values), 4) if sentiment_values else None
         )

@@ -149,8 +149,8 @@ class EpisodeStats(SQLModel, table=True):
     nlp_sample_size: Optional[int] = Field(default=None)  # NLP 样本量（清洗后）
     nlp_sentiment_score: Optional[float] = Field(default=None)  # NLP 情感均分（-1~1）
     nlp_noise_ratio: Optional[float] = Field(default=None)  # 噪音占比（0~1）
-    nlp_keywords: Optional[str] = Field(default=None, sa_column=Column(JSON))  # 关键词列表
-    nlp_entities: Optional[str] = Field(default=None, sa_column=Column(JSON))  # 实体词频列表
+    nlp_keywords: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))  # 关键词列表
+    nlp_entities: Optional[List[dict]] = Field(default=None, sa_column=Column(JSON))  # 实体词频列表
     nlp_processed_at: Optional[datetime] = Field(default=None)  # NLP 最近处理时间
     updated_at: datetime = Field(default_factory=datetime.now)
 

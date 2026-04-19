@@ -219,18 +219,42 @@ export interface EpisodeAnalysisBundleData {
   wordcloud: SeasonWordcloudData
 }
 
+export interface EpisodeAnalysisBundlePendingData {
+  timeline?: Partial<EpisodeTimelineData> | Record<string, never>
+  wordcloud?: Partial<SeasonWordcloudData> | Record<string, never>
+}
+
+export type EpisodeAnalysisBundleResponse =
+  | {
+      success: true
+      cached?: boolean
+      refresh_scheduled?: boolean
+      pending?: false
+      message?: string
+      data: EpisodeAnalysisBundleData
+    }
+  | {
+      success: false
+      cached?: boolean
+      refresh_scheduled?: boolean
+      pending: true
+      message?: string
+      data?: EpisodeAnalysisBundlePendingData
+    }
+  | {
+      success: false
+      cached?: boolean
+      refresh_scheduled?: boolean
+      pending?: false
+      message?: string
+      data?: EpisodeAnalysisBundlePendingData
+    }
+
 export const getEpisodeAnalysisBundle = async (
   seasonId: number,
   cid: string,
   params?: { bin_size?: number; keyword_topk?: number; top_n?: number },
-): Promise<{
-  success: boolean
-  cached?: boolean
-  refresh_scheduled?: boolean
-  pending?: boolean
-  message?: string
-  data: EpisodeAnalysisBundleData
-}> => {
+): Promise<EpisodeAnalysisBundleResponse> => {
   return apiClient.get(
     `/analytics/season/${seasonId}/episode/${encodeURIComponent(cid)}/analysis`,
     {

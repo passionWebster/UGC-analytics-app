@@ -1869,20 +1869,32 @@ class BilibiliBangumiCrawler:
                         dedup.append(d)
 
                     records = []
-                    existing_texts = set()
+                    existing_keys: Set[Tuple[str, Any, Any, str]] = set()
                     if mode != "full":
-                        existing_texts = {
-                            row[0]
+                        existing_keys = {
+                            (
+                                str(row[0] or ''),
+                                row[1],
+                                row[2],
+                                str(row[3] or ''),
+                            )
                             for row in self.session.exec(
-                                select(DanmuRecord.content).where(
+                                select(
+                                    DanmuRecord.content,
+                                    DanmuRecord.video_time,
+                                    DanmuRecord.timestamp,
+                                    DanmuRecord.sender_hash,
+                                ).where(
                                     DanmuRecord.season_id == season_id,
                                     DanmuRecord.cid == ep.cid,
                                 )
                             ).all()
                         }
                     for d in dedup:
-                        if d['content'] in existing_texts:
+                        key = self._make_danmaku_dedup_key(d)
+                        if key in existing_keys:
                             continue
+                        existing_keys.add(key)
                         score = sentiment_fn(d['content']) if sentiment_fn else None
                         records.append(DanmuRecord(
                             season_id=season_id,

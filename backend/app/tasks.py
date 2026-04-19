@@ -51,70 +51,80 @@ def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[
             session.add(ep)
             session.commit()
 
-        sqlite_records = session.exec(
-            select(DanmuRecord).where(
-                DanmuRecord.season_id == season_id,
-                DanmuRecord.episode_number == episode_number,
-            )
-        ).all()
+        try:
+            sqlite_records = session.exec(
+                select(DanmuRecord).where(
+                    DanmuRecord.season_id == season_id,
+                    DanmuRecord.episode_number == episode_number,
+                )
+            ).all()
 
-        cid_candidate = None
-        if ep and ep.cid:
-            cid_candidate = str(ep.cid)
-        elif cid is not None:
-            cid_candidate = str(cid)
-        mongo_texts = _load_episode_texts_from_mongo(cid_candidate)
-        source = "mongodb" if mongo_texts else "sqlite"
+            cid_candidate = None
+            if ep and ep.cid:
+                cid_candidate = str(ep.cid)
+            elif cid is not None:
+                cid_candidate = str(cid)
+            mongo_texts = _load_episode_texts_from_mongo(cid_candidate)
+            source = "mongodb" if mongo_texts else "sqlite"
 
-        if source == "mongodb":
-            processed = [process_text_record(text) for text in mongo_texts]
-            aggregate = aggregate_episode_nlp(processed)
-        elif sqlite_records:
-            processed = [process_text_record(r.content) for r in sqlite_records]
-            aggregate = aggregate_episode_nlp(processed)
-        else:
+            if source == "mongodb":
+                processed = [process_text_record(text) for text in mongo_texts]
+                aggregate = aggregate_episode_nlp(processed)
+            elif sqlite_records:
+                processed = [process_text_record(r.content) for r in sqlite_records]
+                aggregate = aggregate_episode_nlp(processed)
+            else:
+                if ep:
+                    ep.nlp_status = "success"
+                    ep.nlp_sample_size = 0
+                    ep.nlp_noise_ratio = 0.0
+                    ep.nlp_processed_at = datetime.now()
+                    session.add(ep)
+                    session.commit()
+                return {"season_id": season_id, "episode_number": episode_number, "processed": 0}
+
+            if source == "sqlite":
+                for rec, item in zip(sqlite_records, processed):
+                    rec.cleaned_content = item.get("cleaned_text")
+                    rec.emotion_label = item.get("emotion_label")
+                    rec.nlp_sentiment_score = item.get("sentiment_score")
+                    rec.nlp_processed = True
+                    session.add(rec)
+
             if ep:
                 ep.nlp_status = "success"
-                ep.nlp_sample_size = 0
-                ep.nlp_noise_ratio = 0.0
+                ep.nlp_sample_size = aggregate.get("sample_size")
+                ep.nlp_sentiment_score = aggregate.get("sentiment_score")
+                ep.nlp_noise_ratio = aggregate.get("noise_ratio")
+                ep.nlp_keywords = aggregate.get("keywords") or []
+                ep.nlp_entities = aggregate.get("entities") or []
+                ep.nlp_processed_at = datetime.now()
+                session.add(ep)
+
+            session.commit()
+            logger.info(
+                "✅ NLP 分析完成 season_id={} episode={} source={} sample_size={}",
+                season_id,
+                episode_number,
+                source,
+                aggregate.get("sample_size"),
+            )
+            return {
+                "season_id": season_id,
+                "episode_number": episode_number,
+                "processed": aggregate.get("sample_size", 0),
+                "sample_size": aggregate.get("sample_size"),
+                "source": source,
+            }
+        except Exception:
+            logger.exception("❌ NLP 分析失败 season_id={} episode={}", season_id, episode_number)
+            if ep:
+                session.rollback()
+                ep.nlp_status = "failed"
                 ep.nlp_processed_at = datetime.now()
                 session.add(ep)
                 session.commit()
-            return {"season_id": season_id, "episode_number": episode_number, "processed": 0}
-
-        if source == "sqlite":
-            for rec, item in zip(sqlite_records, processed):
-                rec.cleaned_content = item.get("cleaned_text")
-                rec.emotion_label = item.get("emotion_label")
-                rec.nlp_sentiment_score = item.get("sentiment_score")
-                rec.nlp_processed = True
-                session.add(rec)
-
-        if ep:
-            ep.nlp_status = "success"
-            ep.nlp_sample_size = aggregate.get("sample_size")
-            ep.nlp_sentiment_score = aggregate.get("sentiment_score")
-            ep.nlp_noise_ratio = aggregate.get("noise_ratio")
-            ep.nlp_keywords = aggregate.get("keywords") or []
-            ep.nlp_entities = aggregate.get("entities") or []
-            ep.nlp_processed_at = datetime.now()
-            session.add(ep)
-
-        session.commit()
-        logger.info(
-            "✅ NLP 分析完成 season_id={} episode={} source={} sample_size={}",
-            season_id,
-            episode_number,
-            source,
-            aggregate.get("sample_size"),
-        )
-        return {
-            "season_id": season_id,
-            "episode_number": episode_number,
-            "processed": aggregate.get("sample_size", 0),
-            "sample_size": aggregate.get("sample_size"),
-            "source": source,
-        }
+            raise
 
 
 def enqueue_episode_nlp_task(season_id: int, episode_number: int, cid: Optional[str] = None) -> Optional[str]:
