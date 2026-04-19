@@ -11,16 +11,24 @@ from .models import DanmuRecord, EpisodeStats
 from .nlp_pipeline import aggregate_episode_nlp, process_text_record
 
 
-def run_episode_nlp_analysis(season_id: int, episode_number: int) -> Dict[str, Any]:
+def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[str] = None) -> Dict[str, Any]:
     with Session(engine) as session:
-        episode = session.exec(
-            select(EpisodeStats)
-            .where(EpisodeStats.season_id == season_id)
-            .order_by(EpisodeStats.id)
-        ).all()
         ep: Optional[EpisodeStats] = None
-        if 0 < episode_number <= len(episode):
-            ep = episode[episode_number - 1]
+        if cid:
+            ep = session.exec(
+                select(EpisodeStats).where(
+                    EpisodeStats.season_id == season_id,
+                    EpisodeStats.cid == cid,
+                )
+            ).first()
+        if ep is None:
+            episodes = session.exec(
+                select(EpisodeStats)
+                .where(EpisodeStats.season_id == season_id)
+                .order_by(EpisodeStats.id)
+            ).all()
+            if 0 < episode_number <= len(episodes):
+                ep = episodes[episode_number - 1]
         if ep:
             ep.nlp_status = "running"
             session.add(ep)
@@ -73,18 +81,18 @@ def run_episode_nlp_analysis(season_id: int, episode_number: int) -> Dict[str, A
 
 
 @celery_app.task(name="app.tasks.analyze_episode_nlp")
-def analyze_episode_nlp(season_id: int, episode_number: int) -> Dict[str, Any]:
-    return run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number)
+def analyze_episode_nlp(season_id: int, episode_number: int, cid: Optional[str] = None) -> Dict[str, Any]:
+    return run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number, cid=cid)
 
 
-def enqueue_episode_nlp_task(season_id: int, episode_number: int) -> Optional[str]:
+def enqueue_episode_nlp_task(season_id: int, episode_number: int, cid: Optional[str] = None) -> Optional[str]:
     if not settings.celery_enabled:
         if settings.nlp_async_fallback_local:
-            run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number)
+            run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number, cid=cid)
         return None
 
     try:
-        task = analyze_episode_nlp.delay(season_id=season_id, episode_number=episode_number)
+        task = analyze_episode_nlp.delay(season_id=season_id, episode_number=episode_number, cid=cid)
         return task.id
     except Exception as exc:
         logger.warning(
@@ -94,6 +102,5 @@ def enqueue_episode_nlp_task(season_id: int, episode_number: int) -> Optional[st
             exc,
         )
         if settings.nlp_async_fallback_local:
-            run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number)
+            run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number, cid=cid)
         return None
-

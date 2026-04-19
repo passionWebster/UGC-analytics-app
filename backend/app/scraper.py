@@ -1989,7 +1989,11 @@ class BilibiliBangumiCrawler:
                 if run_nlp_async:
                     try:
                         from .tasks import enqueue_episode_nlp_task
-                        task_id = enqueue_episode_nlp_task(season_id=season_id, episode_number=ep_index)
+                        task_id = enqueue_episode_nlp_task(
+                            season_id=season_id,
+                            episode_number=ep_index,
+                            cid=str(ep.cid) if ep.cid else None,
+                        )
                         if task_id:
                             logger.info(
                                 "  🧠 NLP 任务已派发 episode={} season_id={} task_id={}",

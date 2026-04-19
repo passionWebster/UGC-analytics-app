@@ -25,7 +25,6 @@ _PURE_PUNCT_RE = re.compile(r"^[\W_]+$", re.UNICODE)
 _PURE_233_RE = re.compile(r"^2?3{2,}$")
 _PURE_Q_RE = re.compile(r"^[？?！!~～]+$")
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
-_REPEATED_CHAR_RE = re.compile(r"(.)\1{4,}")
 _STOPWORDS = {"这个", "那个", "真的", "感觉", "就是", "你们", "我们", "他们", "一个", "不是", "没有"}
 
 
@@ -68,7 +67,12 @@ def _classify_special_emotion(text: str) -> Optional[str]:
 
 
 def _is_spam_like(text: str) -> bool:
-    return bool(_REPEATED_CHAR_RE.search(text))
+    try:
+        threshold = int(settings.nlp_spam_repeat_threshold)
+    except (TypeError, ValueError):
+        threshold = 3
+    threshold = max(2, threshold)
+    return bool(re.search(rf"(.)\1{{{threshold-1},}}", text))
 
 
 def process_text_record(text: str) -> Dict[str, Any]:
@@ -129,7 +133,7 @@ def aggregate_episode_nlp(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     if _JIEBA_AVAILABLE and valid_texts:
         joined = "\n".join(valid_texts)
         try:
-            keywords = jieba.analyse.extract_tags(joined, topK=max(1, settings.nlp_keyword_topk))
+            keywords = jieba.analyse.extract_tags(joined, topK=settings.nlp_keyword_topk)
         except Exception as exc:
             logger.debug("jieba 关键词提取失败: {}", exc)
             keywords = []
@@ -145,8 +149,8 @@ def aggregate_episode_nlp(records: List[Dict[str, Any]]) -> Dict[str, Any]:
                 counter[t] += 1
         entities = [
             {"text": token, "count": count}
-            for token, count in counter.most_common(max(1, settings.nlp_entity_topk))
-            if count >= max(1, settings.nlp_entity_min_freq)
+            for token, count in counter.most_common(settings.nlp_entity_topk)
+            if count >= settings.nlp_entity_min_freq
         ]
 
     return {
@@ -156,4 +160,3 @@ def aggregate_episode_nlp(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         "keywords": keywords,
         "entities": entities,
     }
-

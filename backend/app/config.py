@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     nlp_keyword_topk: int = 20
     nlp_entity_topk: int = 20
     nlp_entity_min_freq: int = 2
-    nlp_spam_repeat_threshold: int = 3
+    nlp_spam_repeat_threshold: int = 3  # 连续重复字符达到该阈值时判定为刷屏噪音
     
     class Config:
         env_file = ".env"
