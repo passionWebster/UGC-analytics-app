@@ -14,18 +14,13 @@ from .nlp_worker_pool import enqueue_nlp_task
 _mongo_repo = DanmakuMongoRepository()
 
 
-def _load_episode_texts_from_mongo(cid: Optional[str]) -> Optional[list[str]]:
+def _load_episode_doc_from_mongo(cid: Optional[str]) -> Optional[Dict[str, Any]]:
     if not cid:
         return None
     doc = _mongo_repo.get_danmaku_by_cid(cid)
     if not doc:
         return None
-    items = doc.get("danmaku_items")
-    if not isinstance(items, list):
-        return None
-    texts = [str(item.get("content", "")).strip() for item in items if isinstance(item, dict)]
-    texts = [text for text in texts if text]
-    return texts or None
+    return doc if isinstance(doc, dict) else None
 
 
 def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[str] = None) -> Dict[str, Any]:
@@ -64,7 +59,16 @@ def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[
                 cid_candidate = str(ep.cid)
             elif cid is not None:
                 cid_candidate = str(cid)
-            mongo_texts = _load_episode_texts_from_mongo(cid_candidate)
+            mongo_doc = _load_episode_doc_from_mongo(cid_candidate)
+            mongo_items = mongo_doc.get("danmaku_items") if isinstance(mongo_doc, dict) else None
+            if not isinstance(mongo_items, list):
+                mongo_items = None
+            mongo_payload_items = [item for item in (mongo_items or []) if isinstance(item, dict)]
+            mongo_texts = [
+                str(item.get("content", "")).strip()
+                for item in mongo_payload_items
+                if str(item.get("content", "")).strip()
+            ]
             source = "mongodb" if mongo_texts else "sqlite"
 
             if source == "mongodb":
@@ -90,6 +94,26 @@ def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[
                     rec.nlp_sentiment_score = item.get("sentiment_score")
                     rec.nlp_processed = True
                     session.add(rec)
+            elif source == "mongodb" and mongo_payload_items:
+                processed_idx = 0
+                enriched_items = []
+                for raw_item in mongo_payload_items:
+                    content = str(raw_item.get("content", "")).strip()
+                    item = dict(raw_item)
+                    if content:
+                        nlp_item = processed[processed_idx] if processed_idx < len(processed) else {}
+                        processed_idx += 1
+                        item["cleaned_content"] = nlp_item.get("cleaned_text")
+                        item["emotion_label"] = nlp_item.get("emotion_label")
+                        item["nlp_sentiment_score"] = nlp_item.get("sentiment_score")
+                    enriched_items.append(item)
+                _mongo_repo.upsert_episode_danmaku(
+                    cid=str(cid_candidate or ""),
+                    season_id=season_id,
+                    episode_number=episode_number,
+                    bvid=(ep.bvid if ep else None) or (mongo_doc.get("bvid") if isinstance(mongo_doc, dict) else None),
+                    danmaku_items=enriched_items,
+                )
 
             if ep:
                 ep.nlp_status = "success"

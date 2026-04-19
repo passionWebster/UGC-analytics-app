@@ -26,6 +26,7 @@ from ..analytics import (
     get_season_character_trends,
     get_season_wordcloud,
 )
+from ..tasks import run_episode_nlp_analysis
 from ..auth import get_current_user
 from ..database import get_session, engine
 from ..crud import AnalyticsService
@@ -193,6 +194,40 @@ def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool
         )
     ).one()
     return bool(sqlite_count and int(sqlite_count) > 0)
+
+
+def _episode_needs_nlp_refresh(session: Session, target_ep: EpisodeStats, cid: str, season_id: int) -> bool:
+    if target_ep.nlp_status != "success" or target_ep.nlp_processed_at is None:
+        return True
+    mongo_doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(cid)
+    if mongo_doc and isinstance(mongo_doc.get("danmaku_items"), list):
+        items = [item for item in mongo_doc.get("danmaku_items", []) if isinstance(item, dict)]
+        if not items:
+            return True
+        for item in items:
+            if item.get("nlp_sentiment_score") is not None or item.get("sentiment_score") is not None or item.get("sentiment") is not None:
+                return False
+        return True
+    sqlite_sentiment_count = session.exec(
+        sql_select(sa_func.count(DanmuRecord.id)).where(
+            DanmuRecord.season_id == season_id,
+            DanmuRecord.cid == cid,
+            (DanmuRecord.nlp_sentiment_score.is_not(None)) | (DanmuRecord.sentiment_score.is_not(None)),
+        )
+    ).one()
+    return not bool(sqlite_sentiment_count and int(sqlite_sentiment_count) > 0)
+
+
+def _resolve_episode_number(session: Session, target_ep: EpisodeStats) -> int:
+    episodes = session.exec(
+        sql_select(EpisodeStats)
+        .where(EpisodeStats.season_id == target_ep.season_id)
+        .order_by(EpisodeStats.id)
+    ).all()
+    for idx, item in enumerate(episodes, start=1):
+        if item.id == target_ep.id:
+            return idx
+    return 1
 
 
 def _upsert_episode_analysis_cache(
@@ -376,6 +411,49 @@ def get_episode_analysis_with_cache(
     age_days = max(0, (datetime.now() - publish_anchor).days)
     is_recent = age_days <= _RECENT_EPISODE_DAYS
     is_frozen = age_days >= _FROZEN_EPISODE_DAYS
+    needs_nlp_refresh = _episode_needs_nlp_refresh(session, target_ep, cid, season_id)
+
+    if needs_nlp_refresh:
+        try:
+            run_episode_nlp_analysis(
+                season_id=season_id,
+                episode_number=_resolve_episode_number(session, target_ep),
+                cid=cid,
+            )
+            session.refresh(target_ep)
+        except Exception as exc:
+            logger.warning("⚠️ episode NLP refresh failed season_id={} cid={} err={}", season_id, cid, exc)
+
+        timeline_data = get_episode_timeline_bins(
+            session=session,
+            cid=cid,
+            bin_size=bin_size,
+            keyword_topk=keyword_topk,
+        )
+        wordcloud_data = get_season_wordcloud(
+            session=session,
+            season_id=season_id,
+            cid=cid,
+            top_n=top_n,
+        )
+        _upsert_episode_analysis_cache(
+            session,
+            season_id=season_id,
+            cid=cid,
+            episode_number=int(timeline_data.get("episode_number", 1)),
+            timeline_data=timeline_data,
+            wordcloud_data=wordcloud_data,
+        )
+        return {
+            "success": True,
+            "cached": False,
+            "refresh_scheduled": False,
+            "age_days": age_days,
+            "data": {
+                "timeline": timeline_data,
+                "wordcloud": wordcloud_data,
+            },
+        }
 
     if cache_row is not None:
         refresh_scheduled = False
