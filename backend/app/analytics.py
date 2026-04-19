@@ -238,6 +238,7 @@ def update_episode_sentiment_aggregates(session: Session, season_id: int) -> int
 
 _TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9]{3,}")
 _TIMELINE_STOPWORDS = {"这个", "那个", "真的", "感觉", "就是", "你们", "我们", "他们", "一个", "不是", "没有"}
+_EPISODE_NUM_RE = re.compile(r"\d+")
 
 
 def _safe_json_load(value: Any, default: Any) -> Any:
@@ -261,6 +262,14 @@ def _extract_tokens(text: str) -> List[str]:
     return [token for token in tokens if token not in _TIMELINE_STOPWORDS]
 
 
+def _episode_sort_key(ep: EpisodeStats) -> tuple:
+    title = ep.episode_title or ""
+    match = _EPISODE_NUM_RE.search(title)
+    if match:
+        return int(match.group()), ep.id or 0
+    return 10**9, ep.id or 0
+
+
 def get_episode_timeline_bins(
     session: Session,
     cid: str,
@@ -271,11 +280,10 @@ def get_episode_timeline_bins(
     if not target_ep:
         raise ValueError("episode_not_found")
 
-    episodes = session.exec(
-        select(EpisodeStats)
-        .where(EpisodeStats.season_id == target_ep.season_id)
-        .order_by(EpisodeStats.id)
-    ).all()
+    episodes = sorted(
+        session.exec(select(EpisodeStats).where(EpisodeStats.season_id == target_ep.season_id)).all(),
+        key=_episode_sort_key,
+    )
     episode_index_map = {ep.id: idx + 1 for idx, ep in enumerate(episodes)}
     episode_number = episode_index_map.get(target_ep.id, 1)
 
@@ -284,7 +292,7 @@ def get_episode_timeline_bins(
         .where(
             DanmuRecord.season_id == target_ep.season_id,
             DanmuRecord.cid == cid,
-            DanmuRecord.video_time != None,  # noqa: E711
+            DanmuRecord.video_time.is_not(None),
         )
         .order_by(DanmuRecord.video_time)
     ).all()
@@ -343,10 +351,10 @@ def get_season_wordcloud(
     cid: Optional[str] = None,
     top_n: int = 120,
 ) -> Dict[str, Any]:
-    query = select(EpisodeStats).where(EpisodeStats.season_id == season_id).order_by(EpisodeStats.id)
+    query = select(EpisodeStats).where(EpisodeStats.season_id == season_id)
     if cid:
         query = query.where(EpisodeStats.cid == cid)
-    episodes = session.exec(query).all()
+    episodes = sorted(session.exec(query).all(), key=_episode_sort_key)
     if not episodes:
         raise ValueError("episode_not_found")
 
@@ -388,11 +396,10 @@ def get_season_character_trends(
     season_id: int,
     top_n: int = 8,
 ) -> Dict[str, Any]:
-    episodes = session.exec(
-        select(EpisodeStats)
-        .where(EpisodeStats.season_id == season_id)
-        .order_by(EpisodeStats.id)
-    ).all()
+    episodes = sorted(
+        session.exec(select(EpisodeStats).where(EpisodeStats.season_id == season_id)).all(),
+        key=_episode_sort_key,
+    )
     if not episodes:
         raise ValueError("season_not_found")
 
