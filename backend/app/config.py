@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     crawler_mongo_history_days: int = 3
     crawler_mongo_proto_segments: int = 1
     crawler_mongo_history_month_offset: int = 0
+    crawler_mongo_thumbup_batch_size: int = 100
 
     # MongoDB 配置（原始弹幕文档存储）
     mongodb_uri: Optional[str] = os.getenv("MONGODB_URI")

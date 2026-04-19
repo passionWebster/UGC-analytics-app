@@ -83,6 +83,7 @@ MONGODB_DANMAKU_COLLECTION="danmaku_raw"
 CRAWLER_MONGO_ENRICHMENT_ENABLED=True      # Mongo 原始弹幕增强抓取（history/proto/buzzword/thumbup）
 CRAWLER_MONGO_HISTORY_DAYS=3               # 历史弹幕样本日期数
 CRAWLER_MONGO_PROTO_SEGMENTS=1             # proto 分段抓取数量
+CRAWLER_MONGO_THUMBUP_BATCH_SIZE=100       # thumbup 单次查询的弹幕 ID 数
 ```
 
 > ⚠️ `backend/.env` 已加入 `.gitignore`，切勿提交到版本控制。

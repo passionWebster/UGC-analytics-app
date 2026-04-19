@@ -1323,9 +1323,17 @@ class BilibiliBangumiCrawler:
         返回历史弹幕索引请求所需的 month 参数（YYYY-MM）。
         可通过配置偏移月份，便于重抓历史弹幕。
         """
-        offset = int(max(0, settings.crawler_mongo_history_month_offset))
-        base = datetime.now() - timedelta(days=30 * offset)
-        return f"{base.year}-{base.month:02d}"
+        try:
+            offset = max(0, int(settings.crawler_mongo_history_month_offset))
+        except (TypeError, ValueError):
+            offset = 0
+        now = datetime.now()
+        year = now.year
+        month = now.month - offset
+        while month <= 0:
+            month += 12
+            year -= 1
+        return f"{year}-{month:02d}"
 
     def fetch_danmaku_history_index(self, cid: str) -> List[str]:
         """
@@ -1412,7 +1420,8 @@ class BilibiliBangumiCrawler:
         if not dmid_list:
             return {}
         url = "https://api.bilibili.com/x/v2/dm/thumbup/stats"
-        params = {"oid": str(cid), "ids": ",".join(dmid_list[:100])}
+        batch_size = max(1, int(settings.crawler_mongo_thumbup_batch_size))
+        params = {"oid": str(cid), "ids": ",".join(dmid_list[:batch_size])}
         resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
         if resp is None:
             return {}
@@ -1458,19 +1467,23 @@ class BilibiliBangumiCrawler:
         if not settings.crawler_mongo_enrichment_enabled:
             return {}
 
-        now = datetime.now()
-        month = now.month
-        days_in_month = calendar.monthrange(now.year, month)[1]
+        history_month = self._current_month_for_history()
+        history_year_str, history_month_str = history_month.split("-")
+        history_year = int(history_year_str)
+        history_month_num = int(history_month_str)
+        days_in_month = calendar.monthrange(history_year, history_month_num)[1]
         sample_days = max(0, int(settings.crawler_mongo_history_days))
+        sample_days = min(sample_days, days_in_month)
 
         history_dates = self.fetch_danmaku_history_index(cid)
         history_dates_sorted = sorted(history_dates, reverse=True)
         selected_dates = history_dates_sorted[:sample_days]
         if not selected_dates and sample_days > 0:
             # 兜底：无索引时尝试当月最近几天
+            start_day = max(1, days_in_month - sample_days + 1)
             selected_dates = [
-                f"{now.year}-{month:02d}-{day:02d}"
-                for day in range(days_in_month, max(0, days_in_month - sample_days), -1)
+                f"{history_year}-{history_month_num:02d}-{day:02d}"
+                for day in range(days_in_month, start_day - 1, -1)
             ]
 
         history_samples: Dict[str, Any] = {}
