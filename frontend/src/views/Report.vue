@@ -306,8 +306,8 @@ const onEpisodeSelect = async (cid: string) => {
       wordcloudOption.value = buildWordcloudOption([])
       return
     }
-    microTimelineOption.value = buildMicroTimelineOption(analysisRes.data.timeline.timeline || [])
-    wordcloudOption.value = buildWordcloudOption(analysisRes.data.wordcloud.items || [])
+    microTimelineOption.value = buildMicroTimelineOption(analysisRes.data?.timeline?.timeline || [])
+    wordcloudOption.value = buildWordcloudOption(analysisRes.data?.wordcloud?.items || [])
     statusMsg.value = analysisRes.refresh_scheduled
       ? '已加载缓存图表，后台正在刷新最新分析'
       : `已加载：${animeData.value.title}`

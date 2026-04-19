@@ -144,7 +144,7 @@ def _is_dataset_stable(
     latest_updated = session.exec(query).first()
     if latest_updated is None:
         return False
-    return latest_updated <= (datetime.utcnow() - timedelta(days=_STABLE_DATA_DAYS))
+    return latest_updated <= (datetime.now() - timedelta(days=_STABLE_DATA_DAYS))
 
 
 def _read_cache(cache_key: str):
@@ -179,7 +179,7 @@ def _get_episode_publish_anchor(
     release_dt = _parse_release_date_to_datetime(anime.release_date if anime else None)
     if release_dt:
         return release_dt
-    return target_ep.updated_at or datetime.utcnow()
+    return target_ep.updated_at or datetime.now()
 
 
 def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool:
@@ -207,7 +207,7 @@ def _upsert_episode_analysis_cache(
     row = session.exec(
         sql_select(EpisodeAnalysisCache).where(EpisodeAnalysisCache.cid == cid)
     ).first()
-    now = datetime.utcnow()
+    now = datetime.now()
     if row is None:
         row = EpisodeAnalysisCache(
             season_id=season_id,
@@ -270,7 +270,7 @@ def _refresh_episode_analysis_cache(
                 bg_session,
                 season_id=season_id,
                 cid=cid,
-                episode_number=int(timeline_data.get("episode_number", 1) or 1),
+                episode_number=int(timeline_data.get("episode_number", 1)),
                 timeline_data=timeline_data,
                 wordcloud_data=wordcloud_data,
             )
@@ -294,7 +294,10 @@ def _trigger_danmaku_scrape_for_episode(
             ).all()
             if not episodes:
                 return
-            target_index = next((idx for idx, item in enumerate(episodes, start=1) if str(item.cid) == str(cid)), 1)
+            target_index = next((idx for idx, item in enumerate(episodes, start=1) if str(item.cid or "") == cid), None)
+            if target_index is None:
+                logger.warning("⚠️ skip background scrape: cid not found season_id={} cid={}", season_id, cid)
+                return
             crawler = BilibiliBangumiCrawler(bg_session)
             crawler.scrape_danmaku_and_comments(
                 season_id=season_id,
@@ -370,7 +373,7 @@ def get_episode_analysis_with_cache(
         sql_select(EpisodeAnalysisCache).where(EpisodeAnalysisCache.cid == cid)
     ).first()
     publish_anchor = _get_episode_publish_anchor(session, target_ep)
-    age_days = max(0, (datetime.utcnow() - publish_anchor).days)
+    age_days = max(0, (datetime.now() - publish_anchor).days)
     is_recent = age_days <= _RECENT_EPISODE_DAYS
     is_frozen = age_days >= _FROZEN_EPISODE_DAYS
 
@@ -386,7 +389,7 @@ def get_episode_analysis_with_cache(
                 top_n,
             )
             refresh_scheduled = True
-        elif not is_frozen and (datetime.utcnow() - cache_row.updated_at) > timedelta(hours=24):
+        elif not is_frozen and (datetime.now() - cache_row.updated_at) > timedelta(hours=24):
             background_tasks.add_task(
                 _refresh_episode_analysis_cache,
                 season_id,
@@ -429,7 +432,7 @@ def get_episode_analysis_with_cache(
         session,
         season_id=season_id,
         cid=cid,
-        episode_number=int(timeline_data.get("episode_number", 1) or 1),
+        episode_number=int(timeline_data.get("episode_number", 1)),
         timeline_data=timeline_data,
         wordcloud_data=wordcloud_data,
     )

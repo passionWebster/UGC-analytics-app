@@ -1855,12 +1855,12 @@ class BilibiliBangumiCrawler:
                     current_danmaku = self.fetch_danmaku_xml(ep.cid)
                     history_danmaku = self.fetch_danmaku_history(ep.cid, publish_ts=pubdate_ts)
                     raw_danmaku = current_danmaku + history_danmaku
-                    sqlite_danmaku_source = current_danmaku
+                    danmaku_for_sqlite = current_danmaku
 
                     # 去重：同一集中仅移除完全重复的弹幕（文本+时间+发送者）
                     seen_keys: Set[Tuple[str, Any, Any, str]] = set()
                     dedup: List[Dict] = []
-                    for d in sqlite_danmaku_source:
+                    for d in danmaku_for_sqlite:
                         # video_time 表示视频内时间点；timestamp 表示发送时间，两者共同用于精确去重。
                         key = self._make_danmaku_dedup_key(d)
                         if key in seen_keys:
