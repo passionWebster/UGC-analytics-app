@@ -134,33 +134,33 @@ def get_sentiment_timeline(session: Session, season_id: int) -> List[Dict[str, A
 
     sqlite_rows = session.exec(
         select(
-            DanmuRecord.episode_number,
+            DanmuRecord.cid,
             sa_func.avg(DanmuRecord.sentiment_score).label("avg_sentiment"),
             sa_func.count(DanmuRecord.id).label("danmu_count"),
         )
         .where(DanmuRecord.season_id == season_id)
         .where(DanmuRecord.sentiment_score != None)  # noqa: E711
-        .group_by(DanmuRecord.episode_number)
-        .order_by(DanmuRecord.episode_number)
+        .group_by(DanmuRecord.cid)
+        .order_by(DanmuRecord.cid)
     ).all()
-    sqlite_map = {
-        int(row[0]): {
-            "episode_number": int(row[0]),
+    sqlite_map_by_cid = {
+        str(row[0]): {
             "avg_sentiment": round(float(row[1]), 4) if row[1] is not None else None,
             "danmu_count": int(row[2] or 0),
         }
         for row in sqlite_rows
+        if row[0]
     }
 
     timeline: List[Dict[str, Any]] = []
     for idx, episode in enumerate(episodes, start=1):
         mongo_items = _get_mongo_episode_items(episode.cid)
         if mongo_items:
-            sentiments = [
-                sentiment
-                for sentiment in (_get_mongo_item_sentiment(item) for item in mongo_items)
-                if sentiment is not None
-            ]
+            sentiments = []
+            for item in mongo_items:
+                sentiment = _get_mongo_item_sentiment(item)
+                if sentiment is not None:
+                    sentiments.append(sentiment)
             if sentiments:
                 timeline.append(
                     {
@@ -171,9 +171,15 @@ def get_sentiment_timeline(session: Session, season_id: int) -> List[Dict[str, A
                 )
                 continue
 
-        fallback = sqlite_map.get(idx)
+        fallback = sqlite_map_by_cid.get(str(episode.cid))
         if fallback:
-            timeline.append(fallback)
+            timeline.append(
+                {
+                    "episode_number": idx,
+                    "avg_sentiment": fallback["avg_sentiment"],
+                    "danmu_count": fallback["danmu_count"],
+                }
+            )
 
     return timeline
 
