@@ -1379,9 +1379,9 @@ class BilibiliBangumiCrawler:
             offset += 1
             if (byte & 0x80) == 0:
                 return value, offset
-            shift += 7
-            if shift > 63:
+            if shift >= 63:
                 return None, offset
+            shift += 7
         return None, offset
 
     def _parse_danmaku_seg_protobuf(
@@ -1395,6 +1395,10 @@ class BilibiliBangumiCrawler:
         解析 DmSegMobileReply protobuf（二进制）为统一弹幕字段。
         仅提取当前入库所需字段，忽略未知字段，保证向后兼容。
         """
+        FIELD_MODE = 3
+        FIELD_FONT_SIZE = 4
+        FIELD_COLOR = 5
+        FIELD_POOL = 11
         items: List[Dict[str, Any]] = []
         offset = 0
         while offset < len(payload):
@@ -1475,10 +1479,10 @@ class BilibiliBangumiCrawler:
                         "timestamp": ctime,
                         "ctime": ctime,
                         "sender_hash": sender_hash,
-                        "mode": int(elem_values.get(3, 0) or 0) or None,
-                        "font_size": int(elem_values.get(4, 0) or 0) or None,
-                        "color": int(elem_values.get(5, 0) or 0) or None,
-                        "pool": int(elem_values.get(11, 0) or 0) or None,
+                        "mode": int(elem_values.get(FIELD_MODE, 0) or 0) or None,
+                        "font_size": int(elem_values.get(FIELD_FONT_SIZE, 0) or 0) or None,
+                        "color": int(elem_values.get(FIELD_COLOR, 0) or 0) or None,
+                        "pool": int(elem_values.get(FIELD_POOL, 0) or 0) or None,
                         "dmid": dmid or None,
                         "attrs_raw": source,
                     }
@@ -1584,6 +1588,7 @@ class BilibiliBangumiCrawler:
             return []
 
         history_items: List[Dict[str, Any]] = []
+        # 保序去重：history/index 可能返回重复日期，按首次出现顺序去重后逐日抓取。
         dedup_dates = list(dict.fromkeys(all_dates))
         logger.info("🕰️ 开始抓取历史弹幕数据 cid={} dates={}", cid, len(dedup_dates))
         for idx, date_str in enumerate(dedup_dates, start=1):
