@@ -44,11 +44,13 @@ class Settings(BaseSettings):
     bilibili_retry_backoff_base: float = 0.8
     bilibili_retry_backoff_max: float = 8.0
     bilibili_request_jitter: float = 0.4
+    bilibili_sessdata: Optional[str] = os.getenv("BILIBILI_SESSDATA")
     crawler_proxy_enabled: bool = False
     crawler_proxy_pool: Optional[str] = os.getenv("CRAWLER_PROXY_POOL")
     crawler_comment_page_size: int = 20
     crawler_nested_reply_limit: int = 20
     crawler_nested_reply_pages: int = 2
+    crawler_history_months: int = 24
 
     # MongoDB 配置（原始弹幕文档存储）
     mongodb_uri: Optional[str] = os.getenv("MONGODB_URI")

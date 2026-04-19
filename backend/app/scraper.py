@@ -91,6 +91,10 @@ class BilibiliBangumiCrawler:
             'Accept': 'application/json, text/plain, */*',
             'Referer': 'https://www.bilibili.com/'
         })
+        sessdata = (settings.bilibili_sessdata or "").strip()
+        if sessdata:
+            self.http_session.cookies.set("SESSDATA", sessdata, domain=".bilibili.com")
+            logger.info("🍪 已启用 SESSDATA Cookie（用于历史弹幕抓取）")
         self.mongo_repo = DanmakuMongoRepository()
         self.override_retry_attempts: Optional[int] = None
         self.request_counters: Dict[str, int] = {"requests": 0, "retries": 0, "failed": 0}
@@ -1258,25 +1262,17 @@ class BilibiliBangumiCrawler:
     # 弹幕抓取（XML 格式，按 cid 拉取）
     # ──────────────────────────────────────────────────────────────────────────
 
-    def fetch_danmaku_xml(self, cid: str) -> List[Dict[str, Any]]:
-        """
-        通过 B站弹幕 XML 接口获取当前弹幕池。
-
-        Args:
-            cid: 分 P 的弹幕 ID
-
-        Returns:
-            弹幕记录列表。
-            其中 progress/ctime/sender_hash 为新字段，video_time/timestamp 为兼容字段。
-        """
-        url = f"https://comment.bilibili.com/{cid}.xml"
+    def _parse_danmaku_xml_payload(
+        self,
+        *,
+        cid: str,
+        xml_text: str,
+        source: str,
+    ) -> List[Dict[str, Any]]:
+        """解析弹幕 XML 文本，统一返回标准字段。"""
         danmaku_list: List[Dict[str, Any]] = []
         try:
-            resp = self._request_get(url, timeout=settings.bilibili_request_timeout)
-            if resp is None:
-                return danmaku_list
-            resp.encoding = 'utf-8'
-            root = ET.fromstring(resp.text)
+            root = ET.fromstring(xml_text)
             for d in root.findall('d'):
                 attrs = d.get('p', '')
                 text = (d.text or '').strip()
@@ -1289,7 +1285,7 @@ class BilibiliBangumiCrawler:
                     ts_unix = int(parts[4]) if len(parts) > 4 and parts[4] else 0
                     sender_hash = parts[6] if len(parts) > 6 else None
                 except (TypeError, ValueError):
-                    logger.debug("跳过异常弹幕元数据 cid={} attrs={}", cid, attrs)
+                    logger.debug("跳过异常弹幕元数据 cid={} source={} attrs={}", cid, source, attrs)
                     continue
                 ctime = datetime.fromtimestamp(ts_unix) if ts_unix else None
                 danmaku_list.append({
@@ -1301,10 +1297,141 @@ class BilibiliBangumiCrawler:
                     'sender_hash': sender_hash,  # B站匿名用户哈希
                 })
         except ET.ParseError as exc:
-            logger.warning("⚠️ 解析弹幕 XML 失败 cid={}: {}", cid, exc)
+            logger.warning("⚠️ 解析弹幕 XML 失败 cid={} source={}: {}", cid, source, exc)
         except Exception as exc:
-            logger.exception("❌ 获取弹幕失败 cid={}: {}", cid, exc)
+            logger.exception("❌ 解析弹幕 XML 异常 cid={} source={}: {}", cid, source, exc)
         return danmaku_list
+
+    def _iter_history_months(self, publish_ts: Optional[int]) -> List[str]:
+        """根据发布时间推导历史弹幕索引查询月份（倒序）。"""
+        now = datetime.now()
+        max_months = max(1, settings.crawler_history_months)
+        if publish_ts:
+            start = datetime.fromtimestamp(int(publish_ts))
+        else:
+            start = now - timedelta(days=31 * (max_months - 1))
+        cursor = datetime(now.year, now.month, 1)
+        start_month = datetime(start.year, start.month, 1)
+        months: List[str] = []
+        while cursor >= start_month and len(months) < max_months:
+            months.append(cursor.strftime("%Y-%m"))
+            if cursor.month == 1:
+                cursor = datetime(cursor.year - 1, 12, 1)
+            else:
+                cursor = datetime(cursor.year, cursor.month - 1, 1)
+        return months
+
+    def fetch_danmaku_xml(self, cid: str) -> List[Dict[str, Any]]:
+        """
+        通过 B站弹幕 XML 接口获取当前弹幕池。
+
+        Args:
+            cid: 分 P 的弹幕 ID
+
+        Returns:
+            弹幕记录列表。
+            其中 progress/ctime/sender_hash 为新字段，video_time/timestamp 为兼容字段。
+        """
+        url = f"https://comment.bilibili.com/{cid}.xml"
+        try:
+            resp = self._request_get(url, timeout=settings.bilibili_request_timeout)
+            if resp is None:
+                return []
+            resp.encoding = 'utf-8'
+            return self._parse_danmaku_xml_payload(
+                cid=cid,
+                xml_text=resp.text,
+                source="current_pool",
+            )
+        except Exception as exc:
+            logger.exception("❌ 获取当前弹幕失败 cid={}: {}", cid, exc)
+        return []
+
+    def fetch_danmaku_history_xml(self, cid: str, *, publish_ts: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        抓取历史弹幕（需要 SESSDATA）。
+
+        通过 history/index 获取可用日期，再逐日抓取 XML。
+        """
+        if not (settings.bilibili_sessdata or "").strip():
+            return []
+
+        index_url = "https://api.bilibili.com/x/v2/dm/history/index"
+        history_url = "https://api.bilibili.com/x/v2/dm/history"
+        all_dates: List[str] = []
+
+        for month in self._iter_history_months(publish_ts):
+            resp = self._request_get(
+                index_url,
+                params={"type": 1, "oid": str(cid), "month": month},
+                timeout=settings.bilibili_request_timeout,
+            )
+            if resp is None:
+                logger.warning("⚠️ 历史弹幕日期索引请求失败 cid={} month={}", cid, month)
+                continue
+            try:
+                payload = resp.json()
+            except Exception:
+                logger.warning("⚠️ 历史弹幕日期索引解析失败 cid={} month={}", cid, month)
+                continue
+            code = payload.get("code")
+            if code != 0:
+                logger.warning(
+                    "⚠️ 历史弹幕日期索引返回错误 cid={} month={} code={} message={}",
+                    cid,
+                    month,
+                    code,
+                    payload.get("message"),
+                )
+                # 未登录或权限不足时，无需继续请求更多月份
+                if code in {-101, -111, -400, -412}:
+                    break
+                continue
+            day_list = payload.get("data") or []
+            all_dates.extend([str(d) for d in day_list if d])
+
+        if not all_dates:
+            return []
+
+        history_items: List[Dict[str, Any]] = []
+        seen_dates: set = set()
+        for date_str in all_dates:
+            if date_str in seen_dates:
+                continue
+            seen_dates.add(date_str)
+            resp = self._request_get(
+                history_url,
+                params={"type": 1, "oid": str(cid), "date": date_str},
+                timeout=settings.bilibili_request_timeout,
+            )
+            if resp is None:
+                logger.warning("⚠️ 历史弹幕抓取失败 cid={} date={}", cid, date_str)
+                continue
+            resp.encoding = "utf-8"
+            text = (resp.text or "").strip()
+            # 部分失败场景会返回 JSON 错误而不是 XML
+            if text.startswith("{"):
+                try:
+                    err = resp.json()
+                    logger.warning(
+                        "⚠️ 历史弹幕接口返回错误 cid={} date={} code={} message={}",
+                        cid,
+                        date_str,
+                        err.get("code"),
+                        err.get("message"),
+                    )
+                except Exception:
+                    logger.warning("⚠️ 历史弹幕接口返回非 XML 内容 cid={} date={}", cid, date_str)
+                continue
+            history_items.extend(
+                self._parse_danmaku_xml_payload(
+                    cid=cid,
+                    xml_text=text,
+                    source=f"history:{date_str}",
+                )
+            )
+        logger.info("🕰️ 历史弹幕抓取完成 cid={} dates={} items={}", cid, len(seen_dates), len(history_items))
+        return history_items
 
     def fetch_comment_replies(
         self,
@@ -1377,6 +1504,7 @@ class BilibiliBangumiCrawler:
         limit: int = 50,
         include_replies: bool = True,
         nested_reply_limit: int = 20,
+        bvid: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         通过 B站评论接口抓取主楼评论，并可选抓取楼中楼回复。
@@ -1402,6 +1530,7 @@ class BilibiliBangumiCrawler:
             })
             resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
             if resp is None:
+                logger.warning("⚠️ 评论接口请求失败 bvid={} avid={} page={}", bvid, avid, page)
                 break
             data = resp.json()
             if data.get('code') == 0:
@@ -1437,7 +1566,13 @@ class BilibiliBangumiCrawler:
                 if len(replies) < page_size:
                     break
             else:
-                logger.warning("⚠️ 评论 API 返回错误 avid={}: code={}", avid, data.get('code'))
+                logger.warning(
+                    "⚠️ 评论 API 返回错误 bvid={} avid={} code={} message={}",
+                    bvid,
+                    avid,
+                    data.get('code'),
+                    data.get('message'),
+                )
                 break
         return comment_list[:limit]
 
@@ -1528,117 +1663,166 @@ class BilibiliBangumiCrawler:
         mongo_saved = 0
 
         for ep_index, ep in enumerate(episodes, start=1):
-            # ── 弹幕 ───────────────────────────────────────────────────────
-            if ep.cid:
-                raw_danmaku = self.fetch_danmaku_xml(ep.cid)
-                # 去重：同一集中完全相同的弹幕文本只保留一条
-                seen_texts: set = set()
-                dedup: List[Dict] = []
-                for d in raw_danmaku:
-                    t = d['content']
-                    if t not in seen_texts:
-                        seen_texts.add(t)
+            logger.info("▶️ 开始处理剧集 episode={} bvid={} cid={}", ep_index, ep.bvid, ep.cid)
+            try:
+                view_data: Dict[str, Any] = {}
+                avid: Optional[int] = None
+                pubdate_ts: Optional[int] = None
+                if ep.bvid:
+                    view_data = self.get_episode_stat_details(ep.bvid) or {}
+                    avid = view_data.get('aid')
+                    pubdate_ts = view_data.get('pubdate')
+
+                # ── 弹幕 ───────────────────────────────────────────────────
+                if ep.cid:
+                    current_danmaku = self.fetch_danmaku_xml(ep.cid)
+                    history_danmaku = self.fetch_danmaku_history_xml(ep.cid, publish_ts=pubdate_ts)
+                    raw_danmaku = current_danmaku + history_danmaku
+
+                    # 去重：同一集中仅移除完全重复的弹幕（文本+时间+发送者）
+                    seen_keys: set = set()
+                    dedup: List[Dict] = []
+                    for d in raw_danmaku:
+                        key = (
+                            str(d.get('content') or ''),
+                            d.get('video_time'),
+                            d.get('timestamp'),
+                            str(d.get('sender_hash') or ''),
+                        )
+                        if key in seen_keys:
+                            continue
+                        seen_keys.add(key)
                         dedup.append(d)
 
-                records = []
-                existing_texts = set()
-                if mode != "full":
-                    existing_texts = {
-                        row[0]
-                        for row in self.session.exec(
-                            select(DanmuRecord.content).where(
-                                DanmuRecord.season_id == season_id,
-                                DanmuRecord.cid == ep.cid,
-                            )
-                        ).all()
-                    }
-                for d in dedup:
-                    if d['content'] in existing_texts:
-                        continue
-                    score = sentiment_fn(d['content']) if sentiment_fn else None
-                    records.append(DanmuRecord(
-                        season_id=season_id,
-                        episode_number=ep_index,
-                        cid=ep.cid,
-                        content=d['content'],
-                        video_time=d.get('video_time'),
-                        timestamp=d.get('timestamp'),
-                        sender_hash=d.get('sender_hash'),
-                        sentiment_score=score,
-                    ))
-
-                with sqlite_write_lock:
-                    for r in records:
-                        self.session.add(r)
-                    self.session.commit()
-                danmu_saved += len(records)
-                if raw_danmaku and self.mongo_repo.upsert_episode_danmaku(
-                    cid=str(ep.cid),
-                    season_id=season_id,
-                    episode_number=ep_index,
-                    bvid=ep.bvid,
-                    danmaku_items=raw_danmaku,
-                ):
-                    mongo_saved += 1
-                logger.info(f"  ✅ 弹幕已写入 episode={ep_index} cid={ep.cid} count={len(records)}")
-                self._throttle()
-
-            # ── 评论 ───────────────────────────────────────────────────────
-            # 将 bvid 转换为 avid；B站不提供直接转换 API，使用 /x/web-interface/view
-            if ep.bvid:
-                try:
-                    view_data = self.get_episode_stat_details(ep.bvid)
-                    avid: Optional[int] = view_data.get('aid')
-                except Exception:
-                    avid = None
-
-                if avid:
-                    raw_comments = self.fetch_comments(
-                        avid,
-                        limit=comment_limit,
-                        include_replies=include_comment_replies,
-                        nested_reply_limit=nested_reply_limit,
-                    )
-                    c_records = []
-                    existing_comment_keys = set()
+                    records = []
+                    existing_texts = set()
                     if mode != "full":
-                        existing_comment_keys = {
-                            (str(row[0] or ""), str(row[1] or ""), row[2])
+                        existing_texts = {
+                            row[0]
                             for row in self.session.exec(
-                                select(
-                                    CommentRecord.root_rpid,
-                                    CommentRecord.parent_rpid,
-                                    CommentRecord.content,
-                                ).where(
-                                    CommentRecord.season_id == season_id,
-                                    CommentRecord.avid == avid,
+                                select(DanmuRecord.content).where(
+                                    DanmuRecord.season_id == season_id,
+                                    DanmuRecord.cid == ep.cid,
                                 )
                             ).all()
                         }
-                    for c in raw_comments:
-                        key = self._make_comment_dedup_key(c)
-                        if key in existing_comment_keys:
+                    for d in dedup:
+                        if d['content'] in existing_texts:
                             continue
-                        score = sentiment_fn(c['content']) if sentiment_fn else None
-                        c_records.append(CommentRecord(
+                        score = sentiment_fn(d['content']) if sentiment_fn else None
+                        records.append(DanmuRecord(
                             season_id=season_id,
-                            avid=avid,
-                            root_rpid=c.get('root_rpid'),
-                            parent_rpid=c.get('parent_rpid'),
-                            level=c.get('level', 0),
-                            is_top_level=c.get('is_top_level', True),
-                            content=c['content'],
-                            likes=c.get('likes', 0),
-                            replies=c.get('replies', 0),
+                            episode_number=ep_index,
+                            cid=ep.cid,
+                            content=d['content'],
+                            video_time=d.get('video_time'),
+                            timestamp=d.get('timestamp'),
+                            sender_hash=d.get('sender_hash'),
                             sentiment_score=score,
                         ))
+
                     with sqlite_write_lock:
-                        for r in c_records:
+                        for r in records:
                             self.session.add(r)
                         self.session.commit()
-                    comment_saved += len(c_records)
-                    logger.info(f"  ✅ 评论已写入 episode={ep_index} avid={avid} count={len(c_records)}")
+                    danmu_saved += len(records)
+                    if raw_danmaku and self.mongo_repo.upsert_episode_danmaku(
+                        cid=str(ep.cid),
+                        season_id=season_id,
+                        episode_number=ep_index,
+                        bvid=ep.bvid,
+                        danmaku_items=raw_danmaku,
+                    ):
+                        mongo_saved += 1
+                    logger.info(
+                        "  ✅ 弹幕已写入 episode={} cid={} current={} history={} saved={}",
+                        ep_index,
+                        ep.cid,
+                        len(current_danmaku),
+                        len(history_danmaku),
+                        len(records),
+                    )
                     self._throttle()
+                else:
+                    logger.warning("  ⚠️ 跳过弹幕抓取：缺少 cid episode={} bvid={}", ep_index, ep.bvid)
+
+                # ── 评论 ───────────────────────────────────────────────────
+                if not ep.bvid:
+                    logger.warning("  ⚠️ 跳过评论抓取：缺少 bvid episode={}", ep_index)
+                    continue
+                if not avid:
+                    logger.warning(
+                        "  ⚠️ 跳过评论抓取：无法解析 aid episode={} bvid={} aid={} view_keys={}",
+                        ep_index,
+                        ep.bvid,
+                        avid,
+                        list(view_data.keys())[:8],
+                    )
+                    continue
+
+                raw_comments = self.fetch_comments(
+                    avid,
+                    limit=comment_limit,
+                    include_replies=include_comment_replies,
+                    nested_reply_limit=nested_reply_limit,
+                    bvid=ep.bvid,
+                )
+                c_records = []
+                existing_comment_keys = set()
+                if mode != "full":
+                    existing_comment_keys = {
+                        (str(row[0] or ""), str(row[1] or ""), row[2])
+                        for row in self.session.exec(
+                            select(
+                                CommentRecord.root_rpid,
+                                CommentRecord.parent_rpid,
+                                CommentRecord.content,
+                            ).where(
+                                CommentRecord.season_id == season_id,
+                                CommentRecord.avid == avid,
+                            )
+                        ).all()
+                    }
+                for c in raw_comments:
+                    key = self._make_comment_dedup_key(c)
+                    if key in existing_comment_keys:
+                        continue
+                    score = sentiment_fn(c['content']) if sentiment_fn else None
+                    c_records.append(CommentRecord(
+                        season_id=season_id,
+                        avid=avid,
+                        root_rpid=c.get('root_rpid'),
+                        parent_rpid=c.get('parent_rpid'),
+                        level=c.get('level', 0),
+                        is_top_level=c.get('is_top_level', True),
+                        content=c['content'],
+                        likes=c.get('likes', 0),
+                        replies=c.get('replies', 0),
+                        sentiment_score=score,
+                    ))
+                with sqlite_write_lock:
+                    for r in c_records:
+                        self.session.add(r)
+                    self.session.commit()
+                comment_saved += len(c_records)
+                logger.info(
+                    "  ✅ 评论已写入 episode={} bvid={} avid={} fetched={} saved={}",
+                    ep_index,
+                    ep.bvid,
+                    avid,
+                    len(raw_comments),
+                    len(c_records),
+                )
+                self._throttle()
+            except Exception as exc:
+                logger.exception(
+                    "❌ 剧集抓取失败 episode={} bvid={} cid={} error={}",
+                    ep_index,
+                    ep.bvid,
+                    ep.cid,
+                    exc,
+                )
+                continue
 
         try:
             from .analytics import update_episode_sentiment_aggregates
