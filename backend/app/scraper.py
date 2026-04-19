@@ -12,7 +12,7 @@ import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from functools import reduce
-from typing import Tuple, List, Dict, Any, Optional
+from typing import Tuple, List, Dict, Any, Optional, Set
 import requests
 from requests import Response
 from sqlmodel import Session, select
@@ -1384,6 +1384,7 @@ class BilibiliBangumiCrawler:
                     payload.get("message"),
                 )
                 # 未登录或权限不足时，无需继续请求更多月份
+                # -101 未登录 / -111 csrf 校验失败 / -400 参数错误 / -412 风控拦截
                 if code in {-101, -111, -400, -412}:
                     break
                 continue
@@ -1394,7 +1395,7 @@ class BilibiliBangumiCrawler:
             return []
 
         history_items: List[Dict[str, Any]] = []
-        seen_dates: set = set()
+        seen_dates: Set[str] = set()
         for date_str in all_dates:
             if date_str in seen_dates:
                 continue
@@ -1683,6 +1684,7 @@ class BilibiliBangumiCrawler:
                     seen_keys: set = set()
                     dedup: List[Dict] = []
                     for d in raw_danmaku:
+                        # video_time 表示视频内时间点；timestamp 表示发送时间，两者共同用于精确去重。
                         key = (
                             str(d.get('content') or ''),
                             d.get('video_time'),
