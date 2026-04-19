@@ -5,6 +5,8 @@ MongoDB 数据访问模块
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import certifi
+
 from .config import settings
 from .logger import scraper_logger as logger
 
@@ -46,6 +48,7 @@ class DanmakuMongoRepository:
         try:
             self._client = MongoClient(
                 settings.mongodb_uri,
+                tlsCAFile=certifi.where(),
                 serverSelectionTimeoutMS=settings.mongodb_connect_timeout_ms,
                 connectTimeoutMS=settings.mongodb_connect_timeout_ms,
             )

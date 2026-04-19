@@ -216,7 +216,7 @@ class AIService:
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_key}",
                 },
-                timeout=30,
+                timeout=300,
             )
             response.raise_for_status()
         except requests.exceptions.HTTPError as exc:
