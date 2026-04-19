@@ -1310,15 +1310,16 @@ class BilibiliBangumiCrawler:
         return danmaku_list
 
     def _iter_history_months(self, publish_ts: Optional[int]) -> List[str]:
-        """根据发布时间推导历史弹幕索引查询月份（倒序）。"""
+        """根据发布时间推导历史弹幕索引查询月份（倒序，YYYY-MM）。"""
         now = datetime.now()
         max_months = max(1, settings.crawler_history_months)
         cursor = datetime(now.year, now.month, 1)
-        start_month = (
-            datetime.fromtimestamp(int(publish_ts)).replace(day=1)
-            if publish_ts
-            else None
-        )
+        start_month: Optional[datetime] = None
+        if publish_ts:
+            try:
+                start_month = datetime.fromtimestamp(int(publish_ts)).replace(day=1)
+            except (ValueError, OSError, OverflowError, TypeError):
+                logger.warning("⚠️ 非法发布时间戳，改用固定回溯窗口 publish_ts={}", publish_ts)
         months: List[str] = []
         while len(months) < max_months:
             if start_month and cursor < start_month:
