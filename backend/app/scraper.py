@@ -10,6 +10,7 @@ import re
 import threading
 import time
 import xml.etree.ElementTree as ET
+import calendar
 from datetime import datetime, timedelta
 from functools import reduce
 from typing import Tuple, List, Dict, Any, Optional
@@ -1286,8 +1287,13 @@ class BilibiliBangumiCrawler:
                 parts = attrs.split(',')
                 try:
                     video_time = float(parts[0]) if parts and parts[0] else 0.0
+                    mode = int(parts[1]) if len(parts) > 1 and parts[1] else None
+                    font_size = int(parts[2]) if len(parts) > 2 and parts[2] else None
+                    color = int(parts[3]) if len(parts) > 3 and parts[3] else None
                     ts_unix = int(parts[4]) if len(parts) > 4 and parts[4] else 0
+                    pool = int(parts[5]) if len(parts) > 5 and parts[5] else None
                     sender_hash = parts[6] if len(parts) > 6 else None
+                    dmid = parts[7] if len(parts) > 7 else None
                 except (TypeError, ValueError):
                     logger.debug("跳过异常弹幕元数据 cid={} attrs={}", cid, attrs)
                     continue
@@ -1299,12 +1305,190 @@ class BilibiliBangumiCrawler:
                     'timestamp': ctime,      # 保持兼容旧字段
                     'ctime': ctime,
                     'sender_hash': sender_hash,  # B站匿名用户哈希
+                    'mode': mode,
+                    'font_size': font_size,
+                    'color': color,
+                    'pool': pool,
+                    'dmid': dmid,
+                    'attrs_raw': attrs,
                 })
         except ET.ParseError as exc:
             logger.warning("⚠️ 解析弹幕 XML 失败 cid={}: {}", cid, exc)
         except Exception as exc:
             logger.exception("❌ 获取弹幕失败 cid={}: {}", cid, exc)
         return danmaku_list
+
+    def _current_month_for_history(self) -> str:
+        """
+        返回历史弹幕索引请求所需的 month 参数（YYYY-MM）。
+        可通过配置偏移月份，便于重抓历史弹幕。
+        """
+        offset = int(max(0, settings.crawler_mongo_history_month_offset))
+        base = datetime.now() - timedelta(days=30 * offset)
+        return f"{base.year}-{base.month:02d}"
+
+    def fetch_danmaku_history_index(self, cid: str) -> List[str]:
+        """
+        获取可用历史弹幕日期列表。
+        """
+        url = "https://api.bilibili.com/x/v2/dm/history/index"
+        params = {
+            "type": 1,
+            "oid": str(cid),
+            "month": self._current_month_for_history(),
+        }
+        resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+        if resp is None:
+            return []
+        try:
+            data = resp.json()
+        except Exception:
+            return []
+        if data.get("code") != 0:
+            return []
+        dates = data.get("data") or []
+        return [str(x) for x in dates if x]
+
+    def fetch_danmaku_history_xml(self, cid: str, date_str: str) -> List[Dict[str, Any]]:
+        """
+        抓取指定日期历史弹幕（XML）。
+        """
+        url = "https://api.bilibili.com/x/v2/dm/history"
+        params = {"type": 1, "oid": str(cid), "date": date_str}
+        resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+        if resp is None:
+            return []
+        try:
+            resp.encoding = "utf-8"
+            root = ET.fromstring(resp.text)
+        except Exception:
+            return []
+        records: List[Dict[str, Any]] = []
+        for d in root.findall("d"):
+            attrs = d.get("p", "")
+            text = (d.text or "").strip()
+            if not text:
+                continue
+            parts = attrs.split(",")
+            try:
+                video_time = float(parts[0]) if parts and parts[0] else 0.0
+                ts_unix = int(parts[4]) if len(parts) > 4 and parts[4] else 0
+            except (TypeError, ValueError):
+                continue
+            records.append(
+                {
+                    "content": text,
+                    "progress": video_time,
+                    "ctime": datetime.fromtimestamp(ts_unix) if ts_unix else None,
+                    "sender_hash": parts[6] if len(parts) > 6 else None,
+                    "dmid": parts[7] if len(parts) > 7 else None,
+                    "attrs_raw": attrs,
+                }
+            )
+        return records
+
+    def fetch_danmaku_buzzword(self, cid: str) -> Dict[str, Any]:
+        """
+        获取弹幕热词（buzzword）原始响应。
+        """
+        url = "https://api.bilibili.com/x/v2/dm/buzzword"
+        params = {"type": 1, "oid": str(cid)}
+        resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+        if resp is None:
+            return {}
+        try:
+            data = resp.json()
+        except Exception:
+            return {}
+        if data.get("code") != 0:
+            return {}
+        payload = data.get("data") or {}
+        return payload if isinstance(payload, dict) else {"items": payload}
+
+    def fetch_danmaku_thumbup(self, cid: str, dmid_list: List[str]) -> Dict[str, Any]:
+        """
+        获取弹幕点赞统计（thumbup）原始响应。
+        """
+        if not dmid_list:
+            return {}
+        url = "https://api.bilibili.com/x/v2/dm/thumbup/stats"
+        params = {"oid": str(cid), "ids": ",".join(dmid_list[:100])}
+        resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+        if resp is None:
+            return {}
+        try:
+            data = resp.json()
+        except Exception:
+            return {}
+        if data.get("code") != 0:
+            return {}
+        payload = data.get("data") or {}
+        return payload if isinstance(payload, dict) else {"items": payload}
+
+    def fetch_danmaku_proto_metadata(self, cid: str) -> Dict[str, Any]:
+        """
+        抓取弹幕 protobuf 分段接口元信息（不解码 protobuf，仅保留原始段信息）。
+        """
+        max_segments = max(1, int(settings.crawler_mongo_proto_segments))
+        segments: List[Dict[str, Any]] = []
+        for segment_index in range(1, max_segments + 1):
+            url = "https://api.bilibili.com/x/v2/dm/web/seg.so"
+            params = {"type": 1, "oid": str(cid), "segment_index": segment_index}
+            resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+            if resp is None:
+                break
+            body = resp.content or b""
+            body_hash = hashlib.md5(body).hexdigest()
+            segments.append(
+                {
+                    "segment_index": segment_index,
+                    "content_type": resp.headers.get("Content-Type"),
+                    "byte_size": len(body),
+                    "md5": body_hash,
+                }
+            )
+            if len(body) == 0:
+                break
+        return {"segments": segments}
+
+    def build_mongo_danmaku_raw_sources(self, cid: str, danmaku_items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        基于文档接口补充 Mongo 原始数据（history/proto/buzzword/thumbup）。
+        """
+        if not settings.crawler_mongo_enrichment_enabled:
+            return {}
+
+        now = datetime.now()
+        month = now.month
+        days_in_month = calendar.monthrange(now.year, month)[1]
+        sample_days = max(0, int(settings.crawler_mongo_history_days))
+
+        history_dates = self.fetch_danmaku_history_index(cid)
+        history_dates_sorted = sorted(history_dates, reverse=True)
+        selected_dates = history_dates_sorted[:sample_days]
+        if not selected_dates and sample_days > 0:
+            # 兜底：无索引时尝试当月最近几天
+            selected_dates = [
+                f"{now.year}-{month:02d}-{day:02d}"
+                for day in range(days_in_month, max(0, days_in_month - sample_days), -1)
+            ]
+
+        history_samples: Dict[str, Any] = {}
+        for date_str in selected_dates:
+            history_samples[date_str] = self.fetch_danmaku_history_xml(cid, date_str)
+
+        dmid_list = [str(x.get("dmid")) for x in danmaku_items if x.get("dmid")]
+        buzzword = self.fetch_danmaku_buzzword(cid)
+        thumbup = self.fetch_danmaku_thumbup(cid, dmid_list)
+        proto_metadata = self.fetch_danmaku_proto_metadata(cid)
+
+        return {
+            "history_index_dates": history_dates_sorted,
+            "history_samples": history_samples,
+            "buzzword": buzzword,
+            "thumbup": thumbup,
+            "proto": proto_metadata,
+        }
 
     def fetch_comment_replies(
         self,
@@ -1572,12 +1756,14 @@ class BilibiliBangumiCrawler:
                         self.session.add(r)
                     self.session.commit()
                 danmu_saved += len(records)
+                raw_sources = self.build_mongo_danmaku_raw_sources(str(ep.cid), raw_danmaku) if raw_danmaku else {}
                 if raw_danmaku and self.mongo_repo.upsert_episode_danmaku(
                     cid=str(ep.cid),
                     season_id=season_id,
                     episode_number=ep_index,
                     bvid=ep.bvid,
                     danmaku_items=raw_danmaku,
+                    raw_sources=raw_sources,
                 ):
                     mongo_saved += 1
                 logger.info(f"  ✅ 弹幕已写入 episode={ep_index} cid={ep.cid} count={len(records)}")

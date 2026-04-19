@@ -80,6 +80,9 @@ DOUBAO_MODEL="your-model-endpoint-id"    # AI 模型端点 ID（可选）
 MONGODB_URI="mongodb+srv://<user>:<password>@<cluster>/<db>?retryWrites=true&w=majority"  # 原始弹幕文档（推荐）
 MONGODB_DB_NAME="bilibili_analytics"
 MONGODB_DANMAKU_COLLECTION="danmaku_raw"
+CRAWLER_MONGO_ENRICHMENT_ENABLED=True      # Mongo 原始弹幕增强抓取（history/proto/buzzword/thumbup）
+CRAWLER_MONGO_HISTORY_DAYS=3               # 历史弹幕样本日期数
+CRAWLER_MONGO_PROTO_SEGMENTS=1             # proto 分段抓取数量
 ```
 
 > ⚠️ `backend/.env` 已加入 `.gitignore`，切勿提交到版本控制。

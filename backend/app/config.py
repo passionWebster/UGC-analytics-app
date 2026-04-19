@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     crawler_comment_page_size: int = 20
     crawler_nested_reply_limit: int = 20
     crawler_nested_reply_pages: int = 2
+    crawler_mongo_enrichment_enabled: bool = True
+    crawler_mongo_history_days: int = 3
+    crawler_mongo_proto_segments: int = 1
+    crawler_mongo_history_month_offset: int = 0
 
     # MongoDB 配置（原始弹幕文档存储）
     mongodb_uri: Optional[str] = os.getenv("MONGODB_URI")

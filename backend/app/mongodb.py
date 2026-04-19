@@ -74,6 +74,7 @@ class DanmakuMongoRepository:
         episode_number: int,
         bvid: Optional[str],
         danmaku_items: List[Dict[str, Any]],
+        raw_sources: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """按 cid 维度写入/更新单集原始弹幕文档。"""
         if not cid:
@@ -88,6 +89,7 @@ class DanmakuMongoRepository:
             "bvid": bvid,
             "danmaku_items": danmaku_items,
             "danmaku_count": len(danmaku_items),
+            "raw_sources": raw_sources or {},
             "updated_at": datetime.now(timezone.utc),
         }
         try:
