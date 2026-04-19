@@ -7,17 +7,21 @@ import json
 import logging
 import os
 import re
+import threading
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from urllib.parse import urlparse
 import asyncio
 import httpx
+from cachetools import TTLCache
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select as sql_select
+from sqlalchemy import func as sa_func
 
 from ..analytics import (
+    get_comment_insight_cards,
     get_episode_timeline_bins,
     get_season_character_trends,
     get_season_wordcloud,
@@ -25,7 +29,7 @@ from ..analytics import (
 from ..auth import get_current_user
 from ..database import get_session
 from ..crud import AnalyticsService
-from ..models import Anime, TmdbAnimeInfo, User
+from ..models import Anime, EpisodeStats, TmdbAnimeInfo, User
 from ..schemas import (
     EpisodeTimelineResponse,
     SeasonWordcloudResponse,
@@ -42,6 +46,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analytics", tags=["数据分析"])
 # 图片代理路由（路径为 /api/image_proxy，与 analytics 路由独立）
 proxy_router = APIRouter(prefix="/api", tags=["图片代理"])
+
+_STABLE_DATA_DAYS = 7
+_ANALYTICS_CACHE: TTLCache = TTLCache(maxsize=512, ttl=3600)
+_ANALYTICS_CACHE_LOCK = threading.RLock()
 
 # 封面图片本地缓存目录
 _COVER_CACHE_DIR = os.path.join(
@@ -112,6 +120,39 @@ def _parse_areas_param(areas: Optional[str]) -> Optional[List[str]]:
     return items
 
 
+def _is_dataset_stable(
+    session: Session,
+    season_id: Optional[int] = None,
+    cid: Optional[str] = None,
+) -> bool:
+    """
+    判断数据是否超过稳定窗口（默认 7 天），稳定后才启用聚合缓存。
+    """
+    if season_id is None and cid is None:
+        return False
+
+    query = sql_select(sa_func.max(EpisodeStats.updated_at))
+    if season_id is not None:
+        query = query.where(EpisodeStats.season_id == season_id)
+    if cid:
+        query = query.where(EpisodeStats.cid == cid)
+
+    latest_updated = session.exec(query).first()
+    if latest_updated is None:
+        return False
+    return latest_updated <= (datetime.now() - timedelta(days=_STABLE_DATA_DAYS))
+
+
+def _read_cache(cache_key: str):
+    with _ANALYTICS_CACHE_LOCK:
+        return _ANALYTICS_CACHE.get(cache_key)
+
+
+def _write_cache(cache_key: str, payload: dict) -> None:
+    with _ANALYTICS_CACHE_LOCK:
+        _ANALYTICS_CACHE[cache_key] = payload
+
+
 @router.get("/episode/{cid}/timeline", response_model=dict)
 def get_episode_timeline(
     cid: str,
@@ -122,6 +163,13 @@ def get_episode_timeline(
     """
     获取单集按时间窗切片后的弹幕聚合数据。
     """
+    cache_key = f"episode_timeline:{cid}:bin={bin_size}:topk={keyword_topk}"
+    cache_enabled = _is_dataset_stable(session=session, cid=cid)
+    if cache_enabled:
+        cached = _read_cache(cache_key)
+        if cached is not None:
+            return cached
+
     try:
         data = get_episode_timeline_bins(
             session=session,
@@ -133,8 +181,10 @@ def get_episode_timeline(
         if str(exc) == "episode_not_found":
             raise HTTPException(status_code=404, detail="未找到对应 CID 的剧集数据")
         raise
-    payload = EpisodeTimelineResponse.model_validate(data)
-    return {"success": True, "data": payload}
+    payload = {"success": True, "data": EpisodeTimelineResponse.model_validate(data)}
+    if cache_enabled:
+        _write_cache(cache_key, payload)
+    return payload
 
 
 @router.get("/season/{season_id}/wordcloud", response_model=dict)
@@ -147,6 +197,13 @@ def get_season_wordcloud_api(
     """
     获取整季（或单集）词云权重数据。
     """
+    cache_key = f"season_wordcloud:{season_id}:cid={cid or ''}:top={top_n}"
+    cache_enabled = _is_dataset_stable(session=session, season_id=season_id, cid=cid)
+    if cache_enabled:
+        cached = _read_cache(cache_key)
+        if cached is not None:
+            return cached
+
     try:
         data = get_season_wordcloud(
             session=session,
@@ -158,8 +215,10 @@ def get_season_wordcloud_api(
         if str(exc) == "episode_not_found":
             raise HTTPException(status_code=404, detail="未找到可用于词云聚合的剧集数据")
         raise
-    payload = SeasonWordcloudResponse.model_validate(data)
-    return {"success": True, "data": payload}
+    payload = {"success": True, "data": SeasonWordcloudResponse.model_validate(data)}
+    if cache_enabled:
+        _write_cache(cache_key, payload)
+    return payload
 
 
 @router.get("/season/{season_id}/characters", response_model=dict)
@@ -171,6 +230,13 @@ def get_season_characters_api(
     """
     获取整季核心角色讨论度趋势。
     """
+    cache_key = f"season_characters:{season_id}:top={top_n}"
+    cache_enabled = _is_dataset_stable(session=session, season_id=season_id)
+    if cache_enabled:
+        cached = _read_cache(cache_key)
+        if cached is not None:
+            return cached
+
     try:
         data = get_season_character_trends(
             session=session,
@@ -181,8 +247,39 @@ def get_season_characters_api(
         if str(exc) == "season_not_found":
             raise HTTPException(status_code=404, detail="未找到该 season_id 的剧集数据")
         raise
-    payload = SeasonCharacterTrendsResponse.model_validate(data)
-    return {"success": True, "data": payload}
+    payload = {"success": True, "data": SeasonCharacterTrendsResponse.model_validate(data)}
+    if cache_enabled:
+        _write_cache(cache_key, payload)
+    return payload
+
+
+@router.get("/season/{season_id}/insight-cards", response_model=dict)
+def get_season_insight_cards_api(
+    season_id: int,
+    limit: int = Query(300, ge=30, le=1000, description="用于聚类的评论采样数"),
+    top_n: int = Query(6, ge=1, le=20, description="返回观点卡片数量"),
+    session: Session = Depends(get_session),
+):
+    """
+    获取整季热门评论观点提取卡片数据。
+    """
+    cache_key = f"season_insight_cards:{season_id}:limit={limit}:top={top_n}"
+    cache_enabled = _is_dataset_stable(session=session, season_id=season_id)
+    if cache_enabled:
+        cached = _read_cache(cache_key)
+        if cached is not None:
+            return cached
+
+    items = get_comment_insight_cards(
+        session=session,
+        season_id=season_id,
+        limit=limit,
+        top_n=top_n,
+    )
+    payload = {"success": True, "total": len(items), "data": items}
+    if cache_enabled:
+        _write_cache(cache_key, payload)
+    return payload
 
 
 @proxy_router.get("/image_proxy")

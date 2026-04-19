@@ -177,6 +177,72 @@ def get_top_comments(session: Session, season_id: int, limit: int = 50) -> List[
     ]
 
 
+def get_comment_insight_cards(
+    session: Session,
+    season_id: int,
+    limit: int = 300,
+    top_n: int = 6,
+) -> List[Dict[str, Any]]:
+    """
+    基于高赞评论提炼观点卡片（轻量聚类）。
+    """
+    records = session.exec(
+        select(CommentRecord)
+        .where(CommentRecord.season_id == season_id)
+        .order_by(CommentRecord.likes.desc(), CommentRecord.id.desc())
+        .limit(limit)
+    ).all()
+    if not records:
+        return []
+
+    clusters: Dict[str, Dict[str, Any]] = {}
+    total_likes = 0
+
+    for record in records:
+        likes = int(record.likes or 0)
+        total_likes += likes
+        content = (record.content or "").strip()
+        content_lower = content.lower()
+
+        matched_topic = None
+        max_hits = 0
+        for topic, keywords in _COMMENT_TOPIC_KEYWORDS.items():
+            hits = sum(1 for kw in keywords if kw and kw in content_lower)
+            if hits > max_hits:
+                max_hits = hits
+                matched_topic = topic
+        if not matched_topic:
+            matched_topic = "综合观感"
+
+        bucket = clusters.setdefault(
+            matched_topic,
+            {"topic": matched_topic, "likes": 0, "count": 0, "samples": [], "top_likes": 0},
+        )
+        bucket["likes"] += likes
+        bucket["count"] += 1
+        bucket["top_likes"] = max(bucket["top_likes"], likes)
+        if content and len(bucket["samples"]) < 3:
+            bucket["samples"].append(content[:180])
+
+    ranked = sorted(
+        clusters.values(),
+        key=lambda item: (item["likes"], item["count"], item["top_likes"]),
+        reverse=True,
+    )[:max(1, top_n)]
+
+    denominator = max(total_likes, 1)
+    return [
+        {
+            "topic": item["topic"],
+            "support_rate": round(item["likes"] / denominator, 4),
+            "total_likes": item["likes"],
+            "comment_count": item["count"],
+            "samples": item["samples"],
+        }
+        for item in ranked
+    ]
+
+
 def update_episode_sentiment_aggregates(session: Session, season_id: int) -> int:
     """
     回填 EpisodeStats 聚合字段：
@@ -242,6 +308,14 @@ _TIMELINE_STOPWORDS = {"这个", "那个", "真的", "感觉", "就是", "你们
 _EPISODE_NUM_RE = re.compile(r"\d+")
 _MAX_EPISODE_SORT_KEY = 10**9
 _WORDCLOUD_FALLBACK_BATCH_SIZE = 2000
+_COMMENT_TOPIC_KEYWORDS: Dict[str, List[str]] = {
+    "改编与原作": ["原作", "改编", "漫画", "小说", "还原", "删减", "魔改"],
+    "剧情讨论": ["剧情", "节奏", "反转", "伏笔", "结局", "发展", "设定"],
+    "角色塑造": ["角色", "人物", "主角", "配角", "人设", "成长", "演技"],
+    "作画与制作": ["作画", "画面", "镜头", "特效", "制作", "分镜", "经费"],
+    "音乐与配音": ["配乐", "音乐", "op", "ed", "配音", "声优", "音效"],
+    "情绪共鸣": ["感动", "泪目", "刀", "治愈", "燃", "催泪", "共鸣"],
+}
 
 
 def _safe_json_load(value: Any, default: Any) -> Any:

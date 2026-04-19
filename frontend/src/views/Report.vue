@@ -1,583 +1,387 @@
 <template>
   <div class="report-view">
-    <!-- 页面标题 -->
-    <div class="report-hero mb-4">
-      <h2><i class="fas fa-file-chart-line me-2"></i>番剧数据分析报告生成器</h2>
-      <p class="text-muted">选择一部番剧，由 AI 自动生成多维度 EDA 分析报告</p>
+    <div class="report-hero">
+      <h2>番剧数据分析报告生成器</h2>
+      <p class="text-muted">阶段四可视化：高能心电图、动态词云、情绪雷达与观点卡片</p>
     </div>
 
-    <!-- 搜索与控制区 -->
-    <div class="row mb-4">
-      <div class="col-md-8 mx-auto">
-        <div class="report-search-group">
-          <div class="report-search-wrap">
-            <span class="report-search-icon"><i class="fas fa-search"></i></span>
-            <input
-              ref="searchInputRef"
-              v-model="keyword"
-              class="report-search-input"
-              placeholder="输入番剧名称搜索..."
-              type="text"
-              autocomplete="off"
-              @keyup.enter="handleSearch"
-            />
-          </div>
-          <button class="report-search-btn" @click="handleSearch" :disabled="searching">
-            <i class="fas fa-search me-1"></i>{{ searching ? '搜索中…' : '搜索' }}
-          </button>
-          <button
-            v-if="animeData && !generating"
-            class="report-gen-btn"
-            @click="generateReport"
-          >
-            <i class="fas fa-magic me-1"></i>生成报告
-          </button>
-          <button
-            v-if="reportReady"
-            class="report-export-btn"
-            @click="exportPDF"
-          >
-            <i class="fas fa-file-pdf me-1"></i>导出 PDF
-          </button>
-        </div>
-        <div v-if="statusMsg" class="report-status-msg mt-2">{{ statusMsg }}</div>
-      </div>
+    <div class="search-bar">
+      <input
+        v-model="keyword"
+        type="text"
+        placeholder="输入番剧名称搜索..."
+        autocomplete="off"
+        @keyup.enter="handleSearch"
+      />
+      <button :disabled="searching" @click="handleSearch">{{ searching ? '搜索中…' : '搜索' }}</button>
     </div>
+    <p v-if="statusMsg" class="status-msg">{{ statusMsg }}</p>
 
-    <!-- 报告内容区（id="report-content" 用于 PDF 导出） -->
-    <div v-if="animeData" id="report-content" class="report-content">
-      <!-- 报告封面信息 -->
-      <div class="report-cover mb-4">
-        <div class="row align-items-center">
-          <div class="col-auto">
-            <img
-              v-if="animeData.cover"
-              :src="`/api/image_proxy?url=${encodeURIComponent(String(animeData.cover))}&title=${encodeURIComponent(String(animeData.title))}&season_id=${animeData.season_id}`"
-              class="report-cover-img"
-              :alt="animeData.title"
-            />
+    <div v-if="animeData" class="report-content">
+      <div class="report-cover">
+        <img
+          v-if="animeData.cover"
+          :src="`/api/image_proxy?url=${encodeURIComponent(String(animeData.cover))}&title=${encodeURIComponent(String(animeData.title))}&season_id=${animeData.season_id}`"
+          :alt="animeData.title"
+        />
+        <div class="meta">
+          <h3>{{ animeData.title }}</h3>
+          <div class="tags">
+            <span>{{ animeData.area }}</span>
+            <span v-if="animeData.release_date">{{ animeData.release_date }}</span>
+            <span v-if="animeData.rating">⭐ {{ animeData.rating }}</span>
           </div>
-          <div class="col">
-            <h3 class="report-title">{{ animeData.title }}</h3>
-            <p class="report-meta">
-              <span class="meta-badge">{{ animeData.area }}</span>
-              <span v-if="animeData.release_date" class="meta-badge">{{ animeData.release_date }}</span>
-              <span v-if="animeData.rating" class="meta-badge rating">⭐ {{ animeData.rating }}</span>
-            </p>
-            <p class="report-generated-at text-muted" v-if="generatedAt">
-              <i class="fas fa-clock me-1"></i>报告生成时间：{{ generatedAt }}
-            </p>
+          <div class="kpis">
+            <div class="kpi"><strong>播放量</strong><span>{{ formatNumber(animeData.views) }}</span></div>
+            <div class="kpi"><strong>追番</strong><span>{{ formatNumber(animeData.favorites) }}</span></div>
+            <div class="kpi"><strong>集数</strong><span>{{ episodes.length }}</span></div>
           </div>
         </div>
       </div>
 
-      <!-- 数据概览 KPI 卡片 -->
-      <div class="row mb-4">
-        <div v-for="kpi in kpiCards" :key="kpi.label" class="col-md-3 mb-3">
-          <div class="kpi-card" :class="kpi.color">
-            <div class="kpi-icon"><i :class="kpi.icon"></i></div>
-            <div class="kpi-content">
-              <h5>{{ kpi.label }}</h5>
-              <p class="kpi-value">{{ kpi.value }}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 左图右文 布局：弹幕情感时间线 + AI 洞察 -->
-      <div class="row mb-4">
-        <!-- 图表区 -->
-        <div class="col-md-7">
-          <div class="style-unified">
-            <div class="card-header-unified">
-              <h5><i class="fas fa-chart-line me-1"></i>弹幕情感时间线</h5>
-              <small class="text-muted">各集弹幕情感均分（0=消极 / 1=积极）</small>
-            </div>
-            <div v-if="sentimentTimeline.length > 0" ref="sentimentChartRef" style="height: 320px; width: 100%"></div>
-            <div v-else class="chart-placeholder">
-              <i class="fas fa-comment-dots"></i>
-              <span>暂无弹幕情感数据</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- AI 洞察文字区 -->
-        <div class="col-md-5">
-          <div class="style-unified insight-panel">
-            <div class="card-header-unified">
-              <h5><i class="fas fa-robot me-1"></i>AI 数据洞察</h5>
-            </div>
-            <div v-if="generating" class="insight-loading">
-              <i class="fas fa-spinner fa-spin me-2"></i>豆包正在分析数据，请稍候…
-            </div>
-            <div v-else-if="insightText" class="insight-text" v-html="formattedInsight"></div>
-            <div v-else class="insight-placeholder">
-              <i class="fas fa-lightbulb me-2"></i>点击「生成报告」即可获得 AI 洞察报告
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 播放趋势图 -->
-      <div class="row mb-4">
-        <div class="col-md-12">
-          <div class="style-unified">
-            <div class="card-header-unified">
-              <h5><i class="fas fa-play-circle me-1"></i>剧集播放趋势</h5>
-            </div>
-            <div v-if="episodeViews.length > 0" ref="viewsTrendChartRef" style="height: 280px; width: 100%"></div>
-            <div v-else class="chart-placeholder">
-              <i class="fas fa-chart-bar"></i>
-              <span>暂无剧集数据</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 高赞评论展示 -->
-      <div v-if="topComments.length > 0" class="row mb-4">
-        <div class="col-md-12">
-          <div class="style-unified">
-            <div class="card-header-unified">
-              <h5><i class="fas fa-thumbs-up me-1"></i>高赞观众评论（Top 10）</h5>
-              <small class="text-muted">颜色越暖表示情感越积极</small>
-            </div>
-            <div class="comments-grid">
-              <div
-                v-for="c in topComments.slice(0, 10)"
-                :key="c.id"
-                class="comment-card"
-                :style="{ borderLeftColor: sentimentColor(c.sentiment_score) }"
+      <section class="module-card">
+        <header>
+          <h4>模块 A：单集高能心电图</h4>
+          <small>双 Y 轴 + dataZoom，悬浮展示高频关键词</small>
+        </header>
+        <div class="module-grid-a">
+          <aside class="episode-sidebar">
+            <p>单集选择</p>
+            <div class="episode-list fixed-height-list">
+              <button
+                v-for="ep in episodes"
+                :key="ep.title + (ep.cid || '')"
+                :class="{ active: selectedCid === ep.cid }"
+                :disabled="!ep.cid"
+                @click="onEpisodeSelect(ep.cid || '')"
               >
-                <p class="comment-content">{{ c.content }}</p>
-                <div class="comment-meta">
-                  <span><i class="fas fa-thumbs-up me-1"></i>{{ c.likes }}</span>
-                  <span v-if="c.sentiment_score !== null" class="comment-score">
-                    情感 {{ (c.sentiment_score * 100).toFixed(0) }}%
-                  </span>
-                </div>
-              </div>
+                {{ ep.title }}
+              </button>
             </div>
+          </aside>
+          <div class="chart-wrap fixed-height-chart-lg">
+            <VChart :option="microTimelineOption" autoresize class="chart" />
           </div>
         </div>
-      </div>
+      </section>
+
+      <section class="module-card">
+        <header>
+          <h4>模块 B：受众情绪与内容词云画像</h4>
+          <small>词云随集数切换重组 + 情绪雷达图</small>
+        </header>
+        <div class="module-grid-b">
+          <div class="chart-wrap fixed-height-chart-lg">
+            <VChart :option="wordcloudOption" autoresize class="chart" />
+          </div>
+          <div class="chart-wrap fixed-height-chart-md">
+            <VChart :option="radarOption" autoresize class="chart" />
+          </div>
+        </div>
+      </section>
+
+      <section class="module-card">
+        <header>
+          <h4>模块 C：热门评论观点提取卡片</h4>
+          <small>基于高赞评论聚合，展示观点支持率</small>
+        </header>
+        <div class="insight-columns fixed-height-cards">
+          <article v-for="card in insightCards" :key="card.topic" class="insight-card">
+            <h5>{{ card.topic }}</h5>
+            <div class="support-row">
+              <span>支持率 {{ (card.support_rate * 100).toFixed(1) }}%</span>
+              <span>{{ card.comment_count }} 条评论</span>
+            </div>
+            <ul>
+              <li v-for="sample in card.samples" :key="sample">{{ sample }}</li>
+            </ul>
+          </article>
+          <div v-if="insightCards.length === 0" class="empty-hint">暂无观点卡片数据</div>
+        </div>
+      </section>
     </div>
 
-    <!-- 空状态 -->
     <div v-else class="empty-state">
-      <i class="fas fa-chart-area"></i>
       <h4>请先搜索一部番剧</h4>
-      <p>输入番剧名称并点击搜索，然后点击「生成报告」即可获得完整分析报告</p>
+      <p>搜索后将自动加载阶段四可视化分析模块。</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onUnmounted } from 'vue'
-import * as echarts from 'echarts'
-import type { ECharts } from 'echarts'
-import { searchAnimes, getAnimeDetail, getAnimeEpisodes } from '@/api/analytics'
-import type { AnimeDetailData } from '@/api/analytics'
+import { ref, shallowRef } from 'vue'
+import VChart from 'vue-echarts'
+import { use } from 'echarts/core'
+import { BarChart, LineChart, RadarChart } from 'echarts/charts'
 import {
-  generateInsight,
-  getSentimentTimeline,
-  getTopComments,
-} from '@/api/ai'
-import type { SentimentPoint, CommentItem } from '@/api/ai'
-import { getApiErrorMessage } from '@/utils/errorHandling'
+  DataZoomComponent,
+  GridComponent,
+  LegendComponent,
+  RadarComponent,
+  TooltipComponent,
+} from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import { WordCloudChart } from 'echarts-wordcloud'
+import {
+  getAnimeDetail,
+  getAnimeEpisodes,
+  getEpisodeTimeline,
+  getSeasonCharacters,
+  getSeasonInsightCards,
+  getSeasonWordcloud,
+  searchAnimes,
+} from '@/api/analytics'
+import type {
+  AnimeDetailData,
+  SeasonCharacterItem,
+  SeasonInsightCard,
+  SeasonWordcloudItem,
+} from '@/api/analytics'
+
+use([
+  CanvasRenderer,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  DataZoomComponent,
+  RadarComponent,
+  BarChart,
+  LineChart,
+  RadarChart,
+  WordCloudChart,
+])
 
 defineOptions({ name: 'ReportView' })
 
-// ─── 状态 ────────────────────────────────────────────────────────────────────
 const keyword = ref('')
 const statusMsg = ref('')
 const searching = ref(false)
-const generating = ref(false)
-const reportReady = ref(false)
-const generatedAt = ref('')
-const insightText = ref('')
 
 const animeData = ref<AnimeDetailData | null>(null)
-const episodes = ref<Array<{ title: string; views: number }>>([])
-const sentimentTimeline = ref<SentimentPoint[]>([])
-const topComments = ref<CommentItem[]>([])
+const episodes = ref<Array<{ title: string; cid?: string; views: number }>>([])
+const selectedCid = ref('')
 
-// ─── 图表 DOM 引用 ────────────────────────────────────────────────────────────
-const sentimentChartRef = ref<HTMLElement>()
-const viewsTrendChartRef = ref<HTMLElement>()
-let sentimentInstance: ECharts | null = null
-let viewsInstance: ECharts | null = null
-let sentimentObserver: ResizeObserver | null = null
-let viewsObserver: ResizeObserver | null = null
-const searchInputRef = ref<HTMLInputElement | null>(null)
+const microTimelineOption = shallowRef<Record<string, unknown>>({})
+const wordcloudOption = shallowRef<Record<string, unknown>>({})
+const radarOption = shallowRef<Record<string, unknown>>({})
+const insightCards = ref<SeasonInsightCard[]>([])
 
-// ─── 计算属性 ─────────────────────────────────────────────────────────────────
-const episodeViews = computed(() =>
-  episodes.value.map((e) => e.views || 0),
-)
-
-const kpiCards = computed(() => {
-  if (!animeData.value) return []
-  const fmt = (n: number | null | undefined) => {
-    const num = n ?? 0
-    if (!num) return '暂无'
-    if (num >= 1e8) return (num / 1e8).toFixed(1) + '亿'
-    if (num >= 1e4) return (num / 1e4).toFixed(1) + '万'
-    return String(num)
-  }
-  const d = animeData.value as AnimeDetailData & {
-    total_danmakus?: number
-    total_danmaku?: number
-  }
-  return [
-    { label: '总播放量', value: fmt(d.views), icon: 'fas fa-play', color: 'blue' },
-    { label: '追番人数', value: fmt(d.favorites), icon: 'fas fa-heart', color: 'pink' },
-    { label: '总弹幕数', value: fmt(d.total_danmakus ?? d.total_danmaku), icon: 'fas fa-comments', color: 'yellow' },
-    { label: '评分', value: d.rating ? String(d.rating) : '暂无', icon: 'fas fa-star', color: 'purple' },
-  ]
-})
-
-const formattedInsight = computed(() => {
-  if (!insightText.value) return ''
-  return renderMarkdown(insightText.value)
-})
-
-const escapeHtml = (text: string): string =>
-  text
+const escapeText = (value: unknown): string =>
+  String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 
-const sanitizeUrl = (url: string): string | null => {
-  try {
-    const parsed = new URL(url)
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-      return parsed.toString()
-    }
-  } catch {
-    // 忽略非法 URL，按普通文本渲染
-  }
-  return null
+const formatNumber = (n?: number | null) => {
+  const num = n ?? 0
+  if (num >= 1e8) return `${(num / 1e8).toFixed(1)}亿`
+  if (num >= 1e4) return `${(num / 1e4).toFixed(1)}万`
+  return String(num)
 }
 
-const renderInlineMarkdown = (text: string): string => {
-  const tokens: string[] = []
-  const addToken = (html: string) => {
-    const token = `\u0000${tokens.length}\u0000`
-    tokens.push(html)
-    return token
+const buildMicroTimelineOption = (timeline: Array<{ time_start: number; danmaku_count: number; avg_sentiment: number; top_keywords: string[] }>) => {
+  if (!timeline.length) {
+    return {
+      title: { text: '暂无单集时间线数据', left: 'center', top: 'middle', textStyle: { color: '#9ca3af', fontSize: 14 } },
+    }
   }
 
-  let working = text
+  const labels = timeline.map((item) => {
+    const min = Math.floor(item.time_start / 60)
+    const sec = item.time_start % 60
+    return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  })
 
-  working = working.replace(/`([^`]+?)`/g, (_, code: string) =>
-    addToken(`<code>${escapeHtml(code)}</code>`),
-  )
-
-  working = working.replace(
-    /\[([^\]]+?)\]\((https?:\/\/[^\s)]+)\)/g,
-    (full: string, label: string, rawUrl: string) => {
-      const safeUrl = sanitizeUrl(rawUrl)
-      if (!safeUrl) return full
-      return addToken(
-        `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`,
-      )
+  return {
+    animationDurationUpdate: 450,
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: Array<{ seriesName: string; value: number; data?: { keywords?: string[] } }>) => {
+        const bar = params.find((p) => p.seriesName === '弹幕密度')
+        const line = params.find((p) => p.seriesName === '情感值')
+        const keywords = (bar?.data?.keywords || []).slice(0, 3).map(escapeText).join('、') || '无'
+        return [
+          `弹幕：${bar?.value ?? 0}`,
+          `情感：${line?.value ?? 0}`,
+          `关键词：${keywords}`,
+        ].join('<br/>')
+      },
     },
-  )
-
-  working = escapeHtml(working)
-    .replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/__([^_\n]+?)__/g, '<strong>$1</strong>')
-    .replace(/(^|[^\*])\*([^*\n]+?)\*(?!\*)/g, '$1<em>$2</em>')
-    .replace(/(^|[^_])_([^_\n]+?)_(?!_)/g, '$1<em>$2</em>')
-
-  return working.replace(/\u0000(\d+)\u0000/g, (_, index: string) => tokens[Number(index)] || '')
+    legend: { top: 0 },
+    grid: { left: 56, right: 56, top: 36, bottom: 66 },
+    xAxis: { type: 'category', data: labels, axisLabel: { interval: 'auto' } },
+    yAxis: [
+      { type: 'value', name: '弹幕密度' },
+      { type: 'value', name: '情感值', min: -1, max: 1 },
+    ],
+    dataZoom: [
+      { type: 'inside', throttle: 50 },
+      { type: 'slider', height: 18, bottom: 16 },
+    ],
+    series: [
+      {
+        name: '弹幕密度',
+        type: 'bar',
+        large: true,
+        data: timeline.map((item) => ({ value: item.danmaku_count, keywords: item.top_keywords || [] })),
+        itemStyle: { color: '#6ea8fe' },
+      },
+      {
+        name: '情感值',
+        type: 'line',
+        yAxisIndex: 1,
+        smooth: true,
+        symbol: 'none',
+        data: timeline.map((item) => Number((item.avg_sentiment ?? 0).toFixed(4))),
+        lineStyle: { color: '#ef476f', width: 2 },
+      },
+    ],
+  }
 }
 
-const renderMarkdown = (text: string): string => {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n')
-  const html: string[] = []
-  let inUl = false
-  let inOl = false
+const buildWordcloudOption = (items: SeasonWordcloudItem[]) => ({
+  animationDurationUpdate: 450,
+  tooltip: {
+    formatter: (param: { data: { name: string; value: number } }) =>
+      `${escapeText(param.data.name)}：${param.data.value}`,
+  },
+  series: [
+    {
+      type: 'wordCloud',
+      shape: 'circle',
+      left: 'center',
+      top: 'center',
+      width: '100%',
+      height: '100%',
+      sizeRange: [12, 48],
+      rotationRange: [-45, 45],
+      gridSize: 8,
+      drawOutOfBound: false,
+      textStyle: {
+        color: () => {
+          const palette = ['#5B8FF9', '#5AD8A6', '#5D7092', '#F6BD16', '#E8684A', '#6DC8EC', '#9270CA']
+          return palette[Math.floor(Math.random() * palette.length)]
+        },
+      },
+      data: items.map((item) => ({ name: item.text, value: item.weight })),
+    },
+  ],
+})
 
-  const closeLists = () => {
-    if (inUl) {
-      html.push('</ul>')
-      inUl = false
-    }
-    if (inOl) {
-      html.push('</ol>')
-      inOl = false
-    }
+const radarDimensions = [
+  { label: '搞笑偏好', words: ['哈哈', '搞笑', '乐', '整活', '有趣'] },
+  { label: '剧情讨论', words: ['剧情', '设定', '反转', '伏笔', '节奏'] },
+  { label: '作画赞赏', words: ['作画', '画面', '镜头', '特效', '分镜'] },
+  { label: '配乐共鸣', words: ['配乐', '音乐', 'op', 'ed', '声优'] },
+  { label: '角色代入', words: ['角色', '主角', '人设', '成长', '关系'] },
+]
+
+const buildRadarOption = (wordItems: SeasonWordcloudItem[], characterItems: SeasonCharacterItem[]) => {
+  const weightMap = new Map(wordItems.map((item) => [item.text.toLowerCase(), item.weight]))
+  const maxWeight = Math.max(...wordItems.map((item) => item.weight), 1)
+
+  const values = radarDimensions.map((dim) => {
+    const hitWeight = dim.words.reduce((sum, word) => sum + (weightMap.get(word.toLowerCase()) || 0), 0)
+    return Math.min(100, Math.round((hitWeight / maxWeight) * 25))
+  })
+
+  if (characterItems.length > 0) {
+    values[4] = Math.min(100, values[4] + 20)
   }
 
-  for (const line of lines) {
-    if (!line.trim()) {
-      closeLists()
-      continue
-    }
-
-    const headingMatch = line.match(/^(#{1,6})\s*(.+)$/)
-    if (headingMatch) {
-      closeLists()
-      const level = headingMatch[1].length
-      html.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`)
-      continue
-    }
-
-    const ulMatch = line.match(/^\s*[-*+]\s+(.+)$/)
-    if (ulMatch) {
-      if (inOl) {
-        html.push('</ol>')
-        inOl = false
-      }
-      if (!inUl) {
-        html.push('<ul>')
-        inUl = true
-      }
-      html.push(`<li>${renderInlineMarkdown(ulMatch[1])}</li>`)
-      continue
-    }
-
-    const olMatch = line.match(/^\s*\d+\.\s+(.+)$/)
-    if (olMatch) {
-      if (inUl) {
-        html.push('</ul>')
-        inUl = false
-      }
-      if (!inOl) {
-        html.push('<ol>')
-        inOl = true
-      }
-      html.push(`<li>${renderInlineMarkdown(olMatch[1])}</li>`)
-      continue
-    }
-
-    closeLists()
-    html.push(`<p>${renderInlineMarkdown(line)}</p>`)
+  return {
+    tooltip: { trigger: 'item' },
+    radar: {
+      indicator: radarDimensions.map((dim) => ({ name: dim.label, max: 100 })),
+      radius: '63%',
+    },
+    series: [
+      {
+        type: 'radar',
+        data: [{
+          value: values,
+          name: '整体画像',
+          areaStyle: { color: 'rgba(91,143,249,0.25)' },
+          lineStyle: { color: '#5B8FF9' },
+        }],
+      },
+    ],
   }
-
-  closeLists()
-  return html.join('')
 }
 
-// ─── 方法 ─────────────────────────────────────────────────────────────────────
+const onEpisodeSelect = async (cid: string) => {
+  if (!animeData.value || !cid) return
+  selectedCid.value = cid
+
+  try {
+    const [timelineRes, wcRes] = await Promise.all([
+      getEpisodeTimeline(cid, { bin_size: 15, keyword_topk: 3 }),
+      getSeasonWordcloud(animeData.value.season_id, { cid, top_n: 100 }),
+    ])
+    microTimelineOption.value = buildMicroTimelineOption(timelineRes.data.timeline || [])
+    wordcloudOption.value = buildWordcloudOption(wcRes.data.items || [])
+  } catch {
+    microTimelineOption.value = buildMicroTimelineOption([])
+    wordcloudOption.value = buildWordcloudOption([])
+  }
+}
+
 const handleSearch = async () => {
   if (!keyword.value.trim()) {
     statusMsg.value = '请输入番剧名称'
     return
   }
+
   searching.value = true
   statusMsg.value = '搜索中…'
-  reportReady.value = false
-  insightText.value = ''
+
   try {
-    const res = await searchAnimes(keyword.value)
-    if (res.list && res.list.length > 0) {
-      const anime = res.list[0]
-      const detail = await getAnimeDetail(anime.season_id)
-      animeData.value = detail.data || anime as unknown as AnimeDetailData
-      statusMsg.value = `找到番剧：${anime.title}`
-
-      // 获取剧集
-      try {
-        const epRes = await getAnimeEpisodes(anime.season_id)
-        episodes.value = epRes.data || []
-      } catch {
-        episodes.value = []
-      }
-
-      // 尝试加载弹幕情感 & 评论
-      const [stRes, cmRes] = await Promise.allSettled([
-        getSentimentTimeline(anime.season_id),
-        getTopComments(anime.season_id),
-      ])
-      sentimentTimeline.value =
-        stRes.status === 'fulfilled' ? stRes.value.timeline || [] : []
-      topComments.value =
-        cmRes.status === 'fulfilled' ? cmRes.value.comments || [] : []
-
-      await nextTick()
-      renderCharts()
-    } else {
-      statusMsg.value = '未找到相关番剧'
-      // 清理图表与相关数据，避免持有已卸载 DOM 的引用
-      episodes.value = []
-      sentimentTimeline.value = []
-      topComments.value = []
+    const searchRes = await searchAnimes(keyword.value.trim())
+    if (!searchRes.list?.length) {
       animeData.value = null
+      episodes.value = []
+      statusMsg.value = '未找到相关番剧'
+      return
     }
+
+    const target = searchRes.list[0]
+    const detail = await getAnimeDetail(target.season_id)
+    animeData.value = detail.data || (target as AnimeDetailData)
+
+    const [epRes, seasonWordcloudRes, characterRes, cardsRes] = await Promise.allSettled([
+      getAnimeEpisodes(target.season_id),
+      getSeasonWordcloud(target.season_id, { top_n: 120 }),
+      getSeasonCharacters(target.season_id, { top_n: 8 }),
+      getSeasonInsightCards(target.season_id, { limit: 300, top_n: 8 }),
+    ])
+
+    episodes.value = epRes.status === 'fulfilled' ? (epRes.value.data || []) : []
+
+    const seasonWordItems = seasonWordcloudRes.status === 'fulfilled' ? (seasonWordcloudRes.value.data.items || []) : []
+    const characterItems = characterRes.status === 'fulfilled' ? (characterRes.value.data.items || []) : []
+    insightCards.value = cardsRes.status === 'fulfilled' ? (cardsRes.value.data || []) : []
+
+    radarOption.value = buildRadarOption(seasonWordItems, characterItems)
+
+    const initialCid = episodes.value.find((ep) => ep.cid)?.cid || ''
+    if (initialCid) {
+      await onEpisodeSelect(initialCid)
+    } else {
+      microTimelineOption.value = buildMicroTimelineOption([])
+      wordcloudOption.value = buildWordcloudOption(seasonWordItems)
+    }
+
+    statusMsg.value = `已加载：${animeData.value?.title || target.title}`
   } catch {
+    animeData.value = null
+    episodes.value = []
     statusMsg.value = '搜索失败，请重试'
   } finally {
     searching.value = false
   }
 }
-
-const generateReport = async () => {
-  if (!animeData.value) return
-  generating.value = true
-  insightText.value = ''
-  const d = animeData.value as AnimeDetailData & { total_danmakus?: number }
-  try {
-    const contextData = {
-      title: d.title,
-      rating: d.rating,
-      views: d.views,
-      favorites: d.favorites,
-      total_danmakus: d.total_danmakus,
-      sentiment_timeline: sentimentTimeline.value.slice(0, 12),
-      episode_count: episodes.value.length,
-    }
-    const res = await generateInsight({
-      data: contextData,
-      context_hint: d.title,
-    })
-    if (!res?.success) {
-      throw new Error('后端未返回成功状态')
-    }
-    insightText.value = res.insight || ''
-    generatedAt.value = new Date().toLocaleString('zh-CN')
-    reportReady.value = true
-  } catch (error: unknown) {
-    insightText.value = `洞察生成失败：${getApiErrorMessage(error, '请检查 AI 服务配置后重试。')}`
-    reportReady.value = true
-  } finally {
-    generating.value = false
-  }
-}
-
-const exportPDF = async () => {
-  // 动态导入，避免影响首屏加载
-  const html2pdf = (await import('html2pdf.js')).default
-  const element = document.getElementById('report-content')
-  if (!element) return
-  // 过滤掉文件系统不安全字符，防止非法文件名
-  const safeTitle = String(animeData.value?.title ?? 'report').replace(/[/\\:*?"<>|]/g, '_')
-  const opt = {
-    margin: 10,
-    filename: `${safeTitle}_分析报告.pdf`,
-    image: { type: 'jpeg' as const, quality: 0.95 },
-    html2canvas: { scale: 2, useCORS: true },
-    jsPDF: { unit: 'mm' as const, format: 'a4', orientation: 'portrait' as const },
-  }
-  html2pdf().set(opt).from(element).save()
-}
-
-const sentimentColor = (score: number | null): string => {
-  if (score === null) return '#ccc'
-  if (score >= 0.7) return '#4caf50'
-  if (score >= 0.5) return '#ffb74d'
-  return '#ef5350'
-}
-
-// ─── 图表渲染 ─────────────────────────────────────────────────────────────────
-const renderCharts = () => {
-  renderSentimentChart()
-  renderViewsChart()
-}
-
-const renderSentimentChart = () => {
-  // 始终先清理上一次渲染的实例和观察器，避免残留旧 DOM 引用
-  sentimentInstance?.dispose()
-  sentimentInstance = null
-  sentimentObserver?.disconnect()
-  sentimentObserver = null
-
-  if (!sentimentChartRef.value || sentimentTimeline.value.length === 0) return
-  sentimentInstance = echarts.init(sentimentChartRef.value)
-
-  const labels = sentimentTimeline.value.map((p) => `第${p.episode_number}集`)
-  const scores = sentimentTimeline.value.map((p) =>
-    p.avg_sentiment !== null ? parseFloat(p.avg_sentiment.toFixed(3)) : null,
-  )
-
-  sentimentInstance.setOption({
-    tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: labels },
-    yAxis: { type: 'value', min: 0, max: 1, name: '情感均分' },
-    series: [
-      {
-        name: '情感均分',
-        type: 'line',
-        data: scores,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 7,
-        lineStyle: { color: '#fa709a', width: 2.5 },
-        itemStyle: { color: '#fa709a' },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(250,112,154,0.3)' },
-            { offset: 1, color: 'rgba(250,112,154,0.03)' },
-          ]),
-        },
-        markLine: {
-          silent: true,
-          data: [{ yAxis: 0.5, name: '中性' }],
-          lineStyle: { type: 'dashed', color: '#aaa' },
-        },
-      },
-    ],
-    grid: { left: '3%', right: '4%', bottom: '10%', containLabel: true },
-  })
-
-  sentimentObserver = new ResizeObserver(() => sentimentInstance?.resize())
-  sentimentObserver.observe(sentimentChartRef.value)
-}
-
-const renderViewsChart = () => {
-  if (!viewsTrendChartRef.value || episodeViews.value.length === 0) return
-  viewsInstance?.dispose()
-  viewsObserver?.disconnect()
-  viewsInstance = echarts.init(viewsTrendChartRef.value)
-
-  const labels = episodes.value.map((_, i) => `第${i + 1}集`)
-  const fmt = (v: number) => {
-    if (v >= 1e8) return (v / 1e8).toFixed(1) + '亿'
-    if (v >= 1e4) return (v / 1e4).toFixed(1) + '万'
-    return String(v)
-  }
-
-  viewsInstance.setOption({
-    tooltip: {
-      trigger: 'axis',
-      formatter: (p: unknown) => {
-        const arr = p as Array<{ name: string; marker: string; value: number }>
-        return arr.map((d) => `${d.marker}${d.name}：${fmt(d.value)}`).join('<br/>')
-      },
-    },
-    xAxis: { type: 'category', data: labels },
-    yAxis: { type: 'value', axisLabel: { formatter: fmt } },
-    series: [
-      {
-        name: '播放量',
-        type: 'bar',
-        data: episodeViews.value,
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#4facfe' },
-            { offset: 1, color: '#00f2fe' },
-          ]),
-        },
-      },
-    ],
-    grid: { left: '3%', right: '4%', bottom: '10%', containLabel: true },
-  })
-
-  viewsObserver = new ResizeObserver(() => viewsInstance?.resize())
-  viewsObserver.observe(viewsTrendChartRef.value)
-}
-
-// ─── 生命周期 ─────────────────────────────────────────────────────────────────
-onUnmounted(() => {
-  sentimentObserver?.disconnect()
-  viewsObserver?.disconnect()
-  sentimentInstance?.dispose()
-  viewsInstance?.dispose()
-})
 </script>
 
 <style scoped>
@@ -587,283 +391,261 @@ onUnmounted(() => {
 
 .report-hero {
   text-align: center;
-  padding: 2rem 0 1rem;
+  margin-bottom: 1rem;
 }
 
 .report-hero h2 {
+  margin-bottom: 0.35rem;
   font-size: 1.8rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #5b8ff9, #7f56d9);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* ── 搜索区 ── */
-.report-search-group {
+.search-bar {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 0.65rem;
+  max-width: 760px;
+  margin: 0 auto;
 }
 
-.report-search-wrap {
+.search-bar input {
   flex: 1;
-  position: relative;
-  min-width: 200px;
+  border: 1px solid #dbe2ea;
+  border-radius: 10px;
+  padding: 0.65rem 0.8rem;
 }
 
-.report-search-icon {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #9ca3af;
-}
-
-.report-search-input {
-  width: 100%;
-  padding: 0.55rem 1rem 0.55rem 2.5rem;
-  border: 1.5px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.report-search-input:focus {
-  border-color: #667eea;
-}
-
-.report-search-btn,
-.report-gen-btn,
-.report-export-btn {
-  padding: 0.55rem 1.1rem;
+.search-bar button {
   border: none;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: opacity 0.2s;
+  border-radius: 10px;
+  background: #5b8ff9;
+  color: #fff;
+  padding: 0.65rem 1rem;
 }
 
-.report-search-btn { background: #667eea; color: #fff; }
-.report-gen-btn    { background: linear-gradient(135deg, #fa709a, #fee140); color: #fff; font-weight: 600; }
-.report-export-btn { background: #ef4444; color: #fff; }
-
-.report-search-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-.report-status-msg {
+.status-msg {
+  text-align: center;
   color: #6b7280;
-  font-size: 0.85rem;
+  margin: 0.65rem 0 1rem;
 }
 
-/* ── 报告封面 ── */
-.report-cover {
-  background: linear-gradient(135deg, #f8f9ff 0%, #fff 100%);
-  border-radius: 12px;
-  padding: 1.5rem;
-  border: 1px solid #e5e7eb;
-}
-
-.report-cover-img {
-  width: 80px;
-  height: 110px;
-  object-fit: cover;
-  border-radius: 6px;
-}
-
-.report-title {
-  font-size: 1.4rem;
-  font-weight: 700;
-  margin-bottom: 0.4rem;
-}
-
-.report-meta {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.4rem;
-}
-
-.meta-badge {
-  background: #f3f4f6;
-  color: #374151;
-  padding: 2px 10px;
-  border-radius: 20px;
-  font-size: 0.82rem;
-}
-
-.meta-badge.rating {
-  background: linear-gradient(135deg, #fad0c4 0%, #ffd1ff 100%);
-  color: #6b21a8;
-}
-
-.report-generated-at { font-size: 0.82rem; }
-
-/* ── KPI 卡片 ── */
-.kpi-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.2rem;
-  border-radius: 10px;
-  color: white;
-}
-
-.kpi-card.blue   { background: linear-gradient(135deg, #4facfe, #00f2fe); }
-.kpi-card.pink   { background: linear-gradient(135deg, #f093fb, #f5576c); }
-.kpi-card.yellow { background: linear-gradient(135deg, #43e97b, #38f9d7); }
-.kpi-card.purple { background: linear-gradient(135deg, #667eea, #764ba2); }
-
-.kpi-icon { font-size: 1.8rem; opacity: 0.9; }
-
-.kpi-content h5 { margin: 0; font-size: 0.85rem; opacity: 0.9; }
-
-.kpi-value { margin: 0; font-size: 1.4rem; font-weight: 700; }
-
-/* ── 风格统一卡片（复用 global） ── */
-.style-unified {
-  background: #fff;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  overflow: hidden;
-}
-
-.card-header-unified {
-  padding: 0.8rem 1.2rem;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-.card-header-unified h5 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-/* ── AI 洞察面板 ── */
-.insight-panel {
-  height: 100%;
-}
-
-.insight-loading,
-.insight-placeholder {
-  padding: 1.5rem;
-  color: #9ca3af;
-  font-size: 0.9rem;
-  display: flex;
-  align-items: center;
-}
-
-.insight-text {
-  padding: 1rem 1.2rem;
-  font-size: 0.9rem;
-  line-height: 1.7;
-  color: #374151;
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.insight-text :deep(h1),
-.insight-text :deep(h2),
-.insight-text :deep(h3),
-.insight-text :deep(h4),
-.insight-text :deep(h5),
-.insight-text :deep(h6) {
-  margin: 0.6rem 0 0.4rem;
-  font-weight: 700;
-  line-height: 1.4;
-}
-
-.insight-text :deep(p) {
-  margin: 0 0 0.5rem;
-}
-
-.insight-text :deep(ul),
-.insight-text :deep(ol) {
-  margin: 0 0 0.6rem;
-  padding-left: 1.2rem;
-}
-
-.insight-text :deep(li) {
-  margin: 0.2rem 0;
-}
-
-.insight-text :deep(code) {
-  background: #f3f4f6;
-  border-radius: 4px;
-  padding: 0.08rem 0.35rem;
-  font-size: 0.82rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-}
-
-.insight-text :deep(a) {
-  color: #4f46e5;
-  text-decoration: underline;
-}
-
-/* ── 图表占位 ── */
-.chart-placeholder {
-  height: 320px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  color: #9ca3af;
-  font-size: 2rem;
-}
-
-.chart-placeholder span {
-  font-size: 0.9rem;
-}
-
-/* ── 高赞评论 ── */
-.comments-grid {
-  padding: 1rem;
+.report-content {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.report-cover {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 1rem;
+  border: 1px solid #e7ecf3;
+  border-radius: 12px;
+  padding: 1rem;
+  background: #fff;
+}
+
+.report-cover img {
+  width: 90px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.tags {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.65rem;
+}
+
+.tags span {
+  background: #f4f6fb;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.kpi {
+  background: #f8fbff;
+  border: 1px solid #eaf1fb;
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+.module-card {
+  border: 1px solid #e7ecf3;
+  border-radius: 12px;
+  background: #fff;
+  padding: 0.9rem;
+}
+
+.module-card > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.8rem;
+}
+
+.module-card h4 {
+  margin: 0;
+  font-size: 1.06rem;
+}
+
+.module-card small {
+  color: #6b7280;
+}
+
+.module-grid-a {
+  display: grid;
+  grid-template-columns: 210px 1fr;
   gap: 0.8rem;
 }
 
-.comment-card {
-  background: #f9fafb;
-  border-left: 4px solid #ccc;
-  border-radius: 6px;
-  padding: 0.8rem;
+.module-grid-b {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 0.8rem;
 }
 
-.comment-content {
-  font-size: 0.85rem;
-  color: #374151;
-  margin-bottom: 0.4rem;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+.episode-sidebar {
+  border: 1px solid #edf1f6;
+  border-radius: 10px;
+  padding: 0.7rem;
+}
+
+.episode-sidebar p {
+  margin: 0 0 0.45rem;
+  font-weight: 600;
+}
+
+.episode-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.episode-list button {
+  border: 1px solid #dbe2ea;
+  background: #fff;
+  border-radius: 8px;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.84rem;
+}
+
+.episode-list button.active {
+  border-color: #5b8ff9;
+  background: #eef4ff;
+  color: #2455c3;
+}
+
+.chart-wrap {
+  border: 1px solid #edf1f6;
+  border-radius: 10px;
   overflow: hidden;
 }
 
-.comment-meta {
+.chart {
+  width: 100%;
+  height: 100%;
+}
+
+.fixed-height-chart-lg {
+  height: 380px;
+}
+
+.fixed-height-chart-md {
+  height: 320px;
+}
+
+.fixed-height-list {
+  height: 340px;
+  overflow: auto;
+}
+
+.insight-columns {
+  column-count: 3;
+  column-gap: 0.75rem;
+}
+
+.insight-card {
+  break-inside: avoid;
+  margin: 0 0 0.75rem;
+  border: 1px solid #edf1f6;
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: #fbfcff;
+}
+
+.insight-card h5 {
+  margin: 0 0 0.5rem;
+}
+
+.support-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.75rem;
-  color: #9ca3af;
+  color: #4b5563;
+  font-size: 0.8rem;
+  margin-bottom: 0.45rem;
 }
 
-.comment-score { color: #667eea; font-weight: 600; }
+.insight-card ul {
+  margin: 0;
+  padding-left: 1.05rem;
+}
 
-/* ── 空状态 ── */
+.insight-card li {
+  margin-bottom: 0.35rem;
+  color: #374151;
+  font-size: 0.84rem;
+}
+
+.fixed-height-cards {
+  min-height: 260px;
+}
+
+.empty-hint {
+  color: #9ca3af;
+  padding: 0.6rem;
+}
+
 .empty-state {
   text-align: center;
-  padding: 5rem 0;
+  padding: 3rem 0;
   color: #9ca3af;
 }
 
-.empty-state i {
-  font-size: 4rem;
-  margin-bottom: 1rem;
-  display: block;
+@media (max-width: 1100px) {
+  .module-grid-b {
+    grid-template-columns: 1fr;
+  }
+
+  .insight-columns {
+    column-count: 2;
+  }
 }
 
-.empty-state h4 { color: #6b7280; }
+@media (max-width: 900px) {
+  .module-grid-a {
+    grid-template-columns: 1fr;
+  }
+
+  .kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .insight-columns {
+    column-count: 1;
+  }
+}
 </style>

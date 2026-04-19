@@ -628,6 +628,7 @@ class AnalyticsService:
             return [
                 {
                     'title': ep.episode_title,
+                    'cid': ep.cid,
                     'views': ep.views or 0,
                     'peakTime': None,
                     'peakOnline': ep.online_viewers,
