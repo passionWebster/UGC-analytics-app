@@ -96,3 +96,78 @@ class DanmakuMongoRepository:
         except PyMongoError as exc:
             logger.warning("⚠️ 写入 MongoDB 失败 cid={}: {}", cid, exc)
             return False
+
+    def get_danmaku_by_cid(
+        self,
+        cid: str,
+        need_raw: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        """根据 cid 获取单集弹幕文档。"""
+        if not cid:
+            return None
+        collection = self._ensure_collection()
+        if collection is None:
+            return None
+        projection = None if need_raw else {"raw_sources": 0}
+        try:
+            return collection.find_one({"cid": str(cid)}, projection=projection)
+        except PyMongoError as exc:
+            logger.warning("⚠️ MongoDB 查询失败 cid={}: {}", cid, exc)
+            return None
+
+    def get_aggregated_timeline(self, cid: str, bin_seconds: int = 10) -> List[Dict[str, Any]]:
+        """按时间切片聚合单集弹幕密度与情感均值。"""
+        if not cid:
+            return []
+        collection = self._ensure_collection()
+        if collection is None:
+            return []
+        bucket = max(1, int(bin_seconds))
+        pipeline = [
+            {"$match": {"cid": str(cid)}},
+            {"$unwind": "$danmaku_items"},
+            {
+                "$addFields": {
+                    "_progress_seconds": {
+                        "$let": {
+                            "vars": {"p": "$danmaku_items.progress"},
+                            "in": {
+                                "$cond": [
+                                    {"$gt": ["$$p", 1000]},
+                                    {"$divide": ["$$p", 1000]},
+                                    "$$p",
+                                ]
+                            },
+                        }
+                    }
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "$multiply": [
+                            {"$floor": {"$divide": ["$_progress_seconds", bucket]}},
+                            bucket,
+                        ]
+                    },
+                    "count": {"$sum": 1},
+                    "avg_sentiment": {"$avg": "$danmaku_items.sentiment"},
+                }
+            },
+            {"$sort": {"_id": 1}},
+        ]
+        try:
+            results = list(collection.aggregate(pipeline))
+            return [
+                {
+                    "time": int(item.get("_id", 0) or 0),
+                    "count": int(item.get("count", 0) or 0),
+                    "avg_sentiment": (
+                        float(item["avg_sentiment"]) if item.get("avg_sentiment") is not None else None
+                    ),
+                }
+                for item in results
+            ]
+        except PyMongoError as exc:
+            logger.warning("⚠️ MongoDB 时间线聚合失败 cid={}: {}", cid, exc)
+            return []
