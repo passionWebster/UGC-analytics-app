@@ -13,7 +13,10 @@
         autocomplete="off"
         @keyup.enter="handleSearch"
       />
-      <button :disabled="searching" @click="handleSearch">{{ searching ? '搜索中…' : '搜索' }}</button>
+      <button class="search-btn" :disabled="searching || analyzing" @click="handleSearch">{{ searching ? '搜索中…' : '搜索' }}</button>
+      <button class="analyze-btn" :disabled="searching || analyzing || !animeData || !selectedCid" @click="handleAnalyze">
+        {{ analyzing ? '分析中…' : '一键分析' }}
+      </button>
     </div>
     <p v-if="statusMsg" class="status-msg">{{ statusMsg }}</p>
 
@@ -103,7 +106,7 @@
 
     <div v-else class="empty-state">
       <h4>请先搜索一部番剧</h4>
-      <p>搜索后将自动加载阶段四可视化分析模块。</p>
+      <p>搜索后请点击“一键分析”加载阶段四可视化分析模块。</p>
     </div>
   </div>
 </template>
@@ -134,6 +137,7 @@ defineOptions({ name: 'ReportView' })
 const keyword = ref('')
 const statusMsg = ref('')
 const searching = ref(false)
+const analyzing = ref(false)
 
 const animeData = ref<AnimeDetailData | null>(null)
 const episodes = ref<Array<{ title: string; cid?: string; views: number }>>([])
@@ -289,15 +293,32 @@ const buildRadarOption = (wordItems: SeasonWordcloudItem[], characterItems: Seas
   }
 }
 
-const onEpisodeSelect = async (cid: string) => {
-  if (!animeData.value || !cid) return
+const onEpisodeSelect = (cid: string) => {
+  if (!cid) return
   selectedCid.value = cid
+  if (animeData.value) {
+    statusMsg.value = `已选择剧集，点击“一键分析”开始：${animeData.value.title}`
+  }
+}
+
+const handleAnalyze = async () => {
+  if (!animeData.value) {
+    statusMsg.value = '请先搜索番剧'
+    return
+  }
+  const targetCid = selectedCid.value || episodes.value.find((ep) => ep.cid)?.cid || ''
+  if (!targetCid) {
+    statusMsg.value = '当前番剧暂无可分析剧集'
+    return
+  }
+  selectedCid.value = targetCid
+  analyzing.value = true
   statusMsg.value = '分析中…'
 
   try {
     const analysisRes = await getEpisodeAnalysisBundle(
       animeData.value.season_id,
-      cid,
+      targetCid,
       { bin_size: 15, keyword_topk: 3, top_n: 100 },
     )
     if (!analysisRes.success || analysisRes.pending) {
@@ -315,6 +336,8 @@ const onEpisodeSelect = async (cid: string) => {
     microTimelineOption.value = buildMicroTimelineOption([])
     wordcloudOption.value = buildWordcloudOption([])
     statusMsg.value = '分析失败，请稍后重试'
+  } finally {
+    analyzing.value = false
   }
 }
 
@@ -355,18 +378,17 @@ const handleSearch = async () => {
 
     radarOption.value = buildRadarOption(seasonWordItems, characterItems)
 
-    const initialCid = episodes.value.find((ep) => ep.cid)?.cid || ''
-    if (initialCid) {
-      await onEpisodeSelect(initialCid)
-    } else {
-      microTimelineOption.value = buildMicroTimelineOption([])
-      wordcloudOption.value = buildWordcloudOption(seasonWordItems)
-    }
+    selectedCid.value = episodes.value.find((ep) => ep.cid)?.cid || ''
+    microTimelineOption.value = buildMicroTimelineOption([])
+    wordcloudOption.value = buildWordcloudOption(seasonWordItems)
 
-    statusMsg.value = `已加载：${animeData.value?.title || target.title}`
+    statusMsg.value = selectedCid.value
+      ? `已加载：${animeData.value?.title || target.title}，点击“一键分析”生成单集图表`
+      : `已加载：${animeData.value?.title || target.title}（暂无可分析剧集）`
   } catch {
     animeData.value = null
     episodes.value = []
+    selectedCid.value = ''
     statusMsg.value = '搜索失败，请重试'
   } finally {
     searching.value = false
@@ -414,6 +436,18 @@ const handleSearch = async () => {
   background: #5b8ff9;
   color: #fff;
   padding: 0.65rem 1rem;
+}
+
+.search-bar .analyze-btn {
+  background: #7f56d9;
+}
+
+.search-bar .search-btn {
+  background: #5b8ff9;
+}
+
+.search-bar button:disabled {
+  opacity: 0.6;
 }
 
 .status-msg {
