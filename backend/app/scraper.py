@@ -1313,20 +1313,32 @@ class BilibiliBangumiCrawler:
         """根据发布时间推导历史弹幕索引查询月份（倒序）。"""
         now = datetime.now()
         max_months = max(1, settings.crawler_history_months)
-        if publish_ts:
-            start = datetime.fromtimestamp(int(publish_ts))
-        else:
-            start = now - timedelta(days=31 * (max_months - 1))
         cursor = datetime(now.year, now.month, 1)
-        start_month = datetime(start.year, start.month, 1)
+        start_month = (
+            datetime.fromtimestamp(int(publish_ts)).replace(day=1)
+            if publish_ts
+            else None
+        )
         months: List[str] = []
-        while cursor >= start_month and len(months) < max_months:
+        while len(months) < max_months:
+            if start_month and cursor < start_month:
+                break
             months.append(cursor.strftime("%Y-%m"))
             if cursor.month == 1:
                 cursor = datetime(cursor.year - 1, 12, 1)
             else:
                 cursor = datetime(cursor.year, cursor.month - 1, 1)
         return months
+
+    @staticmethod
+    def _make_danmaku_dedup_key(item: Dict[str, Any]) -> Tuple[str, Any, Any, str]:
+        """构造弹幕去重键：(content, video_time, timestamp, sender_hash)。"""
+        return (
+            str(item.get('content') or ''),
+            item.get('video_time'),
+            item.get('timestamp'),
+            str(item.get('sender_hash') or ''),
+        )
 
     def fetch_danmaku_xml(self, cid: str) -> List[Dict[str, Any]]:
         """
@@ -1691,12 +1703,7 @@ class BilibiliBangumiCrawler:
                     dedup: List[Dict] = []
                     for d in raw_danmaku:
                         # video_time 表示视频内时间点；timestamp 表示发送时间，两者共同用于精确去重。
-                        key = (
-                            str(d.get('content') or ''),
-                            d.get('video_time'),
-                            d.get('timestamp'),
-                            str(d.get('sender_hash') or ''),
-                        )
+                        key = self._make_danmaku_dedup_key(d)
                         if key in seen_keys:
                             continue
                         seen_keys.add(key)
