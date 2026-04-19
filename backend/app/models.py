@@ -145,6 +145,13 @@ class EpisodeStats(SQLModel, table=True):
     hourly_online_history: Optional[str] = Field(default=None, sa_column=Column(JSON))
     avg_sentiment_score: Optional[float] = Field(default=None)  # 单集弹幕平均情感分
     peak_danmaku_time: Optional[float] = Field(default=None)  # 单集弹幕峰值出现时间点（秒）
+    nlp_status: Optional[str] = Field(default=None, max_length=20)  # NLP 状态: pending/running/success/failed
+    nlp_sample_size: Optional[int] = Field(default=None)  # NLP 样本量（清洗后）
+    nlp_sentiment_score: Optional[float] = Field(default=None)  # NLP 情感均分（-1~1）
+    nlp_noise_ratio: Optional[float] = Field(default=None)  # 噪音占比（0~1）
+    nlp_keywords: Optional[str] = Field(default=None, sa_column=Column(JSON))  # 关键词列表
+    nlp_entities: Optional[str] = Field(default=None, sa_column=Column(JSON))  # 实体词频列表
+    nlp_processed_at: Optional[datetime] = Field(default=None)  # NLP 最近处理时间
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -294,6 +301,10 @@ class DanmuRecord(SQLModel, table=True):
     timestamp: Optional[datetime] = Field(default=None)  # 弹幕发送时间
     sender_hash: Optional[str] = Field(default=None, max_length=64)  # 匿名用户哈希
     sentiment_score: Optional[float] = Field(default=None)  # 情感得分（0=消极，1=积极）
+    cleaned_content: Optional[str] = Field(default=None, max_length=500)  # 清洗后文本
+    emotion_label: Optional[str] = Field(default=None, max_length=32)  # 特殊情绪标签（233/??? 等）
+    nlp_sentiment_score: Optional[float] = Field(default=None)  # 细粒度情感得分（-1~1）
+    nlp_processed: bool = Field(default=False)  # 是否已完成 NLP 处理
     created_at: datetime = Field(default_factory=datetime.now)
 
 

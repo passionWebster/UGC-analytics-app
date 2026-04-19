@@ -78,6 +78,20 @@ class Settings(BaseSettings):
     tmdb_image_base_w500: str = "https://image.tmdb.org/t/p/w500"  # Logo/海报使用 w500
     tmdb_request_timeout: int = 10  # 单次请求超时秒数
     tmdb_enrichment_concurrency: int = 5  # 后台富集任务并发上限
+
+    # Celery + Redis（异步 NLP 任务）
+    celery_enabled: bool = False
+    celery_broker_url: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+    celery_result_backend: str = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
+    celery_task_always_eager: bool = False
+    nlp_async_fallback_local: bool = True
+
+    # NLP 配置
+    nlp_jieba_user_dict_path: str = os.getenv("NLP_JIEBA_USER_DICT_PATH", "")
+    nlp_keyword_topk: int = 20
+    nlp_entity_topk: int = 20
+    nlp_entity_min_freq: int = 2
+    nlp_spam_repeat_threshold: int = 3
     
     class Config:
         env_file = ".env"

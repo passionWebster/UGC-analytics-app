@@ -90,10 +90,21 @@ _NEW_CRAWL_LOG_COLUMNS: list = [
 _NEW_EPISODE_STATS_COLUMNS: list = [
     ("avg_sentiment_score", "REAL"),
     ("peak_danmaku_time", "REAL"),
+    ("nlp_status", "VARCHAR(20)"),
+    ("nlp_sample_size", "INTEGER"),
+    ("nlp_sentiment_score", "REAL"),
+    ("nlp_noise_ratio", "REAL"),
+    ("nlp_keywords", "JSON"),
+    ("nlp_entities", "JSON"),
+    ("nlp_processed_at", "DATETIME"),
 ]
 
 _NEW_DANMU_RECORD_COLUMNS: list = [
     ("sender_hash", "VARCHAR(64)"),
+    ("cleaned_content", "VARCHAR(500)"),
+    ("emotion_label", "VARCHAR(32)"),
+    ("nlp_sentiment_score", "REAL"),
+    ("nlp_processed", "BOOLEAN DEFAULT 0"),
 ]
 
 _NEW_COMMENT_RECORD_COLUMNS: list = [

@@ -1771,6 +1771,7 @@ class BilibiliBangumiCrawler:
         mode: str = "incremental",
         retry_attempts: Optional[int] = None,
         sentiment_fn: Optional[Any] = None,
+        run_nlp_async: bool = True,
     ) -> Dict[str, Any]:
         """
         对指定番剧抓取弹幕和评论，进行初步清洗后写入数据库。
@@ -1985,6 +1986,26 @@ class BilibiliBangumiCrawler:
                     len(raw_comments),
                     len(c_records),
                 )
+                if run_nlp_async:
+                    try:
+                        from .tasks import enqueue_episode_nlp_task
+                        task_id = enqueue_episode_nlp_task(season_id=season_id, episode_number=ep_index)
+                        if task_id:
+                            logger.info(
+                                "  🧠 NLP 任务已派发 episode={} season_id={} task_id={}",
+                                ep_index,
+                                season_id,
+                                task_id,
+                            )
+                        else:
+                            logger.info("  🧠 NLP 本地执行完成 episode={} season_id={}", ep_index, season_id)
+                    except Exception as exc:
+                        logger.warning(
+                            "⚠️ NLP 任务触发失败 episode={} season_id={} error={}",
+                            ep_index,
+                            season_id,
+                            exc,
+                        )
                 self._throttle()
             except Exception as exc:
                 logger.exception(

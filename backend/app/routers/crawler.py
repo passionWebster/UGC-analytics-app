@@ -9,7 +9,6 @@ from sqlmodel import Session
 
 from ..database import get_session, engine
 from ..scraper import BilibiliBangumiCrawler
-from ..analytics import batch_score_danmaku, batch_score_comments
 
 
 router = APIRouter(prefix="/api/crawler", tags=["爬虫"])
@@ -125,12 +124,10 @@ def _scrape_and_score(
     retry_attempts: Optional[int],
     run_sentiment: bool,
 ) -> None:
-    """后台任务：抓取弹幕/评论，并可选地进行情感分析打分"""
-    from ..analytics import score_sentiment
+    """后台任务：抓取弹幕/评论，并触发异步 NLP 处理"""
 
     with Session(engine) as session:
         crawler = BilibiliBangumiCrawler(session)
-        sentiment_fn = score_sentiment if run_sentiment else None
         crawler.scrape_danmaku_and_comments(
             season_id=season_id,
             max_episodes=max_episodes,
@@ -139,12 +136,9 @@ def _scrape_and_score(
             nested_reply_limit=nested_reply_limit,
             mode=mode,
             retry_attempts=retry_attempts,
-            sentiment_fn=sentiment_fn,
+            sentiment_fn=None,
+            run_nlp_async=run_sentiment,
         )
-        # 对已有但未打分的历史记录补分
-        if run_sentiment:
-            batch_score_danmaku(session, season_id)
-            batch_score_comments(session, season_id)
 
 
 def _run_update_task() -> None:
