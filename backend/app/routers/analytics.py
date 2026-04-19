@@ -40,7 +40,6 @@ from ..schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analytics", tags=["数据分析"])
-v1_router = APIRouter(prefix="/api/v1/analytics", tags=["数据分析v1"])
 # 图片代理路由（路径为 /api/image_proxy，与 analytics 路由独立）
 proxy_router = APIRouter(prefix="/api", tags=["图片代理"])
 
@@ -114,7 +113,6 @@ def _parse_areas_param(areas: Optional[str]) -> Optional[List[str]]:
 
 
 @router.get("/episode/{cid}/timeline", response_model=dict)
-@v1_router.get("/episode/{cid}/timeline", response_model=dict)
 def get_episode_timeline(
     cid: str,
     bin_size: int = Query(10, ge=1, le=300, description="时间窗大小（秒）"),
@@ -140,7 +138,6 @@ def get_episode_timeline(
 
 
 @router.get("/season/{season_id}/wordcloud", response_model=dict)
-@v1_router.get("/season/{season_id}/wordcloud", response_model=dict)
 def get_season_wordcloud_api(
     season_id: int,
     cid: Optional[str] = Query(None, description="可选：按单集 CID 聚合词云"),
@@ -166,7 +163,6 @@ def get_season_wordcloud_api(
 
 
 @router.get("/season/{season_id}/characters", response_model=dict)
-@v1_router.get("/season/{season_id}/characters", response_model=dict)
 def get_season_characters_api(
     season_id: int,
     top_n: int = Query(8, ge=1, le=30, description="返回角色数量上限"),

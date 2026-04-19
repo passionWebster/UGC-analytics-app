@@ -103,7 +103,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 # 注册路由
 app.include_router(auth.router)
 app.include_router(analytics.router)
-app.include_router(analytics.v1_router)
 app.include_router(analytics.proxy_router)
 app.include_router(ai.router)
 app.include_router(crawler.router)
