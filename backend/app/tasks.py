@@ -101,17 +101,22 @@ def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[
                     content = str(raw_item.get("content", "")).strip()
                     item = dict(raw_item)
                     if content:
-                        nlp_item = processed[processed_idx] if processed_idx < len(processed) else {}
-                        processed_idx += 1
+                        nlp_item = {}
+                        if processed_idx < len(processed):
+                            nlp_item = processed[processed_idx]
+                            processed_idx += 1
                         item["cleaned_content"] = nlp_item.get("cleaned_text")
                         item["emotion_label"] = nlp_item.get("emotion_label")
                         item["nlp_sentiment_score"] = nlp_item.get("sentiment_score")
                     enriched_items.append(item)
+                resolved_bvid = ep.bvid if ep else None
+                if not resolved_bvid and isinstance(mongo_doc, dict):
+                    resolved_bvid = mongo_doc.get("bvid")
                 _mongo_repo.upsert_episode_danmaku(
                     cid=str(cid_candidate or ""),
                     season_id=season_id,
                     episode_number=episode_number,
-                    bvid=(ep.bvid if ep else None) or (mongo_doc.get("bvid") if isinstance(mongo_doc, dict) else None),
+                    bvid=resolved_bvid,
                     danmaku_items=enriched_items,
                 )
 

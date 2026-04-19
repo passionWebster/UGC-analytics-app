@@ -53,6 +53,7 @@ _STABLE_DATA_DAYS = 7
 _ANALYTICS_CACHE: TTLCache = TTLCache(maxsize=512, ttl=3600)
 _ANALYTICS_CACHE_LOCK = threading.RLock()
 _MONGO_DANMAKU_REPO = DanmakuMongoRepository()
+_MONGO_SENTIMENT_KEYS = ("nlp_sentiment_score", "sentiment_score", "sentiment")
 _RECENT_EPISODE_DAYS = 30
 _FROZEN_EPISODE_DAYS = 180
 
@@ -197,6 +198,12 @@ def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool
 
 
 def _episode_needs_nlp_refresh(session: Session, target_ep: EpisodeStats, cid: str, season_id: int) -> bool:
+    """
+    判断单集是否需要补跑 NLP：
+    1) EpisodeStats 尚未成功处理或没有处理时间；
+    2) Mongo 弹幕存在但逐条无情感字段；
+    3) Mongo 不可用时，SQLite 也不存在可用情感字段。
+    """
     if target_ep.nlp_status != "success" or target_ep.nlp_processed_at is None:
         return True
     mongo_doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(cid)
@@ -204,10 +211,11 @@ def _episode_needs_nlp_refresh(session: Session, target_ep: EpisodeStats, cid: s
         items = [item for item in mongo_doc.get("danmaku_items", []) if isinstance(item, dict)]
         if not items:
             return True
-        for item in items:
-            if item.get("nlp_sentiment_score") is not None or item.get("sentiment_score") is not None or item.get("sentiment") is not None:
-                return False
-        return True
+        has_sentiment = any(
+            any(item.get(key) is not None for key in _MONGO_SENTIMENT_KEYS)
+            for item in items
+        )
+        return not has_sentiment
     sqlite_sentiment_count = session.exec(
         sql_select(sa_func.count(DanmuRecord.id)).where(
             DanmuRecord.season_id == season_id,
@@ -219,15 +227,16 @@ def _episode_needs_nlp_refresh(session: Session, target_ep: EpisodeStats, cid: s
 
 
 def _resolve_episode_number(session: Session, target_ep: EpisodeStats) -> int:
-    episodes = session.exec(
-        sql_select(EpisodeStats)
-        .where(EpisodeStats.season_id == target_ep.season_id)
-        .order_by(EpisodeStats.id)
-    ).all()
-    for idx, item in enumerate(episodes, start=1):
-        if item.id == target_ep.id:
-            return idx
-    return 1
+    """
+    通过统计同 season 中 id 小于等于当前集的记录数，得到该集顺序号（从 1 开始）。
+    """
+    count_value = session.exec(
+        sql_select(sa_func.count(EpisodeStats.id)).where(
+            EpisodeStats.season_id == target_ep.season_id,
+            EpisodeStats.id <= target_ep.id,
+        )
+    ).one()
+    return max(1, int(count_value))
 
 
 def _upsert_episode_analysis_cache(
