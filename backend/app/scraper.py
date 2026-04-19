@@ -1367,20 +1367,182 @@ class BilibiliBangumiCrawler:
             logger.exception("❌ 获取当前弹幕失败 cid={}: {}", cid, exc)
         return []
 
-    def fetch_danmaku_history_xml(self, cid: str, *, publish_ts: Optional[int] = None) -> List[Dict[str, Any]]:
+    @staticmethod
+    def _read_proto_varint(buf: bytes, start: int) -> Tuple[Optional[int], int]:
+        """读取 protobuf varint，返回 (value, next_offset)。"""
+        value = 0
+        shift = 0
+        offset = start
+        while offset < len(buf):
+            byte = buf[offset]
+            value |= (byte & 0x7F) << shift
+            offset += 1
+            if (byte & 0x80) == 0:
+                return value, offset
+            shift += 7
+            if shift > 63:
+                return None, offset
+        return None, offset
+
+    def _parse_danmaku_seg_protobuf(
+        self,
+        *,
+        cid: str,
+        payload: bytes,
+        source: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        解析 DmSegMobileReply protobuf（二进制）为统一弹幕字段。
+        仅提取当前入库所需字段，忽略未知字段，保证向后兼容。
+        """
+        items: List[Dict[str, Any]] = []
+        offset = 0
+        while offset < len(payload):
+            tag, offset = self._read_proto_varint(payload, offset)
+            if tag is None:
+                break
+            field_no = tag >> 3
+            wire_type = tag & 0x7
+
+            if wire_type == 2:
+                size, offset = self._read_proto_varint(payload, offset)
+                if size is None or offset + size > len(payload):
+                    break
+                chunk = payload[offset: offset + size]
+                offset += size
+                # DmSegMobileReply.elem -> field_no=1, length-delimited message
+                if field_no != 1:
+                    continue
+                elem_values: Dict[int, Any] = {}
+                elem_offset = 0
+                while elem_offset < len(chunk):
+                    elem_tag, elem_offset = self._read_proto_varint(chunk, elem_offset)
+                    if elem_tag is None:
+                        break
+                    elem_field_no = elem_tag >> 3
+                    elem_wire_type = elem_tag & 0x7
+                    if elem_wire_type == 0:
+                        raw, elem_offset = self._read_proto_varint(chunk, elem_offset)
+                        if raw is None:
+                            break
+                        elem_values[elem_field_no] = raw
+                    elif elem_wire_type == 2:
+                        l, elem_offset = self._read_proto_varint(chunk, elem_offset)
+                        if l is None or elem_offset + l > len(chunk):
+                            break
+                        raw_bytes = chunk[elem_offset: elem_offset + l]
+                        elem_offset += l
+                        elem_values[elem_field_no] = raw_bytes
+                    elif elem_wire_type == 5:
+                        if elem_offset + 4 > len(chunk):
+                            break
+                        elem_offset += 4
+                    elif elem_wire_type == 1:
+                        if elem_offset + 8 > len(chunk):
+                            break
+                        elem_offset += 8
+                    else:
+                        break
+
+                content_raw = elem_values.get(7, b"")
+                content = (
+                    content_raw.decode("utf-8", errors="ignore").strip()
+                    if isinstance(content_raw, (bytes, bytearray))
+                    else str(content_raw or "").strip()
+                )
+                if not content:
+                    continue
+                progress_ms = int(elem_values.get(2, 0) or 0)
+                ctime_ts = int(elem_values.get(8, 0) or 0)
+                sender_raw = elem_values.get(6, b"")
+                sender_hash = (
+                    sender_raw.decode("utf-8", errors="ignore")
+                    if isinstance(sender_raw, (bytes, bytearray))
+                    else str(sender_raw or "")
+                )
+                id_str_raw = elem_values.get(12, b"")
+                dmid = (
+                    id_str_raw.decode("utf-8", errors="ignore")
+                    if isinstance(id_str_raw, (bytes, bytearray))
+                    else str(id_str_raw or "")
+                ) or str(elem_values.get(1, "") or "")
+                ctime = datetime.fromtimestamp(ctime_ts) if ctime_ts else None
+                items.append(
+                    {
+                        "content": content,
+                        "video_time": (progress_ms / 1000.0) if progress_ms > 0 else 0.0,
+                        "progress": progress_ms,
+                        "timestamp": ctime,
+                        "ctime": ctime,
+                        "sender_hash": sender_hash,
+                        "mode": int(elem_values.get(3, 0) or 0) or None,
+                        "font_size": int(elem_values.get(4, 0) or 0) or None,
+                        "color": int(elem_values.get(5, 0) or 0) or None,
+                        "pool": int(elem_values.get(11, 0) or 0) or None,
+                        "dmid": dmid or None,
+                        "attrs_raw": source,
+                    }
+                )
+            elif wire_type == 0:
+                _, offset = self._read_proto_varint(payload, offset)
+            elif wire_type == 5:
+                offset += 4
+            elif wire_type == 1:
+                offset += 8
+            else:
+                break
+        return items
+
+    def _fetch_danmaku_history_proto_for_date(self, cid: str, date_str: str) -> List[Dict[str, Any]]:
+        """抓取并解析单日历史弹幕 protobuf。"""
+        url = "https://api.bilibili.com/x/v2/dm/web/history/seg.so"
+        resp = self._request_get(
+            url,
+            params={"type": 1, "oid": str(cid), "date": date_str},
+            timeout=settings.bilibili_request_timeout,
+        )
+        if resp is None:
+            logger.warning("⚠️ 历史弹幕 protobuf 请求失败 cid={} date={}", cid, date_str)
+            return []
+        body = resp.content or b""
+        if not body:
+            logger.warning("⚠️ 历史弹幕 protobuf 响应为空 cid={} date={}", cid, date_str)
+            return []
+        if body.lstrip().startswith(b"{"):
+            try:
+                err = resp.json()
+                logger.warning(
+                    "⚠️ 历史弹幕 protobuf 接口返回错误 cid={} date={} code={} message={}",
+                    cid,
+                    date_str,
+                    err.get("code"),
+                    err.get("message"),
+                )
+            except Exception:
+                logger.warning("⚠️ 历史弹幕 protobuf 接口返回非二进制内容 cid={} date={}", cid, date_str)
+            return []
+        return self._parse_danmaku_seg_protobuf(
+            cid=cid,
+            payload=body,
+            source=f"history-proto:{date_str}",
+        )
+
+    def fetch_danmaku_history(self, cid: str, *, publish_ts: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         抓取历史弹幕（需要 SESSDATA）。
 
-        通过 history/index 获取可用日期，再逐日抓取 XML。
+        通过 history/index 获取可用日期，再逐日抓取 protobuf。
         """
         if not (settings.bilibili_sessdata or "").strip():
             return []
 
         index_url = "https://api.bilibili.com/x/v2/dm/history/index"
-        history_url = "https://api.bilibili.com/x/v2/dm/history"
         all_dates: List[str] = []
+        months = self._iter_history_months(publish_ts)
+        logger.info("🗓️ 开始抓取历史弹幕日期索引 cid={} months={}", cid, len(months))
 
-        for month in self._iter_history_months(publish_ts):
+        for idx, month in enumerate(months, start=1):
+            logger.info("  📅 索引进度 cid={} month={}/{} ({})", cid, idx, len(months), month)
             resp = self._request_get(
                 index_url,
                 params={"type": 1, "oid": str(cid), "month": month},
@@ -1409,49 +1571,38 @@ class BilibiliBangumiCrawler:
                 continue
             day_list = payload.get("data") or []
             all_dates.extend([str(d) for d in day_list if d])
+            logger.info(
+                "  ✅ 索引完成 cid={} month={} days={} cumulative_days={}",
+                cid,
+                month,
+                len(day_list),
+                len(all_dates),
+            )
 
         if not all_dates:
+            logger.info("🕰️ 历史弹幕索引为空 cid={}", cid)
             return []
 
         history_items: List[Dict[str, Any]] = []
-        processed_dates: Set[str] = set()
-        for date_str in all_dates:
-            if date_str in processed_dates:
-                continue
-            processed_dates.add(date_str)
-            resp = self._request_get(
-                history_url,
-                params={"type": 1, "oid": str(cid), "date": date_str},
-                timeout=settings.bilibili_request_timeout,
+        dedup_dates = list(dict.fromkeys(all_dates))
+        logger.info("🕰️ 开始抓取历史弹幕数据 cid={} dates={}", cid, len(dedup_dates))
+        for idx, date_str in enumerate(dedup_dates, start=1):
+            logger.info("  📥 历史弹幕进度 cid={} date={}/{} ({})", cid, idx, len(dedup_dates), date_str)
+            day_items = self._fetch_danmaku_history_proto_for_date(cid, date_str)
+            history_items.extend(day_items)
+            logger.info(
+                "    ✅ 单日完成 cid={} date={} items={} cumulative_items={}",
+                cid,
+                date_str,
+                len(day_items),
+                len(history_items),
             )
-            if resp is None:
-                logger.warning("⚠️ 历史弹幕抓取失败 cid={} date={}", cid, date_str)
-                continue
-            resp.encoding = "utf-8"
-            text = (resp.text or "").strip()
-            # 部分失败场景会返回 JSON 错误而不是 XML
-            if text.startswith("{"):
-                try:
-                    err = resp.json()
-                    logger.warning(
-                        "⚠️ 历史弹幕接口返回错误 cid={} date={} code={} message={}",
-                        cid,
-                        date_str,
-                        err.get("code"),
-                        err.get("message"),
-                    )
-                except Exception:
-                    logger.warning("⚠️ 历史弹幕接口返回非 XML 内容 cid={} date={}", cid, date_str)
-                continue
-            history_items.extend(
-                self._parse_danmaku_xml_payload(
-                    cid=cid,
-                    xml_text=text,
-                    source=f"history:{date_str}",
-                )
-            )
-        logger.info("🕰️ 历史弹幕抓取完成 cid={} dates={} items={}", cid, len(processed_dates), len(history_items))
+        logger.info("🕰️ 历史弹幕抓取完成 cid={} dates={} items={}", cid, len(dedup_dates), len(history_items))
         return history_items
+
+    def fetch_danmaku_history_xml(self, cid: str, *, publish_ts: Optional[int] = None) -> List[Dict[str, Any]]:
+        """兼容旧调用：历史弹幕抓取已迁移为 protobuf 接口实现。"""
+        return self.fetch_danmaku_history(cid, publish_ts=publish_ts)
 
     def fetch_comment_replies(
         self,
@@ -1696,7 +1847,7 @@ class BilibiliBangumiCrawler:
                 # ── 弹幕 ───────────────────────────────────────────────────
                 if ep.cid:
                     current_danmaku = self.fetch_danmaku_xml(ep.cid)
-                    history_danmaku = self.fetch_danmaku_history_xml(ep.cid, publish_ts=pubdate_ts)
+                    history_danmaku = self.fetch_danmaku_history(ep.cid, publish_ts=pubdate_ts)
                     raw_danmaku = current_danmaku + history_danmaku
 
                     # 去重：同一集中仅移除完全重复的弹幕（文本+时间+发送者）
