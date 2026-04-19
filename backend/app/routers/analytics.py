@@ -7,21 +7,34 @@ import json
 import logging
 import os
 import re
+import threading
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from urllib.parse import urlparse
 import asyncio
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from cachetools import TTLCache
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select as sql_select
+from sqlalchemy import func as sa_func
 
+from ..analytics import (
+    get_comment_insight_cards,
+    get_episode_timeline_bins,
+    get_season_character_trends,
+    get_season_wordcloud,
+)
 from ..auth import get_current_user
-from ..database import get_session
+from ..database import get_session, engine
 from ..crud import AnalyticsService
-from ..models import Anime, TmdbAnimeInfo, User
+from ..models import Anime, EpisodeStats, TmdbAnimeInfo, User, EpisodeAnalysisCache, DanmuRecord
+from ..mongodb import DanmakuMongoRepository
 from ..schemas import (
+    EpisodeTimelineResponse,
+    SeasonWordcloudResponse,
+    SeasonCharacterTrendsResponse,
     EpisodeBehaviorAnalysisResponse,
     LifecycleGrowthResponse,
     CompetitiveLandscapeResponse,
@@ -34,6 +47,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analytics", tags=["数据分析"])
 # 图片代理路由（路径为 /api/image_proxy，与 analytics 路由独立）
 proxy_router = APIRouter(prefix="/api", tags=["图片代理"])
+
+_STABLE_DATA_DAYS = 7
+_ANALYTICS_CACHE: TTLCache = TTLCache(maxsize=512, ttl=3600)
+_ANALYTICS_CACHE_LOCK = threading.RLock()
+_MONGO_DANMAKU_REPO = DanmakuMongoRepository()
+_RECENT_EPISODE_DAYS = 30
+_FROZEN_EPISODE_DAYS = 180
 
 # 封面图片本地缓存目录
 _COVER_CACHE_DIR = os.path.join(
@@ -102,6 +122,425 @@ def _parse_areas_param(areas: Optional[str]) -> Optional[List[str]]:
         allowed_text = "、".join(sorted(allowed_values))
         raise HTTPException(status_code=400, detail=f"非法的 areas 参数，仅允许：{allowed_text}")
     return items
+
+
+def _is_dataset_stable(
+    session: Session,
+    season_id: Optional[int] = None,
+    cid: Optional[str] = None,
+) -> bool:
+    """
+    判断数据是否超过稳定窗口（默认 7 天），稳定后才启用聚合缓存。
+    """
+    if season_id is None and cid is None:
+        return False
+
+    query = sql_select(sa_func.max(EpisodeStats.updated_at))
+    if season_id is not None:
+        query = query.where(EpisodeStats.season_id == season_id)
+    if cid:
+        query = query.where(EpisodeStats.cid == cid)
+
+    latest_updated = session.exec(query).first()
+    if latest_updated is None:
+        return False
+    return latest_updated <= (datetime.now() - timedelta(days=_STABLE_DATA_DAYS))
+
+
+def _read_cache(cache_key: str):
+    with _ANALYTICS_CACHE_LOCK:
+        return _ANALYTICS_CACHE.get(cache_key)
+
+
+def _write_cache(cache_key: str, payload: dict) -> None:
+    with _ANALYTICS_CACHE_LOCK:
+        _ANALYTICS_CACHE[cache_key] = payload
+
+
+def _parse_release_date_to_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y-%m", "%Y"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _get_episode_publish_anchor(
+    session: Session,
+    target_ep: EpisodeStats,
+) -> datetime:
+    anime = session.exec(sql_select(Anime).where(Anime.season_id == target_ep.season_id)).first()
+    release_dt = _parse_release_date_to_datetime(anime.release_date if anime else None)
+    if release_dt:
+        return release_dt
+    return target_ep.updated_at or datetime.now()
+
+
+def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool:
+    mongo_doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(cid)
+    if mongo_doc and isinstance(mongo_doc.get("danmaku_items"), list) and mongo_doc.get("danmaku_items"):
+        return True
+    sqlite_count = session.exec(
+        sql_select(sa_func.count(DanmuRecord.id)).where(
+            DanmuRecord.season_id == season_id,
+            DanmuRecord.cid == cid,
+        )
+    ).one()
+    return bool(sqlite_count and int(sqlite_count) > 0)
+
+
+def _upsert_episode_analysis_cache(
+    session: Session,
+    *,
+    season_id: int,
+    cid: str,
+    episode_number: int,
+    timeline_data: dict,
+    wordcloud_data: dict,
+) -> EpisodeAnalysisCache:
+    row = session.exec(
+        sql_select(EpisodeAnalysisCache).where(EpisodeAnalysisCache.cid == cid)
+    ).first()
+    now = datetime.now()
+    if row is None:
+        row = EpisodeAnalysisCache(
+            season_id=season_id,
+            cid=cid,
+            episode_number=episode_number,
+            timeline_payload=json.dumps(timeline_data, ensure_ascii=False),
+            wordcloud_payload=json.dumps(wordcloud_data, ensure_ascii=False),
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(row)
+    else:
+        row.season_id = season_id
+        row.episode_number = episode_number
+        row.timeline_payload = json.dumps(timeline_data, ensure_ascii=False)
+        row.wordcloud_payload = json.dumps(wordcloud_data, ensure_ascii=False)
+        row.updated_at = now
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def _load_episode_analysis_cache_payload(row: EpisodeAnalysisCache) -> dict:
+    try:
+        timeline_data = json.loads(row.timeline_payload or "{}")
+    except Exception:
+        timeline_data = {}
+    try:
+        wordcloud_data = json.loads(row.wordcloud_payload or "{}")
+    except Exception:
+        wordcloud_data = {}
+    return {
+        "timeline": timeline_data,
+        "wordcloud": wordcloud_data,
+    }
+
+
+def _refresh_episode_analysis_cache(
+    season_id: int,
+    cid: str,
+    bin_size: int,
+    keyword_topk: int,
+    top_n: int,
+) -> None:
+    with Session(engine) as bg_session:
+        try:
+            timeline_data = get_episode_timeline_bins(
+                session=bg_session,
+                cid=cid,
+                bin_size=bin_size,
+                keyword_topk=keyword_topk,
+            )
+            wordcloud_data = get_season_wordcloud(
+                session=bg_session,
+                season_id=season_id,
+                cid=cid,
+                top_n=top_n,
+            )
+            _upsert_episode_analysis_cache(
+                bg_session,
+                season_id=season_id,
+                cid=cid,
+                episode_number=int(timeline_data.get("episode_number", 1)),
+                timeline_data=timeline_data,
+                wordcloud_data=wordcloud_data,
+            )
+            logger.info("✅ episode analysis cache refreshed cid={} season_id={}", cid, season_id)
+        except Exception as exc:
+            logger.warning("⚠️ episode analysis cache refresh failed cid={} season_id={} err={}", cid, season_id, exc)
+
+
+def _trigger_danmaku_scrape_for_episode(
+    season_id: int,
+    cid: str,
+) -> None:
+    from ..scraper import BilibiliBangumiCrawler
+
+    with Session(engine) as bg_session:
+        try:
+            episodes = bg_session.exec(
+                sql_select(EpisodeStats)
+                .where(EpisodeStats.season_id == season_id)
+                .order_by(EpisodeStats.id)
+            ).all()
+            if not episodes:
+                return
+            target_index = next((idx for idx, item in enumerate(episodes, start=1) if str(item.cid or "") == cid), None)
+            if target_index is None:
+                logger.warning("⚠️ skip background scrape: cid not found season_id={} cid={}", season_id, cid)
+                return
+            crawler = BilibiliBangumiCrawler(bg_session)
+            crawler.scrape_danmaku_and_comments(
+                season_id=season_id,
+                max_episodes=target_index,
+                comment_limit=50,
+                include_comment_replies=True,
+                nested_reply_limit=20,
+                mode="incremental",
+                sentiment_fn=None,
+                run_nlp_async=True,
+            )
+            logger.info("✅ background danmaku scrape triggered season_id={} target_episode={}", season_id, target_index)
+        except Exception as exc:
+            logger.warning("⚠️ background danmaku scrape failed season_id={} cid={} err={}", season_id, cid, exc)
+
+@router.get("/episode/{cid}/timeline", response_model=dict)
+def get_episode_timeline(
+    cid: str,
+    bin_size: int = Query(10, ge=1, le=300, description="时间窗大小（秒）"),
+    keyword_topk: int = Query(5, ge=1, le=20, description="每个切片返回关键词数量"),
+    session: Session = Depends(get_session),
+):
+    """
+    获取单集按时间窗切片后的弹幕聚合数据。
+    """
+    cache_key = f"episode_timeline:{cid}:bin={bin_size}:topk={keyword_topk}"
+    cache_enabled = _is_dataset_stable(session=session, cid=cid)
+    if cache_enabled:
+        cached = _read_cache(cache_key)
+        if cached is not None:
+            return cached
+
+    try:
+        data = get_episode_timeline_bins(
+            session=session,
+            cid=cid,
+            bin_size=bin_size,
+            keyword_topk=keyword_topk,
+        )
+    except ValueError as exc:
+        if str(exc) == "episode_not_found":
+            raise HTTPException(status_code=404, detail="未找到对应 CID 的剧集数据")
+        raise
+    payload = {"success": True, "data": EpisodeTimelineResponse.model_validate(data)}
+    if cache_enabled:
+        _write_cache(cache_key, payload)
+    return payload
+
+
+@router.get("/season/{season_id}/episode/{cid}/analysis", response_model=dict)
+def get_episode_analysis_with_cache(
+    season_id: int,
+    cid: str,
+    background_tasks: BackgroundTasks,
+    bin_size: int = Query(10, ge=1, le=300, description="时间窗大小（秒）"),
+    keyword_topk: int = Query(5, ge=1, le=20, description="每个切片返回关键词数量"),
+    top_n: int = Query(120, ge=10, le=500, description="词云词条数量上限"),
+    session: Session = Depends(get_session),
+):
+    """
+    单集分析统一入口：优先返回 SQLite 缓存，必要时刷新缓存；无源数据时触发抓取。
+    """
+    target_ep = session.exec(
+        sql_select(EpisodeStats).where(
+            EpisodeStats.season_id == season_id,
+            EpisodeStats.cid == cid,
+        )
+    ).first()
+    if not target_ep:
+        raise HTTPException(status_code=404, detail="未找到对应剧集")
+
+    cache_row = session.exec(
+        sql_select(EpisodeAnalysisCache).where(EpisodeAnalysisCache.cid == cid)
+    ).first()
+    publish_anchor = _get_episode_publish_anchor(session, target_ep)
+    age_days = max(0, (datetime.now() - publish_anchor).days)
+    is_recent = age_days <= _RECENT_EPISODE_DAYS
+    is_frozen = age_days >= _FROZEN_EPISODE_DAYS
+
+    if cache_row is not None:
+        refresh_scheduled = False
+        if is_recent:
+            background_tasks.add_task(
+                _refresh_episode_analysis_cache,
+                season_id,
+                cid,
+                bin_size,
+                keyword_topk,
+                top_n,
+            )
+            refresh_scheduled = True
+        elif not is_frozen and (datetime.now() - cache_row.updated_at) > timedelta(hours=24):
+            background_tasks.add_task(
+                _refresh_episode_analysis_cache,
+                season_id,
+                cid,
+                bin_size,
+                keyword_topk,
+                top_n,
+            )
+            refresh_scheduled = True
+        return {
+            "success": True,
+            "cached": True,
+            "refresh_scheduled": refresh_scheduled,
+            "age_days": age_days,
+            "data": _load_episode_analysis_cache_payload(cache_row),
+        }
+
+    if not _has_source_danmaku_data(session, cid, season_id):
+        background_tasks.add_task(_trigger_danmaku_scrape_for_episode, season_id, cid)
+        return {
+            "success": False,
+            "pending": True,
+            "message": "暂无可用弹幕数据，已触发后台抓取，请稍后重试",
+            "data": {"timeline": {}, "wordcloud": {}},
+        }
+
+    timeline_data = get_episode_timeline_bins(
+        session=session,
+        cid=cid,
+        bin_size=bin_size,
+        keyword_topk=keyword_topk,
+    )
+    wordcloud_data = get_season_wordcloud(
+        session=session,
+        season_id=season_id,
+        cid=cid,
+        top_n=top_n,
+    )
+    _upsert_episode_analysis_cache(
+        session,
+        season_id=season_id,
+        cid=cid,
+        episode_number=int(timeline_data.get("episode_number", 1)),
+        timeline_data=timeline_data,
+        wordcloud_data=wordcloud_data,
+    )
+    return {
+        "success": True,
+        "cached": False,
+        "refresh_scheduled": False,
+        "age_days": age_days,
+        "data": {
+            "timeline": timeline_data,
+            "wordcloud": wordcloud_data,
+        },
+    }
+
+
+@router.get("/season/{season_id}/wordcloud", response_model=dict)
+def get_season_wordcloud_api(
+    season_id: int,
+    cid: Optional[str] = Query(None, description="可选：按单集 CID 聚合词云"),
+    top_n: int = Query(120, ge=10, le=500, description="返回词条数量上限"),
+    session: Session = Depends(get_session),
+):
+    """
+    获取整季（或单集）词云权重数据。
+    """
+    cache_key = f"season_wordcloud:{season_id}:cid={cid or ''}:top={top_n}"
+    cache_enabled = _is_dataset_stable(session=session, season_id=season_id, cid=cid)
+    if cache_enabled:
+        cached = _read_cache(cache_key)
+        if cached is not None:
+            return cached
+
+    try:
+        data = get_season_wordcloud(
+            session=session,
+            season_id=season_id,
+            cid=cid,
+            top_n=top_n,
+        )
+    except ValueError as exc:
+        if str(exc) == "episode_not_found":
+            raise HTTPException(status_code=404, detail="未找到可用于词云聚合的剧集数据")
+        raise
+    payload = {"success": True, "data": SeasonWordcloudResponse.model_validate(data)}
+    if cache_enabled:
+        _write_cache(cache_key, payload)
+    return payload
+
+
+@router.get("/season/{season_id}/characters", response_model=dict)
+def get_season_characters_api(
+    season_id: int,
+    top_n: int = Query(8, ge=1, le=30, description="返回角色数量上限"),
+    session: Session = Depends(get_session),
+):
+    """
+    获取整季核心角色讨论度趋势。
+    """
+    cache_key = f"season_characters:{season_id}:top={top_n}"
+    cache_enabled = _is_dataset_stable(session=session, season_id=season_id)
+    if cache_enabled:
+        cached = _read_cache(cache_key)
+        if cached is not None:
+            return cached
+
+    try:
+        data = get_season_character_trends(
+            session=session,
+            season_id=season_id,
+            top_n=top_n,
+        )
+    except ValueError as exc:
+        if str(exc) == "season_not_found":
+            raise HTTPException(status_code=404, detail="未找到该 season_id 的剧集数据")
+        raise
+    payload = {"success": True, "data": SeasonCharacterTrendsResponse.model_validate(data)}
+    if cache_enabled:
+        _write_cache(cache_key, payload)
+    return payload
+
+
+@router.get("/season/{season_id}/insight-cards", response_model=dict)
+def get_season_insight_cards_api(
+    season_id: int,
+    limit: int = Query(300, ge=30, le=1000, description="用于聚类的评论采样数"),
+    top_n: int = Query(6, ge=1, le=20, description="返回观点卡片数量"),
+    session: Session = Depends(get_session),
+):
+    """
+    获取整季热门评论观点提取卡片数据。
+    """
+    cache_key = f"season_insight_cards:{season_id}:limit={limit}:top={top_n}"
+    cache_enabled = _is_dataset_stable(session=session, season_id=season_id)
+    if cache_enabled:
+        cached = _read_cache(cache_key)
+        if cached is not None:
+            return cached
+
+    items = get_comment_insight_cards(
+        session=session,
+        season_id=season_id,
+        limit=limit,
+        top_n=top_n,
+    )
+    payload = {"success": True, "total": len(items), "data": items}
+    if cache_enabled:
+        _write_cache(cache_key, payload)
+    return payload
 
 
 @proxy_router.get("/image_proxy")

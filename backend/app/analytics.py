@@ -4,12 +4,16 @@ NLP 情感分析模块
 使用 SnowNLP 对弹幕/评论文本进行中文情感打分，
 并提供按番剧聚合情感数据的辅助函数。
 """
+import json
+import re
+from collections import Counter, defaultdict
 from typing import Optional, List, Dict, Any
 from sqlmodel import Session, select
 from sqlalchemy import func as sa_func
 
-from .models import DanmuRecord, CommentRecord
+from .models import DanmuRecord, CommentRecord, EpisodeStats
 from .logger import app_logger as logger
+from .mongodb import DanmakuMongoRepository
 
 # ── SnowNLP 懒加载，避免在 import 阶段引发异常 ──────────────────────────────
 try:
@@ -121,26 +125,66 @@ def get_sentiment_timeline(session: Session, season_id: int) -> List[Dict[str, A
     Returns:
         列表，每项为 {"episode_number": int, "avg_sentiment": float, "danmu_count": int}
     """
-    rows = session.exec(
+    episodes = sorted(
+        session.exec(select(EpisodeStats).where(EpisodeStats.season_id == season_id)).all(),
+        key=_episode_sort_key,
+    )
+    if not episodes:
+        return []
+
+    sentiment_expr = sa_func.coalesce(DanmuRecord.nlp_sentiment_score, DanmuRecord.sentiment_score)
+    sqlite_rows = session.exec(
         select(
-            DanmuRecord.episode_number,
-            sa_func.avg(DanmuRecord.sentiment_score).label("avg_sentiment"),
+            DanmuRecord.cid,
+            sa_func.avg(sentiment_expr).label("avg_sentiment"),
             sa_func.count(DanmuRecord.id).label("danmu_count"),
         )
         .where(DanmuRecord.season_id == season_id)
-        .where(DanmuRecord.sentiment_score != None)  # noqa: E711
-        .group_by(DanmuRecord.episode_number)
-        .order_by(DanmuRecord.episode_number)
+        .where(  # noqa: E711
+            (DanmuRecord.nlp_sentiment_score != None) | (DanmuRecord.sentiment_score != None)
+        )
+        .group_by(DanmuRecord.cid)
+        .order_by(DanmuRecord.cid)
     ).all()
-
-    return [
-        {
-            "episode_number": row[0],
+    sqlite_map_by_cid = {
+        str(row[0]): {
             "avg_sentiment": round(float(row[1]), 4) if row[1] is not None else None,
-            "danmu_count": row[2],
+            "danmu_count": int(row[2] or 0),
         }
-        for row in rows
-    ]
+        for row in sqlite_rows
+        if row[0]
+    }
+
+    timeline: List[Dict[str, Any]] = []
+    for idx, episode in enumerate(episodes, start=1):
+        mongo_items = _get_mongo_episode_items(episode.cid)
+        if mongo_items:
+            sentiments = []
+            for item in mongo_items:
+                sentiment = _get_mongo_item_sentiment(item)
+                if sentiment is not None:
+                    sentiments.append(sentiment)
+            if sentiments:
+                timeline.append(
+                    {
+                        "episode_number": idx,
+                        "avg_sentiment": round(sum(sentiments) / len(sentiments), 4),
+                        "danmu_count": len(sentiments),
+                    }
+                )
+                continue
+
+        fallback = sqlite_map_by_cid.get(str(episode.cid))
+        if fallback:
+            timeline.append(
+                {
+                    "episode_number": idx,
+                    "avg_sentiment": fallback["avg_sentiment"],
+                    "danmu_count": fallback["danmu_count"],
+                }
+            )
+
+    return timeline
 
 
 def get_top_comments(session: Session, season_id: int, limit: int = 50) -> List[Dict[str, Any]]:
@@ -172,3 +216,437 @@ def get_top_comments(session: Session, season_id: int, limit: int = 50) -> List[
         }
         for r in records
     ]
+
+
+def get_comment_insight_cards(
+    session: Session,
+    season_id: int,
+    limit: int = 300,
+    top_n: int = 6,
+) -> List[Dict[str, Any]]:
+    """
+    基于高赞评论提炼观点卡片（轻量聚类）。
+    """
+    records = session.exec(
+        select(CommentRecord)
+        .where(CommentRecord.season_id == season_id)
+        .order_by(CommentRecord.likes.desc(), CommentRecord.id.desc())
+        .limit(limit)
+    ).all()
+    if not records:
+        return []
+
+    clusters: Dict[str, Dict[str, Any]] = {}
+    total_likes = 0
+
+    for record in records:
+        likes = int(record.likes or 0)
+        total_likes += likes
+        content = (record.content or "").strip()
+        content_lower = content.lower()
+
+        matched_topic = None
+        max_hits = 0
+        for topic, keywords in _COMMENT_TOPIC_KEYWORDS.items():
+            hits = sum(1 for kw in keywords if kw and kw in content_lower)
+            if hits > max_hits:
+                max_hits = hits
+                matched_topic = topic
+        if not matched_topic:
+            matched_topic = "综合观感"
+
+        bucket = clusters.setdefault(
+            matched_topic,
+            {"topic": matched_topic, "likes": 0, "count": 0, "samples": [], "top_likes": 0},
+        )
+        bucket["likes"] += likes
+        bucket["count"] += 1
+        bucket["top_likes"] = max(bucket["top_likes"], likes)
+        if content and len(bucket["samples"]) < 3:
+            bucket["samples"].append(content[:_INSIGHT_SAMPLE_MAX_LEN])
+
+    ranked = sorted(
+        clusters.values(),
+        key=lambda item: (item["likes"], item["count"], item["top_likes"]),
+        reverse=True,
+    )[:max(1, top_n)]
+
+    denominator = max(total_likes, 1)
+    return [
+        {
+            "topic": item["topic"],
+            "support_rate": round(item["likes"] / denominator, 4),
+            "total_likes": item["likes"],
+            "comment_count": item["count"],
+            "samples": item["samples"],
+        }
+        for item in ranked
+    ]
+
+
+def update_episode_sentiment_aggregates(session: Session, season_id: int) -> int:
+    """
+    回填 EpisodeStats 聚合字段：
+    - avg_sentiment_score
+    - peak_danmaku_time
+    """
+    episodes = session.exec(
+        select(EpisodeStats)
+        .where(EpisodeStats.season_id == season_id)
+        .order_by(EpisodeStats.id)
+    ).all()
+    if not episodes:
+        return 0
+
+    danmu_records = session.exec(
+        select(DanmuRecord)
+        .where(DanmuRecord.season_id == season_id)
+        .order_by(DanmuRecord.episode_number)
+    ).all()
+    if not danmu_records:
+        return 0
+
+    ep_by_number = {idx + 1: ep for idx, ep in enumerate(episodes)}
+    grouped: Dict[int, List[DanmuRecord]] = {}
+    for rec in danmu_records:
+        grouped.setdefault(rec.episode_number, []).append(rec)
+
+    updated = 0
+    for ep_number, records in grouped.items():
+        target = ep_by_number.get(ep_number)
+        if not target:
+            continue
+
+        sentiment_values = [
+            r.nlp_sentiment_score if r.nlp_sentiment_score is not None else r.sentiment_score
+            for r in records
+            if (r.nlp_sentiment_score is not None or r.sentiment_score is not None)
+        ]
+        target.avg_sentiment_score = (
+            round(sum(sentiment_values) / len(sentiment_values), 4) if sentiment_values else None
+        )
+
+        bins: Dict[int, int] = {}
+        for r in records:
+            if r.video_time is None:
+                continue
+            second = int(round(r.video_time))
+            bins[second] = bins.get(second, 0) + 1
+        if bins:
+            max_count = max(bins.values())
+            # 并列峰值时取最早时间点，便于时间轴可视化对齐
+            peak_second = min(sec for sec, count in bins.items() if count == max_count)
+            target.peak_danmaku_time = float(peak_second)
+        else:
+            target.peak_danmaku_time = None
+        updated += 1
+
+    if updated:
+        session.commit()
+    logger.info("✅ 单集聚合指标回填完成：season_id={} updated={}", season_id, updated)
+    return updated
+
+
+_CJK_UNIFIED_IDEOGRAPHS_RANGE = r"\u4e00-\u9fff"
+_TOKEN_RE = re.compile(rf"[{_CJK_UNIFIED_IDEOGRAPHS_RANGE}]{{2,}}|[A-Za-z0-9]{{3,}}")
+_TIMELINE_STOPWORDS = {"这个", "那个", "真的", "感觉", "就是", "你们", "我们", "他们", "一个", "不是", "没有"}
+_EPISODE_NUM_RE = re.compile(r"\d+")
+_MAX_EPISODE_SORT_KEY = 10**9
+_WORDCLOUD_FALLBACK_BATCH_SIZE = 2000
+_INSIGHT_SAMPLE_MAX_LEN = 180
+_MONGO_DANMAKU_REPO = DanmakuMongoRepository()
+_COMMENT_TOPIC_KEYWORDS: Dict[str, List[str]] = {
+    "改编与原作": ["原作", "改编", "漫画", "小说", "还原", "删减", "魔改"],
+    "剧情讨论": ["剧情", "节奏", "反转", "伏笔", "结局", "发展", "设定"],
+    "角色塑造": ["角色", "人物", "主角", "配角", "人设", "成长", "演技"],
+    "作画与制作": ["作画", "画面", "镜头", "特效", "制作", "分镜", "经费"],
+    "音乐与配音": ["配乐", "音乐", "op", "ed", "配音", "声优", "音效"],
+    "情绪共鸣": ["感动", "泪目", "刀", "治愈", "燃", "催泪", "共鸣"],
+}
+
+
+def _safe_json_load(value: Any, default: Any) -> Any:
+    if value is None:
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return default
+        return parsed
+    return default
+
+
+def _extract_tokens(text: str) -> List[str]:
+    if not text:
+        return []
+    tokens = [token.lower() for token in _TOKEN_RE.findall(text)]
+    return [token for token in tokens if token not in _TIMELINE_STOPWORDS]
+
+
+def _normalize_term(text: str) -> str:
+    return (text or "").strip().lower()
+
+
+def _episode_sort_key(ep: EpisodeStats) -> tuple:
+    title = ep.episode_title or ""
+    match = _EPISODE_NUM_RE.search(title)
+    if match:
+        return int(match.group()), ep.id or 0
+    return _MAX_EPISODE_SORT_KEY, ep.id or 0
+
+
+def _get_mongo_episode_items(cid: Optional[str]) -> Optional[List[Dict[str, Any]]]:
+    if not cid:
+        return None
+    doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(str(cid))
+    if not doc:
+        return None
+    items = doc.get("danmaku_items")
+    if not isinstance(items, list):
+        return None
+    normalized = [item for item in items if isinstance(item, dict)]
+    return normalized or None
+
+
+def _get_mongo_item_video_time(item: Dict[str, Any]) -> Optional[float]:
+    video_time = item.get("video_time")
+    if video_time is not None:
+        try:
+            return float(video_time)
+        except (TypeError, ValueError):
+            pass
+    progress = item.get("progress")
+    if progress is None:
+        return None
+    try:
+        progress_value = float(progress)
+    except (TypeError, ValueError):
+        return None
+    if progress_value > 1000:
+        return progress_value / 1000.0
+    return progress_value
+
+
+def _get_mongo_item_sentiment(item: Dict[str, Any]) -> Optional[float]:
+    for key in ("nlp_sentiment_score", "sentiment_score", "sentiment"):
+        value = item.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def get_episode_timeline_bins(
+    session: Session,
+    cid: str,
+    bin_size: int = 10,
+    keyword_topk: int = 5,
+) -> Dict[str, Any]:
+    target_ep = session.exec(select(EpisodeStats).where(EpisodeStats.cid == cid)).first()
+    if not target_ep:
+        raise ValueError("episode_not_found")
+
+    episodes = sorted(
+        session.exec(select(EpisodeStats).where(EpisodeStats.season_id == target_ep.season_id)).all(),
+        key=_episode_sort_key,
+    )
+    episode_index_map = {ep.id: idx + 1 for idx, ep in enumerate(episodes)}
+    episode_number = episode_index_map.get(target_ep.id, 1)
+
+    bins: Dict[int, Dict[str, Any]] = defaultdict(
+        lambda: {"count": 0, "sent_sum": 0.0, "sent_count": 0, "token_counter": Counter()}
+    )
+    total_danmaku = 0
+
+    mongo_items = _get_mongo_episode_items(cid)
+    if mongo_items:
+        source = "mongodb"
+        for item in mongo_items:
+            video_time = _get_mongo_item_video_time(item)
+            if video_time is None:
+                continue
+            total_danmaku += 1
+            bin_start = int(video_time // bin_size) * bin_size
+            bucket = bins[bin_start]
+            bucket["count"] += 1
+            score = _get_mongo_item_sentiment(item)
+            if score is not None:
+                bucket["sent_sum"] += float(score)
+                bucket["sent_count"] += 1
+            text = str(item.get("cleaned_content") or item.get("content") or "").strip()
+            for token in _extract_tokens(text):
+                bucket["token_counter"][token] += 1
+    else:
+        source = "sqlite"
+        records = session.exec(
+            select(DanmuRecord)
+            .where(
+                DanmuRecord.season_id == target_ep.season_id,
+                DanmuRecord.cid == cid,
+                DanmuRecord.video_time.is_not(None),
+            )
+            .order_by(DanmuRecord.video_time)
+        ).all()
+        total_danmaku = len(records)
+        for record in records:
+            if record.video_time is None:
+                continue
+            bin_start = int(record.video_time // bin_size) * bin_size
+            bucket = bins[bin_start]
+            bucket["count"] += 1
+            score = record.nlp_sentiment_score
+            if score is None:
+                score = record.sentiment_score
+            if score is not None:
+                bucket["sent_sum"] += float(score)
+                bucket["sent_count"] += 1
+            text = record.cleaned_content or record.content
+            for token in _extract_tokens(text):
+                bucket["token_counter"][token] += 1
+
+    timeline = []
+    for time_start in sorted(bins.keys()):
+        bucket = bins[time_start]
+        avg_sentiment = (
+            round(bucket["sent_sum"] / bucket["sent_count"], 4)
+            if bucket["sent_count"] > 0
+            else 0.0
+        )
+        top_keywords = [token for token, _ in bucket["token_counter"].most_common(keyword_topk)]
+        timeline.append(
+            {
+                "time_start": time_start,
+                "danmaku_count": bucket["count"],
+                "avg_sentiment": avg_sentiment,
+                "top_keywords": top_keywords,
+            }
+        )
+
+    payload = {
+        "season_id": target_ep.season_id,
+        "cid": cid,
+        "episode_number": episode_number,
+        "bin_size": bin_size,
+        "total_danmaku": total_danmaku,
+        "timeline": timeline,
+    }
+    logger.info("📊 单集时间线聚合完成 cid={} source={} bins={}", cid, source, len(timeline))
+    return payload
+
+
+def get_season_wordcloud(
+    session: Session,
+    season_id: int,
+    cid: Optional[str] = None,
+    top_n: int = 120,
+) -> Dict[str, Any]:
+    query = select(EpisodeStats).where(EpisodeStats.season_id == season_id)
+    if cid:
+        query = query.where(EpisodeStats.cid == cid)
+    episodes = sorted(session.exec(query).all(), key=_episode_sort_key)
+    if not episodes:
+        raise ValueError("episode_not_found")
+
+    counter: Counter = Counter()
+
+    for ep in episodes:
+        entities = _safe_json_load(ep.nlp_entities, [])
+        for item in entities:
+            text = _normalize_term(str(item.get("text", "")))
+            count = int(item.get("count", 0) or 0)
+            if text and count > 0:
+                counter[text] += count
+
+        keywords = _safe_json_load(ep.nlp_keywords, [])
+        for kw in keywords:
+            text = _normalize_term(str(kw))
+            if text:
+                counter[text] += 1
+
+    if not counter:
+        record_query = select(DanmuRecord).where(DanmuRecord.season_id == season_id)
+        if cid:
+            record_query = record_query.where(DanmuRecord.cid == cid)
+        offset = 0
+        while True:
+            batch = session.exec(
+                record_query.order_by(DanmuRecord.id).offset(offset).limit(_WORDCLOUD_FALLBACK_BATCH_SIZE)
+            ).all()
+            if not batch:
+                break
+            for rec in batch:
+                for token in _extract_tokens(rec.cleaned_content or rec.content):
+                    counter[token] += 1
+            offset += _WORDCLOUD_FALLBACK_BATCH_SIZE
+
+    items = [{"text": text, "weight": weight} for text, weight in counter.most_common(top_n)]
+    return {
+        "season_id": season_id,
+        "cid": cid,
+        "total_terms": len(items),
+        "items": items,
+    }
+
+
+def get_season_character_trends(
+    session: Session,
+    season_id: int,
+    top_n: int = 8,
+) -> Dict[str, Any]:
+    episodes = sorted(
+        session.exec(select(EpisodeStats).where(EpisodeStats.season_id == season_id)).all(),
+        key=_episode_sort_key,
+    )
+    if not episodes:
+        raise ValueError("season_not_found")
+
+    per_episode_entity_counter: Dict[int, Counter] = {}
+    global_counter: Counter = Counter()
+    episode_labels: List[str] = []
+
+    for idx, ep in enumerate(episodes, start=1):
+        episode_labels.append(ep.episode_title or f"第{idx}集")
+        counter = Counter()
+        entities = _safe_json_load(ep.nlp_entities, [])
+        for item in entities:
+            text = _normalize_term(str(item.get("text", "")))
+            count = int(item.get("count", 0) or 0)
+            if text and count > 0:
+                counter[text] += count
+                global_counter[text] += count
+        per_episode_entity_counter[idx] = counter
+
+    top_characters = [name for name, _ in global_counter.most_common(top_n)]
+    character_items = []
+    for name in top_characters:
+        trend = []
+        total_count = 0
+        for idx in range(1, len(episodes) + 1):
+            count = int(per_episode_entity_counter.get(idx, Counter()).get(name, 0))
+            total_count += count
+            trend.append(
+                {
+                    "episode_number": idx,
+                    "episode_title": episode_labels[idx - 1],
+                    "count": count,
+                }
+            )
+        character_items.append(
+            {
+                "character": name,
+                "total_count": total_count,
+                "trend": trend,
+            }
+        )
+
+    return {
+        "season_id": season_id,
+        "total_episodes": len(episodes),
+        "items": character_items,
+    }

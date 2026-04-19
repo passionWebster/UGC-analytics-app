@@ -143,6 +143,15 @@ class EpisodeStats(SQLModel, table=True):
     online_viewers: Optional[int] = Field(default=None)  # 当前在线人数
     # 存储 24 小时在线人数分布，格式: {"00": 1500, "01": 1200, ..., "23": 1800}
     hourly_online_history: Optional[str] = Field(default=None, sa_column=Column(JSON))
+    avg_sentiment_score: Optional[float] = Field(default=None)  # 单集弹幕平均情感分
+    peak_danmaku_time: Optional[float] = Field(default=None)  # 单集弹幕峰值出现时间点（秒）
+    nlp_status: Optional[str] = Field(default=None, max_length=20)  # NLP 状态: pending/running/success/failed
+    nlp_sample_size: Optional[int] = Field(default=None)  # NLP 样本量（清洗后）
+    nlp_sentiment_score: Optional[float] = Field(default=None)  # NLP 情感均分（-1~1）
+    nlp_noise_ratio: Optional[float] = Field(default=None)  # 噪音占比（0~1）
+    nlp_keywords: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))  # 关键词列表
+    nlp_entities: Optional[List[dict]] = Field(default=None, sa_column=Column(JSON))  # 实体词频列表
+    nlp_processed_at: Optional[datetime] = Field(default=None)  # NLP 最近处理时间
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -179,6 +188,8 @@ class CrawlLog(SQLModel, table=True):
     total_scraped: Optional[int] = Field(default=None)  # 原始抓取条数
     cleaned_filtered: Optional[int] = Field(default=None)  # 清洗过滤后条数
     final_inserted: Optional[int] = Field(default=None)  # 最终入库条数
+    retry_count: Optional[int] = Field(default=0)  # 请求重试总次数
+    failed_count: Optional[int] = Field(default=0)  # 失败条目数
     failed_reason: Optional[str] = Field(default=None, max_length=1000)  # 失败原因
     duration: Optional[float] = Field(default=None)  # 任务耗时（秒）
     started_at: datetime = Field(default_factory=datetime.now)
@@ -288,7 +299,12 @@ class DanmuRecord(SQLModel, table=True):
     content: str = Field(max_length=500)  # 弹幕文字内容
     video_time: Optional[float] = Field(default=None)  # 弹幕出现的视频时间点（秒）
     timestamp: Optional[datetime] = Field(default=None)  # 弹幕发送时间
+    sender_hash: Optional[str] = Field(default=None, max_length=64)  # 匿名用户哈希
     sentiment_score: Optional[float] = Field(default=None)  # 情感得分（0=消极，1=积极）
+    cleaned_content: Optional[str] = Field(default=None, max_length=500)  # 清洗后文本
+    emotion_label: Optional[str] = Field(default=None, max_length=32)  # 特殊情绪标签（233/??? 等）
+    nlp_sentiment_score: Optional[float] = Field(default=None)  # 细粒度情感得分（-1~1）
+    nlp_processed: bool = Field(default=False)  # 是否已完成 NLP 处理
     created_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -301,11 +317,31 @@ class CommentRecord(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     season_id: int = Field(foreign_key="anime.season_id", index=True)  # 关联番剧
     avid: Optional[int] = Field(default=None, index=True)  # 视频 avid（oid）
+    root_rpid: Optional[str] = Field(default=None, max_length=32, index=True)  # 主楼评论 ID
+    parent_rpid: Optional[str] = Field(default=None, max_length=32, index=True)  # 父评论 ID
+    level: int = Field(default=0)  # 层级：0=主楼，1=楼中楼
+    is_top_level: bool = Field(default=True)  # 是否主楼评论
     content: str  # 评论文字内容
     likes: Optional[int] = Field(default=0)  # 点赞数
     replies: Optional[int] = Field(default=0)  # 回复数
     sentiment_score: Optional[float] = Field(default=None)  # 情感得分（0=消极，1=积极）
     created_at: datetime = Field(default_factory=datetime.now)
+
+
+class EpisodeAnalysisCache(SQLModel, table=True):
+    """
+    单集分析缓存表 - 存储单集时间线/词云聚合结果，避免重复重算导致超时。
+    """
+    __tablename__ = "episode_analysis_cache"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    season_id: int = Field(foreign_key="anime.season_id", index=True)
+    cid: str = Field(index=True, unique=True, max_length=20)
+    episode_number: int = Field(default=1)
+    timeline_payload: str = Field(default="{}")
+    wordcloud_payload: str = Field(default="{}")
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now, index=True)
 
 
 # Pydantic 模型用于 API 请求/响应

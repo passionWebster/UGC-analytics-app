@@ -148,9 +148,141 @@ export const getReleaseTrend = async (area?: string): Promise<{ success: boolean
 export const getAnimeEpisodes = async (seasonId: number): Promise<{
   success: boolean
   total: number
-  data: Array<{ title: string; views: number; peakTime: string | null; peakOnline: number | null }>
+  data: Array<{ title: string; cid?: string; views: number; peakTime: string | null; peakOnline: number | null }>
 }> => {
   return apiClient.get(`/analytics/animes/${seasonId}/episodes`)
+}
+
+export interface EpisodeTimelineBin {
+  time_start: number
+  danmaku_count: number
+  avg_sentiment: number
+  top_keywords: string[]
+}
+
+export interface EpisodeTimelineData {
+  season_id: number
+  cid: string
+  episode_number: number
+  bin_size: number
+  total_danmaku: number
+  timeline: EpisodeTimelineBin[]
+}
+
+export interface SeasonWordcloudItem {
+  text: string
+  weight: number
+}
+
+export interface SeasonWordcloudData {
+  season_id: number
+  cid: string | null
+  total_terms: number
+  items: SeasonWordcloudItem[]
+}
+
+export interface CharacterTrendPoint {
+  episode_number: number
+  episode_title: string
+  count: number
+}
+
+export interface SeasonCharacterItem {
+  character: string
+  total_count: number
+  trend: CharacterTrendPoint[]
+}
+
+export interface SeasonCharactersData {
+  season_id: number
+  total_episodes: number
+  items: SeasonCharacterItem[]
+}
+
+export interface SeasonInsightCard {
+  topic: string
+  support_rate: number
+  total_likes: number
+  comment_count: number
+  samples: string[]
+}
+
+export const getEpisodeTimeline = async (
+  cid: string,
+  params?: { bin_size?: number; keyword_topk?: number },
+): Promise<{ success: boolean; data: EpisodeTimelineData }> => {
+  return apiClient.get(`/analytics/episode/${encodeURIComponent(cid)}/timeline`, { params })
+}
+
+export interface EpisodeAnalysisBundleData {
+  timeline: EpisodeTimelineData
+  wordcloud: SeasonWordcloudData
+}
+
+export interface EpisodeAnalysisBundlePendingData {
+  timeline?: Partial<EpisodeTimelineData> | Record<string, never>
+  wordcloud?: Partial<SeasonWordcloudData> | Record<string, never>
+}
+
+export type EpisodeAnalysisBundleResponse =
+  | {
+      success: true
+      cached?: boolean
+      refresh_scheduled?: boolean
+      pending?: false
+      message?: string
+      data: EpisodeAnalysisBundleData
+    }
+  | {
+      success: false
+      cached?: boolean
+      refresh_scheduled?: boolean
+      pending: true
+      message?: string
+      data?: EpisodeAnalysisBundlePendingData
+    }
+  | {
+      success: false
+      cached?: boolean
+      refresh_scheduled?: boolean
+      pending?: false
+      message?: string
+      data?: EpisodeAnalysisBundlePendingData
+    }
+
+export const getEpisodeAnalysisBundle = async (
+  seasonId: number,
+  cid: string,
+  params?: { bin_size?: number; keyword_topk?: number; top_n?: number },
+): Promise<EpisodeAnalysisBundleResponse> => {
+  return apiClient.get(
+    `/analytics/season/${seasonId}/episode/${encodeURIComponent(cid)}/analysis`,
+    {
+      params,
+      timeout: 90000,
+    },
+  )
+}
+
+export const getSeasonWordcloud = async (
+  seasonId: number,
+  params?: { cid?: string; top_n?: number },
+): Promise<{ success: boolean; data: SeasonWordcloudData }> => {
+  return apiClient.get(`/analytics/season/${seasonId}/wordcloud`, { params })
+}
+
+export const getSeasonCharacters = async (
+  seasonId: number,
+  params?: { top_n?: number },
+): Promise<{ success: boolean; data: SeasonCharactersData }> => {
+  return apiClient.get(`/analytics/season/${seasonId}/characters`, { params })
+}
+
+export const getSeasonInsightCards = async (
+  seasonId: number,
+  params?: { limit?: number; top_n?: number },
+): Promise<{ success: boolean; total: number; data: SeasonInsightCard[] }> => {
+  return apiClient.get(`/analytics/season/${seasonId}/insight-cards`, { params })
 }
 
 // ─── 深度分析相关接口定义 ──────────────────────────────────────────────────────
