@@ -214,6 +214,32 @@ export const getEpisodeTimeline = async (
   return apiClient.get(`/analytics/episode/${encodeURIComponent(cid)}/timeline`, { params })
 }
 
+export interface EpisodeAnalysisBundleData {
+  timeline: EpisodeTimelineData
+  wordcloud: SeasonWordcloudData
+}
+
+export const getEpisodeAnalysisBundle = async (
+  seasonId: number,
+  cid: string,
+  params?: { bin_size?: number; keyword_topk?: number; top_n?: number },
+): Promise<{
+  success: boolean
+  cached?: boolean
+  refresh_scheduled?: boolean
+  pending?: boolean
+  message?: string
+  data: EpisodeAnalysisBundleData
+}> => {
+  return apiClient.get(
+    `/analytics/season/${seasonId}/episode/${encodeURIComponent(cid)}/analysis`,
+    {
+      params,
+      timeout: 90000,
+    },
+  )
+}
+
 export const getSeasonWordcloud = async (
   seasonId: number,
   params?: { cid?: string; top_n?: number },

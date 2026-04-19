@@ -116,7 +116,7 @@ import 'echarts-wordcloud'
 import {
   getAnimeDetail,
   getAnimeEpisodes,
-  getEpisodeTimeline,
+  getEpisodeAnalysisBundle,
   getSeasonCharacters,
   getSeasonInsightCards,
   getSeasonWordcloud,
@@ -292,17 +292,29 @@ const buildRadarOption = (wordItems: SeasonWordcloudItem[], characterItems: Seas
 const onEpisodeSelect = async (cid: string) => {
   if (!animeData.value || !cid) return
   selectedCid.value = cid
+  statusMsg.value = '分析中…'
 
   try {
-    const [timelineRes, wcRes] = await Promise.all([
-      getEpisodeTimeline(cid, { bin_size: 15, keyword_topk: 3 }),
-      getSeasonWordcloud(animeData.value.season_id, { cid, top_n: 100 }),
-    ])
-    microTimelineOption.value = buildMicroTimelineOption(timelineRes.data.timeline || [])
-    wordcloudOption.value = buildWordcloudOption(wcRes.data.items || [])
+    const analysisRes = await getEpisodeAnalysisBundle(
+      animeData.value.season_id,
+      cid,
+      { bin_size: 15, keyword_topk: 3, top_n: 100 },
+    )
+    if (!analysisRes.success || analysisRes.pending) {
+      statusMsg.value = analysisRes.message || '该集暂无可分析数据，已触发后台抓取'
+      microTimelineOption.value = buildMicroTimelineOption([])
+      wordcloudOption.value = buildWordcloudOption([])
+      return
+    }
+    microTimelineOption.value = buildMicroTimelineOption(analysisRes.data.timeline.timeline || [])
+    wordcloudOption.value = buildWordcloudOption(analysisRes.data.wordcloud.items || [])
+    statusMsg.value = analysisRes.refresh_scheduled
+      ? '已加载缓存图表，后台正在刷新最新分析'
+      : `已加载：${animeData.value.title}`
   } catch {
     microTimelineOption.value = buildMicroTimelineOption([])
     wordcloudOption.value = buildWordcloudOption([])
+    statusMsg.value = '分析失败，请稍后重试'
   }
 }
 

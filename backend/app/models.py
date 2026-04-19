@@ -328,6 +328,22 @@ class CommentRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
 
 
+class EpisodeAnalysisCache(SQLModel, table=True):
+    """
+    单集分析缓存表 - 存储单集时间线/词云聚合结果，避免重复重算导致超时。
+    """
+    __tablename__ = "episode_analysis_cache"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    season_id: int = Field(foreign_key="anime.season_id", index=True)
+    cid: str = Field(index=True, unique=True, max_length=20)
+    episode_number: int = Field(default=1)
+    timeline_payload: str = Field(default="{}", sa_column=Column(JSON))
+    wordcloud_payload: str = Field(default="{}", sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now, index=True)
+
+
 # Pydantic 模型用于 API 请求/响应
 class UserCreate(SQLModel):
     """用户注册请求模型"""

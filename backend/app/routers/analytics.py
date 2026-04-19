@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 import asyncio
 import httpx
 from cachetools import TTLCache
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select as sql_select
 from sqlalchemy import func as sa_func
@@ -27,9 +27,10 @@ from ..analytics import (
     get_season_wordcloud,
 )
 from ..auth import get_current_user
-from ..database import get_session
+from ..database import get_session, engine
 from ..crud import AnalyticsService
-from ..models import Anime, EpisodeStats, TmdbAnimeInfo, User
+from ..models import Anime, EpisodeStats, TmdbAnimeInfo, User, EpisodeAnalysisCache, DanmuRecord
+from ..mongodb import DanmakuMongoRepository
 from ..schemas import (
     EpisodeTimelineResponse,
     SeasonWordcloudResponse,
@@ -50,6 +51,9 @@ proxy_router = APIRouter(prefix="/api", tags=["图片代理"])
 _STABLE_DATA_DAYS = 7
 _ANALYTICS_CACHE: TTLCache = TTLCache(maxsize=512, ttl=3600)
 _ANALYTICS_CACHE_LOCK = threading.RLock()
+_MONGO_DANMAKU_REPO = DanmakuMongoRepository()
+_RECENT_EPISODE_DAYS = 30
+_FROZEN_EPISODE_DAYS = 180
 
 # 封面图片本地缓存目录
 _COVER_CACHE_DIR = os.path.join(
@@ -153,6 +157,159 @@ def _write_cache(cache_key: str, payload: dict) -> None:
         _ANALYTICS_CACHE[cache_key] = payload
 
 
+def _parse_release_date_to_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y-%m", "%Y"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _get_episode_publish_anchor(
+    session: Session,
+    target_ep: EpisodeStats,
+) -> datetime:
+    anime = session.exec(sql_select(Anime).where(Anime.season_id == target_ep.season_id)).first()
+    release_dt = _parse_release_date_to_datetime(anime.release_date if anime else None)
+    if release_dt:
+        return release_dt
+    return target_ep.updated_at or datetime.utcnow()
+
+
+def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool:
+    mongo_doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(cid)
+    if mongo_doc and isinstance(mongo_doc.get("danmaku_items"), list) and mongo_doc.get("danmaku_items"):
+        return True
+    sqlite_count = session.exec(
+        sql_select(sa_func.count(DanmuRecord.id)).where(
+            DanmuRecord.season_id == season_id,
+            DanmuRecord.cid == cid,
+        )
+    ).one()
+    return bool(sqlite_count and int(sqlite_count) > 0)
+
+
+def _upsert_episode_analysis_cache(
+    session: Session,
+    *,
+    season_id: int,
+    cid: str,
+    episode_number: int,
+    timeline_data: dict,
+    wordcloud_data: dict,
+) -> EpisodeAnalysisCache:
+    row = session.exec(
+        sql_select(EpisodeAnalysisCache).where(EpisodeAnalysisCache.cid == cid)
+    ).first()
+    now = datetime.utcnow()
+    if row is None:
+        row = EpisodeAnalysisCache(
+            season_id=season_id,
+            cid=cid,
+            episode_number=episode_number,
+            timeline_payload=json.dumps(timeline_data, ensure_ascii=False),
+            wordcloud_payload=json.dumps(wordcloud_data, ensure_ascii=False),
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(row)
+    else:
+        row.season_id = season_id
+        row.episode_number = episode_number
+        row.timeline_payload = json.dumps(timeline_data, ensure_ascii=False)
+        row.wordcloud_payload = json.dumps(wordcloud_data, ensure_ascii=False)
+        row.updated_at = now
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def _load_episode_analysis_cache_payload(row: EpisodeAnalysisCache) -> dict:
+    try:
+        timeline_data = json.loads(row.timeline_payload or "{}")
+    except Exception:
+        timeline_data = {}
+    try:
+        wordcloud_data = json.loads(row.wordcloud_payload or "{}")
+    except Exception:
+        wordcloud_data = {}
+    return {
+        "timeline": timeline_data,
+        "wordcloud": wordcloud_data,
+    }
+
+
+def _refresh_episode_analysis_cache(
+    season_id: int,
+    cid: str,
+    bin_size: int,
+    keyword_topk: int,
+    top_n: int,
+) -> None:
+    with Session(engine) as bg_session:
+        try:
+            timeline_data = get_episode_timeline_bins(
+                session=bg_session,
+                cid=cid,
+                bin_size=bin_size,
+                keyword_topk=keyword_topk,
+            )
+            wordcloud_data = get_season_wordcloud(
+                session=bg_session,
+                season_id=season_id,
+                cid=cid,
+                top_n=top_n,
+            )
+            _upsert_episode_analysis_cache(
+                bg_session,
+                season_id=season_id,
+                cid=cid,
+                episode_number=int(timeline_data.get("episode_number", 1) or 1),
+                timeline_data=timeline_data,
+                wordcloud_data=wordcloud_data,
+            )
+            logger.info("✅ episode analysis cache refreshed cid={} season_id={}", cid, season_id)
+        except Exception as exc:
+            logger.warning("⚠️ episode analysis cache refresh failed cid={} season_id={} err={}", cid, season_id, exc)
+
+
+def _trigger_danmaku_scrape_for_episode(
+    season_id: int,
+    cid: str,
+) -> None:
+    from ..scraper import BilibiliBangumiCrawler
+
+    with Session(engine) as bg_session:
+        try:
+            episodes = bg_session.exec(
+                sql_select(EpisodeStats)
+                .where(EpisodeStats.season_id == season_id)
+                .order_by(EpisodeStats.id)
+            ).all()
+            if not episodes:
+                return
+            target_index = next((idx for idx, item in enumerate(episodes, start=1) if str(item.cid) == str(cid)), 1)
+            crawler = BilibiliBangumiCrawler(bg_session)
+            crawler.scrape_danmaku_and_comments(
+                season_id=season_id,
+                max_episodes=target_index,
+                comment_limit=50,
+                include_comment_replies=True,
+                nested_reply_limit=20,
+                mode="incremental",
+                sentiment_fn=None,
+                run_nlp_async=True,
+            )
+            logger.info("✅ background danmaku scrape triggered season_id={} target_episode={}", season_id, target_index)
+        except Exception as exc:
+            logger.warning("⚠️ background danmaku scrape failed season_id={} cid={} err={}", season_id, cid, exc)
+
 @router.get("/episode/{cid}/timeline", response_model=dict)
 def get_episode_timeline(
     cid: str,
@@ -185,6 +342,107 @@ def get_episode_timeline(
     if cache_enabled:
         _write_cache(cache_key, payload)
     return payload
+
+
+@router.get("/season/{season_id}/episode/{cid}/analysis", response_model=dict)
+def get_episode_analysis_with_cache(
+    season_id: int,
+    cid: str,
+    background_tasks: BackgroundTasks,
+    bin_size: int = Query(10, ge=1, le=300, description="时间窗大小（秒）"),
+    keyword_topk: int = Query(5, ge=1, le=20, description="每个切片返回关键词数量"),
+    top_n: int = Query(120, ge=10, le=500, description="词云词条数量上限"),
+    session: Session = Depends(get_session),
+):
+    """
+    单集分析统一入口：优先返回 SQLite 缓存，必要时刷新缓存；无源数据时触发抓取。
+    """
+    target_ep = session.exec(
+        sql_select(EpisodeStats).where(
+            EpisodeStats.season_id == season_id,
+            EpisodeStats.cid == cid,
+        )
+    ).first()
+    if not target_ep:
+        raise HTTPException(status_code=404, detail="未找到对应剧集")
+
+    cache_row = session.exec(
+        sql_select(EpisodeAnalysisCache).where(EpisodeAnalysisCache.cid == cid)
+    ).first()
+    publish_anchor = _get_episode_publish_anchor(session, target_ep)
+    age_days = max(0, (datetime.utcnow() - publish_anchor).days)
+    is_recent = age_days <= _RECENT_EPISODE_DAYS
+    is_frozen = age_days >= _FROZEN_EPISODE_DAYS
+
+    if cache_row is not None:
+        refresh_scheduled = False
+        if is_recent:
+            background_tasks.add_task(
+                _refresh_episode_analysis_cache,
+                season_id,
+                cid,
+                bin_size,
+                keyword_topk,
+                top_n,
+            )
+            refresh_scheduled = True
+        elif not is_frozen and (datetime.utcnow() - cache_row.updated_at) > timedelta(hours=24):
+            background_tasks.add_task(
+                _refresh_episode_analysis_cache,
+                season_id,
+                cid,
+                bin_size,
+                keyword_topk,
+                top_n,
+            )
+            refresh_scheduled = True
+        return {
+            "success": True,
+            "cached": True,
+            "refresh_scheduled": refresh_scheduled,
+            "age_days": age_days,
+            "data": _load_episode_analysis_cache_payload(cache_row),
+        }
+
+    if not _has_source_danmaku_data(session, cid, season_id):
+        background_tasks.add_task(_trigger_danmaku_scrape_for_episode, season_id, cid)
+        return {
+            "success": False,
+            "pending": True,
+            "message": "暂无可用弹幕数据，已触发后台抓取，请稍后重试",
+            "data": {"timeline": {}, "wordcloud": {}},
+        }
+
+    timeline_data = get_episode_timeline_bins(
+        session=session,
+        cid=cid,
+        bin_size=bin_size,
+        keyword_topk=keyword_topk,
+    )
+    wordcloud_data = get_season_wordcloud(
+        session=session,
+        season_id=season_id,
+        cid=cid,
+        top_n=top_n,
+    )
+    _upsert_episode_analysis_cache(
+        session,
+        season_id=season_id,
+        cid=cid,
+        episode_number=int(timeline_data.get("episode_number", 1) or 1),
+        timeline_data=timeline_data,
+        wordcloud_data=wordcloud_data,
+    )
+    return {
+        "success": True,
+        "cached": False,
+        "refresh_scheduled": False,
+        "age_days": age_days,
+        "data": {
+            "timeline": timeline_data,
+            "wordcloud": wordcloud_data,
+        },
+    }
 
 
 @router.get("/season/{season_id}/wordcloud", response_model=dict)
