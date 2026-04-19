@@ -222,7 +222,7 @@ def get_comment_insight_cards(
         bucket["count"] += 1
         bucket["top_likes"] = max(bucket["top_likes"], likes)
         if content and len(bucket["samples"]) < 3:
-            bucket["samples"].append(content[:180])
+            bucket["samples"].append(content[:_INSIGHT_SAMPLE_MAX_LEN])
 
     ranked = sorted(
         clusters.values(),
@@ -308,6 +308,7 @@ _TIMELINE_STOPWORDS = {"这个", "那个", "真的", "感觉", "就是", "你们
 _EPISODE_NUM_RE = re.compile(r"\d+")
 _MAX_EPISODE_SORT_KEY = 10**9
 _WORDCLOUD_FALLBACK_BATCH_SIZE = 2000
+_INSIGHT_SAMPLE_MAX_LEN = 180
 _COMMENT_TOPIC_KEYWORDS: Dict[str, List[str]] = {
     "改编与原作": ["原作", "改编", "漫画", "小说", "还原", "删减", "魔改"],
     "剧情讨论": ["剧情", "节奏", "反转", "伏笔", "结局", "发展", "设定"],

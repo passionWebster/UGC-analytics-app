@@ -140,7 +140,7 @@ def _is_dataset_stable(
     latest_updated = session.exec(query).first()
     if latest_updated is None:
         return False
-    return latest_updated <= (datetime.now() - timedelta(days=_STABLE_DATA_DAYS))
+    return latest_updated <= (datetime.utcnow() - timedelta(days=_STABLE_DATA_DAYS))
 
 
 def _read_cache(cache_key: str):

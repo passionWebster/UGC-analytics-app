@@ -111,17 +111,8 @@
 <script setup lang="ts">
 import { ref, shallowRef } from 'vue'
 import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { BarChart, LineChart, RadarChart } from 'echarts/charts'
-import {
-  DataZoomComponent,
-  GridComponent,
-  LegendComponent,
-  RadarComponent,
-  TooltipComponent,
-} from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-import { WordCloudChart } from 'echarts-wordcloud'
+import 'echarts'
+import 'echarts-wordcloud'
 import {
   getAnimeDetail,
   getAnimeEpisodes,
@@ -137,19 +128,6 @@ import type {
   SeasonInsightCard,
   SeasonWordcloudItem,
 } from '@/api/analytics'
-
-use([
-  CanvasRenderer,
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  DataZoomComponent,
-  RadarComponent,
-  BarChart,
-  LineChart,
-  RadarChart,
-  WordCloudChart,
-])
 
 defineOptions({ name: 'ReportView' })
 
@@ -184,7 +162,7 @@ const formatNumber = (n?: number | null) => {
 const buildMicroTimelineOption = (timeline: Array<{ time_start: number; danmaku_count: number; avg_sentiment: number; top_keywords: string[] }>) => {
   if (!timeline.length) {
     return {
-      title: { text: '暂无单集时间线数据', left: 'center', top: 'middle', textStyle: { color: '#9ca3af', fontSize: 14 } },
+      title: { text: '暂无单集时间轴数据', left: 'center', top: 'middle', textStyle: { color: '#9ca3af', fontSize: 14 } },
     }
   }
 
@@ -198,9 +176,9 @@ const buildMicroTimelineOption = (timeline: Array<{ time_start: number; danmaku_
     animationDurationUpdate: 450,
     tooltip: {
       trigger: 'axis',
-      formatter: (params: Array<{ seriesName: string; value: number; data?: { keywords?: string[] } }>) => {
-        const bar = params.find((p) => p.seriesName === '弹幕密度')
-        const line = params.find((p) => p.seriesName === '情感值')
+      formatter: (tooltipParams: Array<{ seriesName: string; value: number; data?: { keywords?: string[] } }>) => {
+        const bar = tooltipParams.find((p) => p.seriesName === '弹幕密度')
+        const line = tooltipParams.find((p) => p.seriesName === '情感值')
         const keywords = (bar?.data?.keywords || []).slice(0, 3).map(escapeText).join('、') || '无'
         return [
           `弹幕：${bar?.value ?? 0}`,
@@ -234,7 +212,7 @@ const buildMicroTimelineOption = (timeline: Array<{ time_start: number; danmaku_
         yAxisIndex: 1,
         smooth: true,
         symbol: 'none',
-        data: timeline.map((item) => Number((item.avg_sentiment ?? 0).toFixed(4))),
+        data: timeline.map((item) => Math.round((item.avg_sentiment ?? 0) * 10000) / 10000),
         lineStyle: { color: '#ef476f', width: 2 },
       },
     ],
