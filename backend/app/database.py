@@ -232,7 +232,7 @@ def get_session() -> Generator[Session, None, None]:
     获取数据库会话
     用于依赖注入，自动管理会话的创建和关闭
     
-    使用Examples:
+    Examples:
         @app.get("/items")
         def read_items(session: Session = Depends(get_session)):
             items = session.exec(select(Item)).all()

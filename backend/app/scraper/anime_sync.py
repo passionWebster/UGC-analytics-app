@@ -589,7 +589,7 @@ class AnimeSyncService:
                 batch[season_id] = anime_data
                 success_count += 1
             except Exception as exc:
-                logger.warning(f"  ⚠️ season_id={season_id} 详情获取Raises: {exc}")
+                logger.warning(f"  ⚠️ season_id={season_id} 详情获取异常: {exc}")
             finally:
                 # 随机延迟 0.1~2.0 秒，防止触发 B站反爬
                 time.sleep(random.uniform(0.1, 2.0))

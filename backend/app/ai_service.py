@@ -262,7 +262,7 @@ class AIService:
                 detail="AI 服务请求超时（30s），请稍后重试"
             )
         except requests.exceptions.RequestException as exc:
-            app_logger.error("豆包 API 请求Raises: {}", exc)
+            app_logger.error("豆包 API 请求异常: {}", exc)
             self._record_telemetry(
                 api_type="request",
                 latency_ms=int((time.perf_counter() - request_start) * 1000),
