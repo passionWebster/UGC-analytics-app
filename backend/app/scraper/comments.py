@@ -58,7 +58,7 @@ class CommentsService:
         for page in range(1, max_pages + 1):
             if len(nested) >= limit:
                 break
-            params = self._sign_wbi_params(
+            params = self._crawler.danmaku._sign_wbi_params(
                 {
                     "type": 1,
                     "oid": avid,
@@ -123,7 +123,7 @@ class CommentsService:
         comment_list: list[dict[str, Any]] = []
         page = 1
         while len(comment_list) < limit:
-            params = self._sign_wbi_params(
+            params = self._crawler.danmaku._sign_wbi_params(
                 {
                     "type": 1,
                     "oid": avid,
@@ -269,14 +269,16 @@ class CommentsService:
                 avid: int | None = None
                 pubdate_ts: int | None = None
                 if ep.bvid:
-                    view_data = self.get_episode_stat_details(ep.bvid) or {}
+                    view_data = self._crawler.episode_sync.get_episode_stat_details(ep.bvid) or {}
                     avid = view_data.get("aid")
                     pubdate_ts = view_data.get("pubdate")
 
                 # ── 弹幕 ───────────────────────────────────────────────────
                 if ep.cid:
-                    current_danmaku = self.fetch_danmaku_xml(ep.cid)
-                    history_danmaku = self.fetch_danmaku_history(ep.cid, publish_ts=pubdate_ts)
+                    current_danmaku = self._crawler.danmaku.fetch_danmaku_xml(ep.cid)
+                    history_danmaku = self._crawler.danmaku.fetch_danmaku_history(
+                        ep.cid, publish_ts=pubdate_ts
+                    )
                     raw_danmaku = current_danmaku + history_danmaku
                     danmaku_for_sqlite = current_danmaku
 
@@ -285,7 +287,7 @@ class CommentsService:
                     dedup: list[dict] = []
                     for d in danmaku_for_sqlite:
                         # video_time 表示视频内时间点；timestamp 表示发送时间，两者共同用于精确去重。
-                        key = self._make_danmaku_dedup_key(d)
+                        key = self._crawler.danmaku._make_danmaku_dedup_key(d)
                         if key in seen_keys:
                             continue
                         seen_keys.add(key)
@@ -314,7 +316,7 @@ class CommentsService:
                             ).all()
                         }
                     for d in dedup:
-                        key = self._make_danmaku_dedup_key(d)
+                        key = self._crawler.danmaku._make_danmaku_dedup_key(d)
                         if key in existing_keys:
                             continue
                         existing_keys.add(key)

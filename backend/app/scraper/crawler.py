@@ -99,37 +99,6 @@ class BilibiliBangumiCrawler:
         self.danmaku = DanmakuService(self)
         self.comments = CommentsService(self)
 
-        # 组合式 façade：将跨域能力委托给子服务实现，保持旧调用签名兼容。
-        self.update_anime_database = self.anime_sync.update_anime_database  # type: ignore[method-assign]
-        self.fetch_and_save_anime_with_episodes = (  # type: ignore[method-assign]
-            self.anime_sync.fetch_and_save_anime_with_episodes
-        )
-        self.search_anime_by_title = self.anime_sync.search_anime_by_title  # type: ignore[method-assign]
-        self.search_bangumi_on_bilibili = (  # type: ignore[method-assign]
-            self.anime_sync.search_bangumi_on_bilibili
-        )
-        self.get_anime_details = self.anime_sync.get_anime_details  # type: ignore[method-assign]
-
-        self.fetch_and_save_episodes = self.episode_sync.fetch_and_save_episodes  # type: ignore[method-assign]
-        self.record_hourly_online_viewers = (  # type: ignore[method-assign]
-            self.episode_sync.record_hourly_online_viewers
-        )
-        self.update_online_viewers_for_all_episodes = (  # type: ignore[method-assign]
-            self.episode_sync.update_online_viewers_for_all_episodes
-        )
-        self.get_episode_stat_details = self.episode_sync.get_episode_stat_details  # type: ignore[method-assign]
-        self.get_online_viewers = self.episode_sync.get_online_viewers  # type: ignore[method-assign]
-        self._apply_stat_to_episode = self.episode_sync._apply_stat_to_episode  # type: ignore[method-assign]
-
-        self.fetch_danmaku_xml = self.danmaku.fetch_danmaku_xml  # type: ignore[method-assign]
-        self.fetch_danmaku_history = self.danmaku.fetch_danmaku_history  # type: ignore[method-assign]
-        self.fetch_danmaku_history_xml = self.danmaku.fetch_danmaku_history_xml  # type: ignore[method-assign]
-        self._sign_wbi_params = self.danmaku._sign_wbi_params  # type: ignore[method-assign]
-        self._make_danmaku_dedup_key = self.danmaku._make_danmaku_dedup_key  # type: ignore[method-assign]
-
-        self.fetch_comment_replies = self.comments.fetch_comment_replies  # type: ignore[method-assign]
-        self.fetch_comments = self.comments.fetch_comments  # type: ignore[method-assign]
-        self.scrape_danmaku_and_comments = self.comments.scrape_danmaku_and_comments  # type: ignore[method-assign]
         logger.info("✅ 爬虫已初始化")
 
     def _build_proxy(self) -> dict[str, str] | None:

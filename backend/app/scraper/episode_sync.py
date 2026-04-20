@@ -44,7 +44,7 @@ class EpisodeSyncService:
             B站 API 成功返回分集数据则返回 True，否则返回 False
         """
         logger.info(f"🔍 正在从 B站 抓取 season_id={season_id} 的分集数据...")
-        details = self.get_anime_details(season_id)
+        details = self._crawler.anime_sync.get_anime_details(season_id)
         if not details or not details.get("episodes"):
             logger.info(f"❌ 未能获取 season_id={season_id} 的分集数据")
             return False

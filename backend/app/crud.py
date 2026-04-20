@@ -615,7 +615,7 @@ class AnalyticsService:
         if not episodes:
             # 数据库中无分集数据，尝试实时抓取并入库
             crawler = BilibiliBangumiCrawler(self.session)
-            crawler.fetch_and_save_episodes(season_id)
+            crawler.episode_sync.fetch_and_save_episodes(season_id)
 
             # 抓取完成后再次查询
             episodes = self.session.exec(

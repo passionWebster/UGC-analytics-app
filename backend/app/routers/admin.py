@@ -127,7 +127,7 @@ def _run_update_task() -> None:
     """后台任务：更新番剧基础数据（使用独立 Session）"""
     with Session(engine) as background_session:
         crawler = BilibiliBangumiCrawler(background_session)
-        crawler.update_anime_database()
+        crawler.anime_sync.update_anime_database()
 
 
 @router.post("/crawler/trigger", response_model=dict)

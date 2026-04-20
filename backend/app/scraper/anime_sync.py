@@ -207,7 +207,7 @@ class AnimeSyncService:
             )
 
             # 【网络 I/O 阶段】：无锁，避免长事务持有写入锁
-            full_data = self.get_episode_stat_details(bvid)
+            full_data = self._crawler.episode_sync.get_episode_stat_details(bvid)
             stat = full_data.get("stat", {})
             duration = full_data.get("duration", 0)
             time.sleep(settings.bilibili_request_delay)
@@ -234,7 +234,7 @@ class AnimeSyncService:
                         cid=cid,
                         online_viewers=None,
                     )
-                    self._apply_stat_to_episode(new_ep, stat, ep_title)
+                    self._crawler.episode_sync._apply_stat_to_episode(new_ep, stat, ep_title)
                     self.session.add(new_ep)
                     self.session.commit()
                     saved_count += 1

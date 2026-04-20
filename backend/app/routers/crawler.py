@@ -87,7 +87,7 @@ def search_anime_id(title: str, session: Session = Depends(get_session)):
         番剧 ID
     """
     crawler = BilibiliBangumiCrawler(session)
-    season_id = crawler.search_anime_by_title(title)
+    season_id = crawler.anime_sync.search_anime_by_title(title)
     
     if not season_id:
         return {
@@ -128,7 +128,7 @@ def _scrape_and_score(
 
     with Session(engine) as session:
         crawler = BilibiliBangumiCrawler(session)
-        crawler.scrape_danmaku_and_comments(
+        crawler.comments.scrape_danmaku_and_comments(
             season_id=season_id,
             max_episodes=max_episodes,
             comment_limit=comment_limit,
@@ -145,7 +145,7 @@ def _run_update_task() -> None:
     """后台任务：更新番剧基础数据（使用独立 Session）"""
     with Session(engine) as session:
         crawler = BilibiliBangumiCrawler(session)
-        crawler.update_anime_database()
+        crawler.anime_sync.update_anime_database()
 
 
 @router.post("/scrape-danmaku", response_model=dict)

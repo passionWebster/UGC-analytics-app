@@ -343,7 +343,7 @@ def _trigger_danmaku_scrape_for_episode(
                 logger.warning("⚠️ skip background scrape: cid not found season_id={} cid={}", season_id, cid)
                 return
             crawler = BilibiliBangumiCrawler(bg_session)
-            crawler.scrape_danmaku_and_comments(
+            crawler.comments.scrape_danmaku_and_comments(
                 season_id=season_id,
                 max_episodes=target_index,
                 comment_limit=50,
@@ -878,7 +878,7 @@ def search_animes(
     if not results:
         # 本地未命中，触发实时抓取
         crawler = BilibiliBangumiCrawler(session)
-        season_id = crawler.fetch_and_save_anime_with_episodes(keyword)
+        season_id = crawler.anime_sync.fetch_and_save_anime_with_episodes(keyword)
         if season_id:
             # 抓取成功后重新查询数据库
             results = analytics_service.search_anime_by_title(keyword)
