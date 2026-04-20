@@ -22,13 +22,6 @@
           <button class="status-search-btn" @click="handleSearch">
             <i class="fas fa-search me-1"></i>搜索
           </button>
-          <button
-            v-if="animeData"
-            class="status-detail-btn"
-            @click="toggleEpisodeDetails"
-          >
-            <i class="fas fa-list me-1"></i>剧集详情
-          </button>
         </div>
 
         <Teleport to="body">
@@ -154,74 +147,6 @@
       </div>
     </div>
 
-    <!-- 弹幕情感时间线 -->
-    <div v-if="animeData" class="row mb-4">
-      <div class="col-md-12">
-        <div class="style-unified">
-          <div class="card-header-unified d-flex justify-content-between align-items-center">
-            <div>
-              <h5>弹幕情感时间线</h5>
-              <small class="text-muted">各集弹幕情感均分（0=消极 / 1=积极）</small>
-            </div>
-            <button
-              v-if="!sentimentLoading && sentimentTimeline.length === 0"
-              class="btn btn-sm btn-outline-primary"
-              @click="fetchSentimentTimeline"
-            >
-              <i class="fas fa-sync-alt me-1"></i>加载情感数据
-            </button>
-          </div>
-          <div v-if="sentimentLoading" class="text-center py-5 text-muted">
-            <i class="fas fa-spinner fa-spin me-2"></i>正在加载弹幕情感数据…
-          </div>
-          <div v-else-if="sentimentTimeline.length > 0" ref="sentimentChartRef" style="height: 280px; width: 100%"></div>
-          <div v-else class="text-center py-5 text-muted">
-            <i class="fas fa-comment-dots me-2"></i>暂无弹幕情感数据，请先爬取弹幕后加载
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 剧集详情表格 -->
-    <div v-if="showEpisodeDetails && episodes.length > 0" class="row">
-      <div class="col-md-12">
-        <div class="style-unified">
-          <div class="card-header-unified">
-            <h5><i class="fas fa-list me-1"></i>剧集详情</h5>
-          </div>
-          <div class="p-3">
-            <div class="table-responsive">
-              <table class="table table-hover">
-                <thead>
-                  <tr>
-                    <th>集数</th>
-                    <th>标题</th>
-                    <th>播放量</th>
-                    <th>观看高峰时段</th>
-                    <th>在线峰值</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="(episode, index) in episodes"
-                    :key="index"
-                    :class="{ 'table-active': selectedEpisodeIndex === index }"
-                    style="cursor: pointer"
-                    @click="selectEpisode(index)"
-                  >
-                    <td>{{ index + 1 }}</td>
-                    <td>{{ episode.title || `第${index + 1}集` }}</td>
-                    <td>{{ formatNumber(episode.views) }}</td>
-                    <td>{{ episode.peakTime || '暂无数据' }}</td>
-                    <td>{{ episode.peakOnline ? formatNumber(episode.peakOnline) : '暂无数据' }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -245,8 +170,6 @@ import type {
   CompetitiveLandscapeData,
   WatchTimeDistributionData,
 } from '@/api/analytics'
-import { getSentimentTimeline } from '@/api/ai'
-import type { SentimentPoint } from '@/api/ai'
 
 // 为 KeepAlive 注册组件名
 defineOptions({ name: 'StatusView' })
@@ -269,7 +192,6 @@ let suggestionDebounceTimer: ReturnType<typeof setTimeout> | null = null
 const animeData = ref<any>(null)
 /** 剧集列表（来自 API 或回退至空数组） */
 const episodes = ref<Array<{ title: string; views: number; peakTime: string | null; peakOnline: number | null }>>([])
-const showEpisodeDetails = ref(false)
 const watchTimeSubtitle = ref('所有剧集总计')
 /** 当前选中的剧集索引，-1 表示全局汇总 */
 const selectedEpisodeIndex = ref(-1)
@@ -288,137 +210,14 @@ const competitiveData = ref<CompetitiveLandscapeData | null>(null)
 const playTrendChart = ref<HTMLElement>()
 const watchTimeChart = ref<HTMLElement>()
 const radarChartRef = ref<HTMLElement>()
-const sentimentChartRef = ref<HTMLElement>()
 
 let playTrendInstance: ECharts | null = null
 let watchTimeInstance: ECharts | null = null
 let radarInstance: ECharts | null = null
-let sentimentInstance: ECharts | null = null
 
 let playTrendResizeObserver: ResizeObserver | null = null
 let watchTimeResizeObserver: ResizeObserver | null = null
 let radarResizeObserver: ResizeObserver | null = null
-let sentimentResizeObserver: ResizeObserver | null = null
-
-// ─── 情感时间线 ──────────────────────────────────────────────────────────────
-const sentimentTimeline = ref<SentimentPoint[]>([])
-const sentimentLoading = ref(false)
-
-const fetchSentimentTimeline = async () => {
-  if (!animeData.value?.season_id) return
-  sentimentLoading.value = true
-  try {
-    const res = await getSentimentTimeline(animeData.value.season_id)
-    sentimentTimeline.value = res.timeline || []
-    if (sentimentTimeline.value.length > 0) {
-      await nextTick()
-      renderSentimentChart()
-    }
-  } catch {
-    // 错误由全局拦截器处理
-  } finally {
-    sentimentLoading.value = false
-  }
-}
-
-const clearSentimentChart = () => {
-  sentimentResizeObserver?.disconnect()
-  sentimentResizeObserver = null
-  sentimentInstance?.dispose()
-  sentimentInstance = null
-}
-
-const renderSentimentChart = () => {
-  clearSentimentChart()
-  if (!sentimentChartRef.value || sentimentTimeline.value.length === 0) return
-
-  sentimentInstance = echarts.init(sentimentChartRef.value)
-
-  const labels = sentimentTimeline.value.map((p) => `第${p.episode_number}集`)
-  const scores = sentimentTimeline.value.map((p) =>
-    p.avg_sentiment !== null ? parseFloat(p.avg_sentiment.toFixed(3)) : null,
-  )
-  const counts = sentimentTimeline.value.map((p) => p.danmu_count)
-
-  const option: echarts.EChartsOption = {
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' },
-      formatter: (params: unknown) => {
-        const arr = params as Array<{ name: string; marker: string; seriesName: string; value: number | null }>
-        if (!arr.length) return ''
-        let html = `<b>${arr[0].name}</b><br/>`
-        arr.forEach((p) => {
-          if (p.seriesName === '情感均分') {
-            html += `${p.marker}${p.seriesName}：${p.value !== null ? p.value : 'N/A'}<br/>`
-          } else {
-            html += `${p.marker}${p.seriesName}：${p.value}<br/>`
-          }
-        })
-        return html
-      },
-    },
-    legend: { data: ['情感均分', '弹幕数'], top: 5 },
-    grid: { left: '3%', right: '6%', bottom: '10%', containLabel: true },
-    xAxis: { type: 'category', data: labels },
-    yAxis: [
-      {
-        type: 'value',
-        name: '情感均分',
-        min: 0,
-        max: 1,
-        axisLabel: { formatter: '{value}' },
-      },
-      {
-        type: 'value',
-        name: '弹幕数',
-        axisLabel: { formatter: (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)) },
-      },
-    ],
-    series: [
-      {
-        name: '情感均分',
-        type: 'line',
-        yAxisIndex: 0,
-        data: scores,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 7,
-        lineStyle: { color: '#fa709a', width: 2.5 },
-        itemStyle: { color: '#fa709a' },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(250, 112, 154, 0.3)' },
-            { offset: 1, color: 'rgba(250, 112, 154, 0.03)' },
-          ]),
-        },
-        markLine: {
-          silent: true,
-          data: [{ yAxis: 0.5, name: '中性线' }],
-          lineStyle: { type: 'dashed', color: '#aaa' },
-          label: { formatter: '中性 0.5' },
-        },
-      },
-      {
-        name: '弹幕数',
-        type: 'bar',
-        yAxisIndex: 1,
-        data: counts,
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(102, 126, 234, 0.7)' },
-            { offset: 1, color: 'rgba(102, 126, 234, 0.2)' },
-          ]),
-        },
-        barMaxWidth: 30,
-      },
-    ],
-  }
-
-  sentimentInstance.setOption(option)
-  sentimentResizeObserver = new ResizeObserver(() => sentimentInstance?.resize())
-  sentimentResizeObserver.observe(sentimentChartRef.value)
-}
 
 // ─── 计算属性 ────────────────────────────────────────────────────────────────
 /** 剧集平均播放量 */
@@ -648,9 +447,6 @@ const handleSearch = async () => {
 
       selectedEpisodeIndex.value = -1
       watchTimeSubtitle.value = '所有剧集总计'
-      // 清空情感时间线前先销毁旧图表和观察器，避免内存泄漏与旧数据残留
-      clearSentimentChart()
-      sentimentTimeline.value = []
 
       // 等待 DOM 更新后渲染所有图表
       await nextTick()
@@ -668,18 +464,12 @@ const handleSearch = async () => {
       lifecycleData.value = null
       competitiveData.value = null
       watchTimeDistributionData.value = null
-      clearSentimentChart()
-      sentimentTimeline.value = []
       stopHourlyFetch()
     }
   } catch (error) {
     console.error('搜索失败:', error)
     statusMessage.value = '搜索失败，请重试'
   }
-}
-
-const toggleEpisodeDetails = () => {
-  showEpisodeDetails.value = !showEpisodeDetails.value
 }
 
 // ─── 剧集选中交互 ────────────────────────────────────────────────────────────
@@ -1051,11 +841,9 @@ onUnmounted(() => {
   playTrendResizeObserver?.disconnect()
   watchTimeResizeObserver?.disconnect()
   radarResizeObserver?.disconnect()
-  sentimentResizeObserver?.disconnect()
   playTrendInstance?.dispose()
   watchTimeInstance?.dispose()
   radarInstance?.dispose()
-  sentimentInstance?.dispose()
   // 清除轮询定时器
   stopHourlyFetch()
 })
@@ -1329,44 +1117,9 @@ onDeactivated(() => {
   transform: translateY(-1px);
 }
 
-.status-detail-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.65rem 1.2rem;
-  border-radius: 28px;
-  border: 1.5px solid #d1d5db;
-  background: transparent;
-  color: #6b7280;
-  font-size: 0.95rem;
-  cursor: pointer;
-  transition: border-color 0.2s, color 0.2s, background 0.2s;
-  white-space: nowrap;
-}
-
-.status-detail-btn:hover {
-  border-color: #9ca3af;
-  background: #f3f4f6;
-  color: #374151;
-}
-
 .status-form-text {
   color: #6c757d;
   font-size: 0.9rem;
-}
-
-/* ── 剧集表格 ── */
-.table-responsive {
-  max-height: 600px;
-  overflow-y: auto;
-}
-
-.table-hover tbody tr:hover {
-  background-color: rgba(79, 172, 254, 0.07);
-  cursor: pointer;
-}
-
-.table-active {
-  background-color: rgba(79, 172, 254, 0.12) !important;
 }
 
 @media (max-width: 768px) {
