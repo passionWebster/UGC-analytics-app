@@ -1,4 +1,4 @@
-# crud.py
+# 数据访问模块实现文件
 """
 数据分析服务
 提供各种数据查询和分析功能
@@ -197,11 +197,11 @@ class AnalyticsService:
         """
         获取所有番剧列表
         
-        Args:
+        参数:
             limit: 返回数量限制
             offset: 偏移量
             
-        Returns:
+        返回:
             番剧列表
         """
         query = select(Anime).offset(offset)
@@ -241,10 +241,10 @@ class AnalyticsService:
         通过对 TmdbAnimeInfo 表执行左连接，若存在对应的 TMDB 记录，
         则在返回字典中嵌套 tmdb_info 字段；否则 tmdb_info 为 None。
 
-        Args:
+        参数:
             season_id: 番剧 ID
 
-        Returns:
+        返回:
             番剧详情字典，包含可选的 tmdb_info 嵌套字段
         """
         anime = self.session.exec(
@@ -300,10 +300,10 @@ class AnalyticsService:
         """
         根据标题关键词搜索番剧
         
-        Args:
+        参数:
             keyword: 搜索关键词
             
-        Returns:
+        返回:
             匹配的番剧列表
         """
         animes = self.session.exec(
@@ -344,14 +344,14 @@ class AnalyticsService:
         """
         获取排行榜
 
-        Args:
+        参数:
             sort_by: 排序字段
             limit: 返回数量
             area: 地区筛选
             styles: 风格筛选
             season: 季节筛选（spring/summer/autumn/winter），对应番剧 release_date 月份
 
-        Returns:
+        返回:
             排行榜列表
         """
         # 季节 → 季度首月映射
@@ -466,7 +466,7 @@ class AnalyticsService:
         """
         获取数据总览统计
         
-        Returns:
+        返回:
             统计数据字典
         """
         # 番剧总数
@@ -514,11 +514,11 @@ class AnalyticsService:
         """
         获取番剧的历史数据
         
-        Args:
+        参数:
             season_id: 番剧 ID
             days: 查询天数
             
-        Returns:
+        返回:
             历史数据列表
         """
         start_date = datetime.now() - timedelta(days=days)
@@ -548,10 +548,10 @@ class AnalyticsService:
         """
         获取风格分布统计
 
-        Args:
+        参数:
             area: 地区筛选（如 "国内"、"日本"、"美国"），None 表示全部
 
-        Returns:
+        返回:
             风格分布字典
         """
         query = select(Anime)
@@ -572,10 +572,10 @@ class AnalyticsService:
         """
         获取发布趋势统计
 
-        Args:
+        参数:
             area: 地区筛选（如 "国内"、"日本"、"美国"），None 表示全部
 
-        Returns:
+        返回:
             按季度统计的发布数量
         """
         query = select(Anime)
@@ -597,10 +597,10 @@ class AnalyticsService:
         优先从 EpisodeStats 表中返回真实数据；若为空，先实时抓取并入库，
         再次查询后依然为空才以 DailyStats 历史记录作为代理数据返回。
 
-        Args:
+        参数:
             season_id: 番剧 ID
 
-        Returns:
+        返回:
             剧集数据列表，每项包含 title、views、peak_time、peak_online 字段
         """
         from .scraper import BilibiliBangumiCrawler
@@ -663,10 +663,10 @@ class AnalyticsService:
         从 EpisodeStats 表读取 hourly_online_history 列，
         将 JSON 字典格式化为长度为 24 的整数数组（缺失小时填 0）。
 
-        Args:
+        参数:
             season_id: 番剧 ID
 
-        Returns:
+        返回:
             包含 season_id 和 episodes_data 列表的字典；
             episodes_data 每项含 episode_title 和 distribution（长度24数组）
         """
@@ -709,10 +709,10 @@ class AnalyticsService:
         获取番剧的评分、追番数、播放量和名称，用于绘制散点图。
         为防止数据点重叠，给评分加上微小的随机抖动值。
 
-        Args:
+        参数:
             areas: 地区筛选列表（如 ["国内", "日本"]），None 表示全部
 
-        Returns:
+        返回:
             散点图数据列表，每项包含 title、rating、favorites、views 字段
         """
         query = select(Anime)
@@ -756,10 +756,10 @@ class AnalyticsService:
 
         计算特定地区对各风格的偏好指数（地区平均追番数 / 全球平均追番数）。
 
-        Args:
+        参数:
             region: 地区名称（如 "国内"、"日本"），默认 "国内"
 
-        Returns:
+        返回:
             偏好指数列表，每项包含 style、preferenceIndex、regionCount、globalCount 字段
         """
         animes = self.session.exec(select(Anime)).all()
@@ -819,11 +819,11 @@ class AnalyticsService:
 
         计算每部番剧的综合质量分，融入最新添加的互动指标与评分人数，增强区分度。
 
-        Args:
+        参数:
             season: 季节筛选（spring/summer/autumn/winter）
             category: 风格/类型筛选
 
-        Returns:
+        返回:
             前 15 名番剧列表
         """
         SEASON_MONTH_MAP = {
@@ -914,7 +914,7 @@ class AnalyticsService:
         遍历所有番剧的风格标签，统计所有两两组合的总追番数和包含番剧数，
         过滤掉番剧数 < 5 的组合，按平均追番数倒序，返回前 20 个组合及代表番剧。
 
-        Returns:
+        返回:
             前 20 个风格组合列表，每项包含 combination、totalFavorites、animeCount、
             avgFavorites、representativeAnimes 字段
         """
@@ -984,10 +984,10 @@ class AnalyticsService:
         用以衡量观众粘性。硬核指数（coin_rate / like_rate）反映内容质量，
         弹幕评论密度（danmaku_rate / reply_rate）衡量受众共鸣程度。
 
-        Args:
+        参数:
             season_id: 番剧 season_id
 
-        Returns:
+        返回:
             包含留存率、各集互动指数及全剧平均指标的字典；无数据时返回 None
         """
         episodes = self.session.exec(
@@ -1066,11 +1066,11 @@ class AnalyticsService:
         一阶导数（日增量）反映短期爆发力，二阶导数（增速变化）刻画动量变化。
         长尾效应通过统计首播后 30/90 天的日均播放量来衡量持续影响力。
 
-        Args:
+        参数:
             season_id: 番剧 season_id
             window_days: 用于计算黑马指数的滑动窗口天数（暂未使用，预留扩展）
 
-        Returns:
+        返回:
             包含逐日增长数据、长尾效应和峰值信息的字典；番剧不存在时返回 None
         """
         anime = self.session.exec(
@@ -1179,12 +1179,12 @@ class AnalyticsService:
         霸榜指数（dominance_top3 / dominance_top10）统计番剧在指定时间窗口内
         进入前3名和前10名的天数占比；排名波动率（标准差）反映排名稳定性。
 
-        Args:
+        参数:
             season_id: 番剧 season_id
             start_date: 统计开始日期（可选，默认不限）
             end_date: 统计结束日期（可选，默认不限）
 
-        Returns:
+        返回:
             包含上榜天数、霸榜比例和波动率的字典
         """
         query = (
@@ -1245,7 +1245,7 @@ class AnalyticsService:
         autumn=10月, winter=01月），统计各季节每种题材的番剧数量、
         总播放量及平均播放量，并给出每个季节表现最佳的题材。
 
-        Returns:
+        返回:
             包含各季节题材数据列表和每季最佳题材映射的字典
         """
         MONTH_TO_SEASON = {
@@ -1333,10 +1333,10 @@ class AnalyticsService:
         - 若用户无偏好：基于播放量和追番数的归一化热度分排序。
         返回匹配度最高的前50部番剧。
 
-        Args:
+        参数:
             username: 用户名
 
-        Returns:
+        返回:
             包含用户偏好和推荐列表的字典；用户不存在时返回 None
         """
         from .models import User
@@ -1364,11 +1364,11 @@ class AnalyticsService:
         """
         获取用户对指定番剧的推荐解释（可解释推荐拆解）。
 
-        Args:
+        参数:
             username: 用户名
             season_id: 番剧 ID
 
-        Returns:
+        返回:
             推荐解释字典；用户或番剧不存在时返回 None
         """
         from .models import User

@@ -1,4 +1,4 @@
-# tmdb_service.py
+# 影视元数据服务模块实现文件
 """
 TMDB API 集成服务
 

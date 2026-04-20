@@ -26,10 +26,10 @@ def score_sentiment(text: str) -> float | None:
     返回值范围 [0, 1]，越接近 1 表示越积极。
     若 SnowNLP 未安装，返回 None。
 
-    Args:
+    参数:
         text: 待分析的中文文本
 
-    Returns:
+    返回:
         情感得分（0~1），失败时返回 None
     """
     if not _SNOWNLP_AVAILABLE:
@@ -45,11 +45,11 @@ def batch_score_danmaku(session: Session, season_id: int) -> int:
     """
     对指定番剧中所有尚未打分的弹幕记录进行情感分析，并将结果写入数据库。
 
-    Args:
+    参数:
         session:   SQLModel 数据库会话
         season_id: 目标番剧 season_id
 
-    Returns:
+    返回:
         成功打分的记录数
     """
     if not _SNOWNLP_AVAILABLE:
@@ -79,11 +79,11 @@ def batch_score_comments(session: Session, season_id: int) -> int:
     """
     对指定番剧中所有尚未打分的评论记录进行情感分析，并将结果写入数据库。
 
-    Args:
+    参数:
         session:   SQLModel 数据库会话
         season_id: 目标番剧 season_id
 
-    Returns:
+    返回:
         成功打分的记录数
     """
     if not _SNOWNLP_AVAILABLE:
@@ -113,11 +113,11 @@ def get_sentiment_timeline(session: Session, season_id: int) -> list[dict[str, A
     """
     按集数聚合弹幕情感均分，用于前端折线图（情感时间线）。
 
-    Args:
+    参数:
         session:   SQLModel 数据库会话
         season_id: 目标番剧 season_id
 
-    Returns:
+    返回:
         列表，每项为 {"episode_number": int, "avg_sentiment": float, "danmu_count": int}
     """
     episodes = sorted(
@@ -186,12 +186,12 @@ def get_top_comments(session: Session, season_id: int, limit: int = 50) -> list[
     """
     返回指定番剧点赞数最高的前 limit 条评论（含情感得分）。
 
-    Args:
+    参数:
         session:   SQLModel 数据库会话
         season_id: 目标番剧 season_id
         limit:     最多返回条数
 
-    Returns:
+    返回:
         评论列表，按 likes 降序排列
     """
     records = session.exec(

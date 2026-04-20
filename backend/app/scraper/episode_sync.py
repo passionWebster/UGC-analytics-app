@@ -24,7 +24,7 @@ class EpisodeSyncService:
     def __init__(self, crawler: BilibiliBangumiCrawler) -> None:
         """Bind the service to the shared crawler runtime context.
 
-        Args:
+        参数:
             crawler: Shared scraper facade providing session, request helpers and config.
         """
         self._crawler = crawler
@@ -47,10 +47,10 @@ class EpisodeSyncService:
         """
         通过 B站 API 抓取指定番剧的分集信息并存入数据库，包含完整互动统计数据
 
-        Args:
+        参数:
             season_id: 番剧 season_id
 
-        Returns:
+        返回:
             B站 API 成功返回分集数据则返回 True，否则返回 False
         """
         logger.info(f"🔍 正在从 B站 抓取 season_id={season_id} 的分集数据...")
@@ -183,10 +183,10 @@ class EpisodeSyncService:
         """
         通过 B站 视频详情 API 获取单集完整数据（含统计和时长）。
 
-        Args:
+        参数:
             bvid: 视频 BV 号
 
-        Returns:
+        返回:
             包含 stat（播放量等）和 duration（时长，秒）等字段的完整 data 字典；
             请求失败或数据结构异常时返回空字典
         """
@@ -212,7 +212,7 @@ class EpisodeSyncService:
         """
         将 stat 字典中的互动指标写入 EpisodeStats 对象
 
-        Args:
+        参数:
             ep: 目标 EpisodeStats 实例
             stat: get_episode_stat_details 返回的统计字典
             ep_title: 集标题
@@ -231,11 +231,11 @@ class EpisodeSyncService:
         """
         获取指定单集的当前在线观看人数
 
-        Args:
+        参数:
             bvid: 视频 BV 号
             cid: 弹幕 CID
 
-        Returns:
+        返回:
             当前在线人数，失败时返回 None
         """
         if not bvid or not cid:

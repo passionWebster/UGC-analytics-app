@@ -32,7 +32,7 @@ class AnimeSyncService:
     def __init__(self, crawler: BilibiliBangumiCrawler) -> None:
         """Bind the service to the shared crawler runtime context.
 
-        Args:
+        参数:
             crawler: Shared scraper facade providing session, request helpers and config.
         """
         self._crawler = crawler
@@ -56,7 +56,7 @@ class AnimeSyncService:
         更新番剧数据库
         从 B站 API 抓取数据并存储到数据库
 
-        Returns:
+        返回:
             成功返回 True，失败返回 False
         """
         logger.info("🚀 [任务开始] 更新番剧数据库")
@@ -116,10 +116,10 @@ class AnimeSyncService:
         """
         通过关键词搜索番剧，抓取详情后将 Anime 信息和所有分集（含完整统计）写入数据库
 
-        Args:
+        参数:
             keyword: 搜索关键词
 
-        Returns:
+        返回:
             成功时返回 season_id，失败时返回 None
         """
         logger.info(f"🔍 正在搜索番剧: {keyword}")
@@ -263,10 +263,10 @@ class AnimeSyncService:
         """
         通过标题搜索番剧，返回 season_id
 
-        Args:
+        参数:
             title: 番剧标题
 
-        Returns:
+        返回:
             season_id 或 None
         """
         anime = self.session.exec(select(Anime).where(Anime.title == title)).first()
@@ -277,10 +277,10 @@ class AnimeSyncService:
         """
         执行单次 API 请求
 
-        Args:
+        参数:
             params: API 请求参数
 
-        Returns:
+        返回:
             返回数据列表
         """
         all_items = []
@@ -704,10 +704,10 @@ class AnimeSyncService:
           pub_time                  — 首播日期字符串（来自 publish.pub_time）
           copyright                 — 版权类型：bilibili / dujia（来自 rights.copyright）
 
-        Args:
+        参数:
             season_id: 番剧 season_id
 
-        Returns:
+        返回:
             番剧详细信息字典，请求失败时返回 None
         """
         url = f"https://api.bilibili.com/pgc/view/web/season?season_id={season_id}"
@@ -759,10 +759,10 @@ class AnimeSyncService:
         """
         通过关键词在 B站 搜索番剧，返回最匹配的 season_id
 
-        Args:
+        参数:
             keyword: 搜索关键词
 
-        Returns:
+        返回:
             season_id 或 None
         """
         url = "https://api.bilibili.com/x/web-interface/search/type"

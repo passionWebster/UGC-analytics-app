@@ -1,4 +1,4 @@
-# scheduler.py
+# 定时调度模块实现文件
 """
 定时任务调度器
 使用 APScheduler AsyncIOScheduler 实现：
@@ -115,7 +115,7 @@ def create_scheduler() -> AsyncIOScheduler:
     """
     创建并配置 AsyncIOScheduler 调度器。
 
-    Returns:
+    返回:
         配置好任务的 AsyncIOScheduler 实例（尚未启动）
     """
     scheduler = AsyncIOScheduler(
