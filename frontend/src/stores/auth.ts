@@ -118,8 +118,8 @@ export const useAuthStore = defineStore('auth', () => {
         email: emailParam, 
         password 
       })
-      
-      return { success: true }
+
+      return { success: true , response: response}
     } catch (error: any) {
       console.error('注册失败:', error)
       return { 
