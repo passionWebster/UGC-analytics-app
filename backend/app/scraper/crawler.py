@@ -10,7 +10,7 @@ import re
 import threading
 import time
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import reduce
 from typing import Tuple, List, Dict, Any, Optional, Set
 import requests
@@ -18,10 +18,25 @@ from requests import Response
 from sqlmodel import Session, select
 from tqdm import tqdm
 
-from .models import Anime, DailyStats, EpisodeStats, CrawlLog, DanmuRecord, CommentRecord
-from .config import settings
-from .mongodb import DanmakuMongoRepository
-from .logger import scraper_logger as logger
+from ..models import Anime, DailyStats, EpisodeStats, CrawlLog, DanmuRecord, CommentRecord
+from ..config import settings
+from ..mongodb import DanmakuMongoRepository
+from ..logger import scraper_logger as logger
+from .constants import (
+    AREA_ID_TO_ENUM as SCRAPER_AREA_ID_TO_ENUM,
+    DM_HISTORY_STOP_CODES as SCRAPER_DM_HISTORY_STOP_CODES,
+    DOMESTIC_API_STYLE_IDS as SCRAPER_DOMESTIC_API_STYLE_IDS,
+    MIXIN_KEY_ENC_TAB as SCRAPER_MIXIN_KEY_ENC_TAB,
+    REGULAR_API_STYLE_IDS as SCRAPER_REGULAR_API_STYLE_IDS,
+    STYLE_MAP as SCRAPER_STYLE_MAP,
+)
+from .helpers import (
+    convert_order_to_int,
+    get_quarter_month,
+    is_valid_main_episode,
+    parse_release_date_from_order,
+    read_proto_varint,
+)
 
 # SQLite 写入互斥锁：用于本模块内的爬虫写入操作，防止多线程并发写入时产生数据库锁冲突。
 # 注意：此锁仅在当前进程内、且仅对实际获取它的代码路径生效，并不能保证全项目的所有写入都已串行化。
@@ -38,53 +53,24 @@ class BilibiliBangumiCrawler:
     BASE_API_URL = "https://api.bilibili.com/pgc/season/index/result"
     
     # 风格映射
-    STYLE_MAP = {
-        10010: '原创', 10011: '漫画改', 10012: '小说改', 10013: '游戏改', 10102: '特摄',
-        10015: '布袋戏', 10016: '热血', 10017: '穿越', 10018: '奇幻', 10020: '战斗',
-        10021: '搞笑', 10022: '日常', 10023: '科幻', 10024: '萌系', 10025: '治愈',
-        10026: '校园', 10027: '少儿', 10028: '泡面', 10029: '恋爱', 10030: '少女',
-        10031: '魔法', 10032: '冒险', 10033: '历史', 10034: '架空', 10035: '机战',
-        10036: '神魔', 10037: '声控', 10038: '运动', 10039: '励志', 10040: '音乐',
-        10041: '推理', 10042: '社团', 10043: '智斗', 10044: '催泪', 10045: '美食',
-        10046: '偶像', 10047: '乙女', 10048: '职场', 10014: '动态漫', 10019: '玄幻',
-        10078: '武侠', 10057: '悬疑', 10049: '古风'
-    }
+    STYLE_MAP = SCRAPER_STYLE_MAP
     
     # 常规番剧API支持的风格ID
-    REGULAR_API_STYLE_IDS = {
-        10010, 10011, 10012, 10013, 10102, 10015, 10016, 10017, 10018, 10020,
-        10021, 10022, 10023, 10024, 10025, 10026, 10027, 10028, 10029, 10030,
-        10031, 10032, 10033, 10034, 10035, 10036, 10037, 10038, 10039, 10040,
-        10041, 10042, 10043, 10044, 10045, 10046, 10047, 10048
-    }
+    REGULAR_API_STYLE_IDS = SCRAPER_REGULAR_API_STYLE_IDS
     
     # 国产番剧API支持的风格ID
-    DOMESTIC_API_STYLE_IDS = {
-        10010, 10011, 10012, 10013, 10014, 10015, 10016, 10018, 10019, 10020,
-        10021, 10078, 10022, 10023, 10024, 10025, 10057, 10026, 10027, 10028,
-        10029, 10030, 10031, 10033, 10035, 10036, 10037, 10038, 10039, 10040,
-        10041, 10042, 10043, 10044, 10045, 10046, 10047, 10048, 10049
-    }
+    DOMESTIC_API_STYLE_IDS = SCRAPER_DOMESTIC_API_STYLE_IDS
     
     # B站地区 id → AreaEnum 映射表（来自 /pgc/view/web/season areas 数组）
     # id=1  中国大陆 / id=6 中国香港 / id=7 中国台湾 → 国内
     # id=2  日本                                    → 日本
     # id=3  美国                                    → 美国
     # 其余 id                                       → 其他（保持不变）
-    AREA_ID_TO_ENUM: Dict[int, str] = {
-        1: '国内', 6: '国内', 7: '国内',
-        2: '日本',
-        3: '美国',
-    }
+    AREA_ID_TO_ENUM: Dict[int, str] = SCRAPER_AREA_ID_TO_ENUM
     # 历史弹幕索引接口错误码（命中后无需继续请求更多月份）
-    DM_HISTORY_STOP_CODES = {
-        -101,  # 未登录
-        -111,  # csrf 校验失败
-        -400,  # 参数错误
-        -412,  # 风控拦截
-    }
+    DM_HISTORY_STOP_CODES = SCRAPER_DM_HISTORY_STOP_CODES
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session) -> None:
         """
         初始化爬虫
         
@@ -120,7 +106,7 @@ class BilibiliBangumiCrawler:
         proxy = random.choice(candidates)
         return {"http": proxy, "https": proxy}
 
-    def _throttle(self, *, force_base_delay: bool = False):
+    def _throttle(self, *, force_base_delay: bool = False) -> None:
         """统一节流，支持随机抖动。"""
         if not force_base_delay and settings.bilibili_request_delay <= 0:
             return
@@ -189,53 +175,20 @@ class BilibiliBangumiCrawler:
         将B站API返回的带单位数字字符串转换为整数
         例如: "9.9亿" -> 990000000, "3.4万" -> 34000
         """
-        if not isinstance(order_str, str):
-            return 0
-        num_match = re.search(r'(\d+(\.\d+)?)', order_str)
-        if not num_match:
-            return 0
-        num = float(num_match.group(1))
-        if '亿' in order_str:
-            return int(num * 100_000_000)
-        if '万' in order_str:
-            return int(num * 10_000)
-        return int(num)
+        return convert_order_to_int(order_str)
     
     @staticmethod
-    def _is_valid_main_episode(episode: dict) -> bool:
+    def _is_valid_main_episode(episode: Dict[str, Any]) -> bool:
         """
         根据 API 返回的字段判断该集是否为正片。
         第二道防线：利用 badge（角标）和 title/long_title（标题）过滤预告、PV 等非正片内容。
         """
-        # 检查角标 (badge)
-        badge = episode.get('badge', '')
-        if badge in ['预告', 'PV', 'CM', '特报', '花絮']:
-            return False
-
-        # 检查标题 (title 和 long_title)
-        title = episode.get('title', '')
-        long_title = episode.get('long_title', '')
-        combined_title = f"{title} {long_title}"
-
-        invalid_keywords = ['预告', 'PV', 'NCOP', 'NCED', '先行图', '总集篇']
-        for keyword in invalid_keywords:
-            if keyword in combined_title:
-                return False
-
-        return True
+        return is_valid_main_episode(episode)
 
     @staticmethod
     def _get_quarter_month(month: int) -> Optional[int]:
         """根据月份获取季度首月"""
-        if 1 <= month <= 3:
-            return 1
-        elif 4 <= month <= 6:
-            return 4
-        elif 7 <= month <= 9:
-            return 7
-        elif 10 <= month <= 12:
-            return 10
-        return None
+        return get_quarter_month(month)
     
     @staticmethod
     def _parse_release_date_from_order(order_str: Any) -> Tuple[Optional[Any], Optional[int]]:
@@ -243,44 +196,7 @@ class BilibiliBangumiCrawler:
         从 order 字符串解析发布日期
         返回 (year, quarter_month)
         """
-        if not isinstance(order_str, str) or not order_str.strip():
-            return None, None
-        
-        if "敬请期待" in order_str:
-            return "敬请期待", None
-        
-        if "昨日开播" in order_str:
-            yesterday = datetime.now() - timedelta(days=1)
-            return yesterday.year, BilibiliBangumiCrawler._get_quarter_month(yesterday.month)
-        
-        year_only_match = re.search(r'(\d{4})开播', order_str)
-        if year_only_match:
-            year = int(year_only_match.group(1))
-            if year < 2015:
-                return "更早", None
-            return None, None
-        
-        match = re.search(r'(?:(\d{2,4})年)?(\d+)月', order_str)
-        if not match:
-            return None, None
-        
-        year_str, month_str = match.groups()
-        month = int(month_str)
-        quarter_month = BilibiliBangumiCrawler._get_quarter_month(month)
-        
-        if quarter_month is None:
-            return None, None
-        
-        year = None
-        if year_str:
-            year = int(year_str)
-            if year < 100:
-                current_yy = datetime.now().year % 100
-                year = (1900 + year) if year > current_yy else (2000 + year)
-            if year < 2015:
-                return "更早", None
-        
-        return year, quarter_month
+        return parse_release_date_from_order(order_str)
     
     def _fetch_api_data(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
@@ -637,7 +553,7 @@ class BilibiliBangumiCrawler:
         logger.info(f"  ✅ 番剧详情补充完成：成功 {success_count} / {total} 部")
         return all_animes
 
-    def _save_animes_to_db(self, animes: Dict[int, Dict]):
+    def _save_animes_to_db(self, animes: Dict[int, Dict]) -> None:
         """
         将番剧数据保存到数据库
         """
@@ -1138,7 +1054,7 @@ class BilibiliBangumiCrawler:
         logger.info(f"  ✅ 修复完成：成功补充 {saved_count} 条剧集记录 (season_id={season_id})")
         return season_id
 
-    def update_online_viewers_for_all_episodes(self):
+    def update_online_viewers_for_all_episodes(self) -> None:
         """
         遍历 EpisodeStats 表中所有记录，通过 B站 API 刷新在线观看人数
         """
@@ -1183,12 +1099,7 @@ class BilibiliBangumiCrawler:
     # ──────────────────────────────────────────────────────────────────────────
 
     # Mixin 密钥混淆表（固定顺序）
-    _MIXIN_KEY_ENC_TAB = [
-        46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
-        27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
-        37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
-        22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
-    ]
+    _MIXIN_KEY_ENC_TAB = SCRAPER_MIXIN_KEY_ENC_TAB
     # Wbi 密钥缓存 (img_key, sub_key)
     _wbi_keys_cache: Optional[Tuple[str, str]] = None
     _wbi_keys_fetched_at: Optional[float] = None
@@ -1370,19 +1281,7 @@ class BilibiliBangumiCrawler:
     @staticmethod
     def _read_proto_varint(buf: bytes, start: int) -> Tuple[Optional[int], int]:
         """读取 protobuf varint，返回 (value, next_offset)。"""
-        value = 0
-        shift = 0
-        offset = start
-        while offset < len(buf):
-            byte = buf[offset]
-            value |= (byte & 0x7F) << shift
-            offset += 1
-            if (byte & 0x80) == 0:
-                return value, offset
-            if shift >= 63:
-                return None, offset
-            shift += 7
-        return None, offset
+        return read_proto_varint(buf, start)
 
     def _parse_danmaku_seg_protobuf(
         self,
@@ -2001,7 +1900,7 @@ class BilibiliBangumiCrawler:
                 )
                 if run_nlp_async:
                     try:
-                        from .tasks import enqueue_episode_nlp_task
+                        from ..tasks import enqueue_episode_nlp_task
                         task_id = enqueue_episode_nlp_task(
                             season_id=season_id,
                             episode_number=ep_index,
@@ -2035,7 +1934,7 @@ class BilibiliBangumiCrawler:
                 continue
 
         try:
-            from .analytics import update_episode_sentiment_aggregates
+            from ..analytics import update_episode_sentiment_aggregates
             update_episode_sentiment_aggregates(self.session, season_id)
         except Exception as exc:
             logger.warning("⚠️ 回填 EpisodeStats 聚合字段失败 season_id={}: {}", season_id, exc)
@@ -2062,12 +1961,12 @@ class BilibiliBangumiCrawler:
         }
 
 
-def create_crawler(session: Session = None) -> BilibiliBangumiCrawler:
+def create_crawler(session: Optional[Session] = None) -> BilibiliBangumiCrawler:
     """
     创建爬虫实例的工厂函数
     """
     if session is None:
-        from .database import engine
+        from ..database import engine
         session = Session(engine)
     
     return BilibiliBangumiCrawler(session)
