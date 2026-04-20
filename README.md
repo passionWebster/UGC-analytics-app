@@ -3,11 +3,11 @@
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.135-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Vue 3](https://img.shields.io/badge/Vue-3.x-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-5.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Vite](https://img.shields.io/badge/Vite-6.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 
 **一个现代化的 B 站番剧数据分析与可视化全栈 Web 应用。**
 
@@ -38,7 +38,7 @@
 | 层级 | 技术 |
 |------|------|
 | **前端框架** | Vue 3 (Composition API) + TypeScript |
-| **前端构建** | Vite 5 |
+| **前端构建** | Vite 6 |
 | **状态管理** | Pinia |
 | **路由** | Vue Router 4 |
 | **图表** | Apache ECharts 5 |
@@ -54,7 +54,7 @@
 
 ### 环境要求
 
-- **Python** 3.8+
+- **Python** 3.10+
 - **Node.js** 18+
 - **npm** 8+
 
@@ -100,7 +100,7 @@ chmod +x scripts/start.sh scripts/stop.sh
 | 前端应用 | http://localhost:5173 |
 | 后端 API | http://localhost:8000 |
 | Swagger 文档 | http://localhost:8000/api/docs |
-| ReDoc 文档 | http://localhost:8000/api/redoc |
+| ReDoc 文档 | http://localhost:8000/redoc |
 
 ### 5. 停止服务
 
@@ -141,10 +141,14 @@ npm run build        # 生产构建
 | 页面 | 路径 | 功能 |
 |------|------|------|
 | 登录 / 注册 | `/login` | 账号管理 |
+| 偏好选择 | `/genre-selection` | 首次登录后的偏好选择 |
 | 首页 | `/home` | 关键指标卡片、排行榜、类型分布 |
 | 状态检测 | `/status` | 搜索番剧，查看播放趋势与剧集详情 |
 | 数据概览 | `/overview` | 历年趋势、偏好差异、风格组合树图 |
+| 分析报告 | `/report` | 单集高能时间线、词云、情绪雷达与观点卡片 |
 | 番剧推荐 | `/recommendation` | 基于偏好的个性化推荐列表 |
+| 个人空间 | `/personal-space` | 收藏管理、密码修改、个人统计 |
+| 管理入口 | `/admin` | 重定向到个人空间管理 Tab（管理员权限） |
 
 **触发数据爬取**（需要登录）：在首页或通过 API `POST /api/crawler/update` 手动触发。
 
@@ -160,30 +164,48 @@ bilibili-analytics-app/
 │   │   ├── models.py         # SQLModel 数据模型
 │   │   ├── schemas.py        # Pydantic 请求/响应模型
 │   │   ├── auth.py           # JWT 认证服务
-│   │   ├── crud.py           # 数据库 CRUD 操作
-│   │   ├── scraper.py        # B站数据爬虫
+│   │   ├── crud.py           # 数据库访问与分析服务
+│   │   ├── analytics.py      # 分析聚合逻辑
+│   │   ├── mongodb.py        # MongoDB 原始弹幕仓储（可选）
+│   │   ├── tmdb_service.py   # TMDB 数据富集
 │   │   ├── scheduler.py      # APScheduler 定时任务
 │   │   ├── ai_service.py     # 豆包 AI 聊天服务
+│   │   ├── nlp_pipeline.py   # NLP 文本处理与聚合
+│   │   ├── tasks.py          # NLP 任务编排
+│   │   ├── nlp_worker_pool.py# 多进程 NLP Worker 池
+│   │   ├── scraper/          # 爬虫模块包（组合式 façade）
+│   │   │   ├── crawler.py
+│   │   │   ├── anime_sync.py
+│   │   │   ├── episode_sync.py
+│   │   │   ├── danmaku.py
+│   │   │   ├── comments.py
+│   │   │   ├── constants.py
+│   │   │   ├── helpers.py
+│   │   │   └── runtime.py
 │   │   └── routers/          # API 路由控制器
 │   │       ├── auth.py
 │   │       ├── analytics.py
 │   │       ├── crawler.py
-│   │       └── ai.py
-│   └── requirements.txt
+│   │       ├── ai.py
+│   │       ├── user_space.py
+│   │       └── admin.py
+│   ├── requirements.txt
+│   └── pyproject.toml        # Ruff / Mypy 配置
 │
 ├── frontend/                 # Vue 3 前端
 │   ├── src/
 │   │   ├── api/              # Axios 请求封装
 │   │   ├── components/       # 公共组件（Header / Footer / AiChat）
+│   │   ├── composables/      # 组合式逻辑（如 ECharts 封装）
 │   │   ├── views/            # 页面视图组件
 │   │   ├── router/           # Vue Router 配置
 │   │   ├── stores/           # Pinia 状态管理
+│   │   ├── utils/            # 通用工具
 │   │   ├── App.vue
 │   │   └── main.ts
 │   ├── package.json
 │   └── vite.config.ts
 │
-├── docs/                     # 文档目录
 ├── scripts/
 │   ├── start.sh              # 一键启动脚本
 │   └── stop.sh               # 停止服务脚本
