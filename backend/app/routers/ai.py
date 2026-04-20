@@ -1,9 +1,7 @@
-# routers/ai.py
-"""
-AI 助手相关的 API 路由
-"""
+"""AI assistant related API routes."""
+
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,29 +24,33 @@ _MULTI_STMT_RE = re.compile(r";(?!\s*$)", re.IGNORECASE)
 
 
 class ChatMessage(BaseModel):
-    """聊天消息模型"""
+    """聊天消息模型。"""
+
     message: str
 
 
 class InsightRequest(BaseModel):
-    """Auto-EDA 洞察请求模型"""
-    data: Any                            # 图表数据（JSON 可序列化）
-    context_hint: Optional[str] = ""    # 可选番剧名称等上下文
+    """Auto-EDA 洞察请求模型。"""
+
+    data: Any  # 图表数据（JSON 可序列化）
+    context_hint: str | None = ""  # 可选番剧名称等上下文
 
 
 class TextToSQLRequest(BaseModel):
-    """Text-to-SQL 请求模型"""
-    query: str                           # 用户自然语言
-    schema_hint: Optional[str] = ""     # 可选自定义 schema
+    """Text-to-SQL 请求模型。"""
+
+    query: str  # 用户自然语言
+    schema_hint: str | None = ""  # 可选自定义 schema
 
 
 class SentimentTimelineRequest(BaseModel):
-    """情感时间线查询请求"""
+    """情感时间线查询请求。"""
+
     season_id: int
 
 
 @router.get("/aiservicestatus", response_model=dict)
-def get_ai_service_status():
+def get_ai_service_status() -> dict[str, Any]:
     """
     获取 AI 服务状态
 
@@ -59,7 +61,7 @@ def get_ai_service_status():
 
 
 @router.post("/chat", response_model=dict)
-def chat_with_ai(chat_message: ChatMessage):
+def chat_with_ai(chat_message: ChatMessage) -> dict[str, Any]:
     """
     与 AI 助手对话
 
@@ -79,7 +81,7 @@ def chat_with_ai(chat_message: ChatMessage):
 
 
 @router.post("/ai/generate-insight", response_model=dict)
-def generate_insight(req: InsightRequest):
+def generate_insight(req: InsightRequest) -> dict[str, Any]:
     """
     Auto-EDA 智能洞察：接收图表 JSON，返回 300 字以内的结构化分析报告。
 
@@ -102,7 +104,7 @@ def generate_insight(req: InsightRequest):
 
 
 @router.post("/ai/text-to-sql", response_model=dict)
-def text_to_sql(req: TextToSQLRequest, session: Session = Depends(get_session)):
+def text_to_sql(req: TextToSQLRequest, session: Session = Depends(get_session)) -> dict[str, Any]:
     """
     Text-to-SQL：将自然语言转为 SQL，在只读权限下执行并返回结果。
 
@@ -147,8 +149,8 @@ def text_to_sql(req: TextToSQLRequest, session: Session = Depends(get_session)):
     try:
         with engine.connect() as conn:
             result = conn.execute(sa_text(sql))
-            columns: List[str] = list(result.keys())
-            rows: List[Dict] = [dict(zip(columns, row)) for row in result.fetchall()]
+            columns: list[str] = list(result.keys())
+            rows: list[dict[str, Any]] = [dict(zip(columns, row)) for row in result.fetchall()]
         return {"success": True, "sql": sql, "columns": columns, "rows": rows}
     except Exception as exc:
         raise HTTPException(
@@ -161,7 +163,7 @@ def text_to_sql(req: TextToSQLRequest, session: Session = Depends(get_session)):
 def get_sentiment_timeline_api(
     season_id: int,
     session: Session = Depends(get_session),
-):
+) -> dict[str, Any]:
     """
     获取指定番剧按集数聚合的弹幕情感均分，用于前端折线图。
 
@@ -180,7 +182,7 @@ def get_top_comments_api(
     season_id: int,
     limit: int = 50,
     session: Session = Depends(get_session),
-):
+) -> dict[str, Any]:
     """
     返回指定番剧高赞评论列表（含情感得分），供 AI 分析或前端展示。
 

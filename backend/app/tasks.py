@@ -1,5 +1,7 @@
+"""NLP task orchestration: run analysis and enqueue async worker tasks."""
+
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from sqlmodel import Session, select
 
@@ -14,7 +16,15 @@ from .nlp_worker_pool import enqueue_nlp_task
 _mongo_repo = DanmakuMongoRepository()
 
 
-def _load_episode_doc_from_mongo(cid: Optional[str]) -> Optional[Dict[str, Any]]:
+def _load_episode_doc_from_mongo(cid: str | None) -> dict[str, Any] | None:
+    """Load episode danmaku document from MongoDB by cid.
+
+    Args:
+        cid: Episode cid.
+
+    Returns:
+        MongoDB document dict when available, otherwise None.
+    """
     if not cid:
         return None
     doc = _mongo_repo.get_danmaku_by_cid(cid)
@@ -23,9 +33,26 @@ def _load_episode_doc_from_mongo(cid: Optional[str]) -> Optional[Dict[str, Any]]
     return doc if isinstance(doc, dict) else None
 
 
-def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[str] = None) -> Dict[str, Any]:
+def run_episode_nlp_analysis(
+    season_id: int,
+    episode_number: int,
+    cid: str | None = None,
+) -> dict[str, Any]:
+    """Run NLP analysis for a season episode and persist analysis outputs.
+
+    Args:
+        season_id: Target season ID.
+        episode_number: 1-based episode index in the season.
+        cid: Optional episode cid for direct lookup.
+
+    Returns:
+        Processing summary payload including source and processed sample size.
+
+    Raises:
+        Exception: Re-raises any runtime error after updating episode NLP status.
+    """
     with Session(engine) as session:
-        ep: Optional[EpisodeStats] = None
+        ep: EpisodeStats | None = None
         if cid:
             ep = session.exec(
                 select(EpisodeStats).where(
@@ -156,7 +183,21 @@ def run_episode_nlp_analysis(season_id: int, episode_number: int, cid: Optional[
             raise
 
 
-def enqueue_episode_nlp_task(season_id: int, episode_number: int, cid: Optional[str] = None) -> Optional[str]:
+def enqueue_episode_nlp_task(
+    season_id: int,
+    episode_number: int,
+    cid: str | None = None,
+) -> str | None:
+    """Enqueue NLP task to worker pool, with optional local fallback execution.
+
+    Args:
+        season_id: Target season ID.
+        episode_number: 1-based episode index in the season.
+        cid: Optional episode cid.
+
+    Returns:
+        Task ID when enqueue succeeds, otherwise None.
+    """
     task_id = enqueue_nlp_task(season_id=season_id, episode_number=episode_number, cid=cid)
     if task_id:
         return task_id

@@ -1,13 +1,8 @@
-# analytics.py
-"""
-NLP 情感分析模块
-使用 SnowNLP 对弹幕/评论文本进行中文情感打分，
-并提供按番剧聚合情感数据的辅助函数。
-"""
+"""Analytics and NLP aggregation helpers for danmaku/comment insights."""
 import json
 import re
 from collections import Counter, defaultdict
-from typing import Optional, List, Dict, Any
+from typing import Any
 from sqlmodel import Session, select
 from sqlalchemy import func as sa_func
 
@@ -24,7 +19,7 @@ except ImportError:
     logger.warning("⚠️ snownlp 未安装，情感分析功能将不可用。请执行 pip install snownlp")
 
 
-def score_sentiment(text: str) -> Optional[float]:
+def score_sentiment(text: str) -> float | None:
     """
     对单条中文文本打情感分（SnowNLP）。
 
@@ -114,7 +109,7 @@ def batch_score_comments(session: Session, season_id: int) -> int:
     return updated
 
 
-def get_sentiment_timeline(session: Session, season_id: int) -> List[Dict[str, Any]]:
+def get_sentiment_timeline(session: Session, season_id: int) -> list[dict[str, Any]]:
     """
     按集数聚合弹幕情感均分，用于前端折线图（情感时间线）。
 
@@ -155,7 +150,7 @@ def get_sentiment_timeline(session: Session, season_id: int) -> List[Dict[str, A
         if row[0]
     }
 
-    timeline: List[Dict[str, Any]] = []
+    timeline: list[dict[str, Any]] = []
     for idx, episode in enumerate(episodes, start=1):
         mongo_items = _get_mongo_episode_items(episode.cid)
         if mongo_items:
@@ -187,7 +182,7 @@ def get_sentiment_timeline(session: Session, season_id: int) -> List[Dict[str, A
     return timeline
 
 
-def get_top_comments(session: Session, season_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+def get_top_comments(session: Session, season_id: int, limit: int = 50) -> list[dict[str, Any]]:
     """
     返回指定番剧点赞数最高的前 limit 条评论（含情感得分）。
 
@@ -223,7 +218,7 @@ def get_comment_insight_cards(
     season_id: int,
     limit: int = 300,
     top_n: int = 6,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     基于高赞评论提炼观点卡片（轻量聚类）。
     """
@@ -236,7 +231,7 @@ def get_comment_insight_cards(
     if not records:
         return []
 
-    clusters: Dict[str, Dict[str, Any]] = {}
+    clusters: dict[str, dict[str, Any]] = {}
     total_likes = 0
 
     for record in records:
@@ -307,7 +302,7 @@ def update_episode_sentiment_aggregates(session: Session, season_id: int) -> int
         return 0
 
     ep_by_number = {idx + 1: ep for idx, ep in enumerate(episodes)}
-    grouped: Dict[int, List[DanmuRecord]] = {}
+    grouped: dict[int, list[DanmuRecord]] = {}
     for rec in danmu_records:
         grouped.setdefault(rec.episode_number, []).append(rec)
 
@@ -326,7 +321,7 @@ def update_episode_sentiment_aggregates(session: Session, season_id: int) -> int
             round(sum(sentiment_values) / len(sentiment_values), 4) if sentiment_values else None
         )
 
-        bins: Dict[int, int] = {}
+        bins: dict[int, int] = {}
         for r in records:
             if r.video_time is None:
                 continue
@@ -355,7 +350,7 @@ _MAX_EPISODE_SORT_KEY = 10**9
 _WORDCLOUD_FALLBACK_BATCH_SIZE = 2000
 _INSIGHT_SAMPLE_MAX_LEN = 180
 _MONGO_DANMAKU_REPO = DanmakuMongoRepository()
-_COMMENT_TOPIC_KEYWORDS: Dict[str, List[str]] = {
+_COMMENT_TOPIC_KEYWORDS: dict[str, list[str]] = {
     "改编与原作": ["原作", "改编", "漫画", "小说", "还原", "删减", "魔改"],
     "剧情讨论": ["剧情", "节奏", "反转", "伏笔", "结局", "发展", "设定"],
     "角色塑造": ["角色", "人物", "主角", "配角", "人设", "成长", "演技"],
@@ -366,6 +361,7 @@ _COMMENT_TOPIC_KEYWORDS: Dict[str, List[str]] = {
 
 
 def _safe_json_load(value: Any, default: Any) -> Any:
+    """Safely parse JSON-compatible value, returning default on failure."""
     if value is None:
         return default
     if isinstance(value, (dict, list)):
@@ -379,7 +375,8 @@ def _safe_json_load(value: Any, default: Any) -> Any:
     return default
 
 
-def _extract_tokens(text: str) -> List[str]:
+def _extract_tokens(text: str) -> list[str]:
+    """Extract normalized tokens for timeline/wordcloud aggregation."""
     if not text:
         return []
     tokens = [token.lower() for token in _TOKEN_RE.findall(text)]
@@ -387,10 +384,12 @@ def _extract_tokens(text: str) -> List[str]:
 
 
 def _normalize_term(text: str) -> str:
+    """Normalize lexical term for aggregate counting."""
     return (text or "").strip().lower()
 
 
 def _episode_sort_key(ep: EpisodeStats) -> tuple:
+    """Build sortable key from episode title number, fallback to record id."""
     title = ep.episode_title or ""
     match = _EPISODE_NUM_RE.search(title)
     if match:
@@ -398,7 +397,8 @@ def _episode_sort_key(ep: EpisodeStats) -> tuple:
     return _MAX_EPISODE_SORT_KEY, ep.id or 0
 
 
-def _get_mongo_episode_items(cid: Optional[str]) -> Optional[List[Dict[str, Any]]]:
+def _get_mongo_episode_items(cid: str | None) -> list[dict[str, Any]] | None:
+    """Load and normalize Mongo danmaku_items list for one episode cid."""
     if not cid:
         return None
     doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(str(cid))
@@ -411,7 +411,8 @@ def _get_mongo_episode_items(cid: Optional[str]) -> Optional[List[Dict[str, Any]
     return normalized or None
 
 
-def _get_mongo_item_video_time(item: Dict[str, Any]) -> Optional[float]:
+def _get_mongo_item_video_time(item: dict[str, Any]) -> float | None:
+    """Resolve video timestamp from Mongo item with progress fallback."""
     video_time = item.get("video_time")
     if video_time is not None:
         try:
@@ -430,7 +431,8 @@ def _get_mongo_item_video_time(item: Dict[str, Any]) -> Optional[float]:
     return progress_value
 
 
-def _get_mongo_item_sentiment(item: Dict[str, Any]) -> Optional[float]:
+def _get_mongo_item_sentiment(item: dict[str, Any]) -> float | None:
+    """Resolve first available sentiment score field from Mongo item."""
     for key in ("nlp_sentiment_score", "sentiment_score", "sentiment"):
         value = item.get(key)
         if value is None:
@@ -447,7 +449,8 @@ def get_episode_timeline_bins(
     cid: str,
     bin_size: int = 10,
     keyword_topk: int = 5,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
+    """Aggregate one episode timeline bins with sentiment and top keywords."""
     target_ep = session.exec(select(EpisodeStats).where(EpisodeStats.cid == cid)).first()
     if not target_ep:
         raise ValueError("episode_not_found")
@@ -459,7 +462,7 @@ def get_episode_timeline_bins(
     episode_index_map = {ep.id: idx + 1 for idx, ep in enumerate(episodes)}
     episode_number = episode_index_map.get(target_ep.id, 1)
 
-    bins: Dict[int, Dict[str, Any]] = defaultdict(
+    bins: dict[int, dict[str, Any]] = defaultdict(
         lambda: {"count": 0, "sent_sum": 0.0, "sent_count": 0, "token_counter": Counter()}
     )
     total_danmaku = 0
@@ -543,9 +546,10 @@ def get_episode_timeline_bins(
 def get_season_wordcloud(
     session: Session,
     season_id: int,
-    cid: Optional[str] = None,
+    cid: str | None = None,
     top_n: int = 120,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
+    """Build season/episode wordcloud items from NLP fields with DB fallback."""
     query = select(EpisodeStats).where(EpisodeStats.season_id == season_id)
     if cid:
         query = query.where(EpisodeStats.cid == cid)
@@ -598,7 +602,8 @@ def get_season_character_trends(
     session: Session,
     season_id: int,
     top_n: int = 8,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
+    """Build per-episode character/entity trend series for one season."""
     episodes = sorted(
         session.exec(select(EpisodeStats).where(EpisodeStats.season_id == season_id)).all(),
         key=_episode_sort_key,
@@ -606,9 +611,9 @@ def get_season_character_trends(
     if not episodes:
         raise ValueError("season_not_found")
 
-    per_episode_entity_counter: Dict[int, Counter] = {}
+    per_episode_entity_counter: dict[int, Counter] = {}
     global_counter: Counter = Counter()
-    episode_labels: List[str] = []
+    episode_labels: list[str] = []
 
     for idx, ep in enumerate(episodes, start=1):
         episode_labels.append(ep.episode_title or f"第{idx}集")
