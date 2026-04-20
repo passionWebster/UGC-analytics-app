@@ -85,10 +85,10 @@ def _is_spam_like(text: str) -> bool:
 def process_text_record(text: str) -> dict[str, Any]:
     """Process a single text record into cleaned/emotion/sentiment features.
 
-    参数:
+    Args:
         text: Raw danmaku/comment text.
 
-    返回:
+    Returns:
         Processed NLP feature mapping used by downstream aggregation/storage.
     """
     cleaned = _normalize_text(text)
@@ -127,10 +127,10 @@ def process_text_record(text: str) -> dict[str, Any]:
 def aggregate_episode_nlp(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate per-record NLP features into episode-level statistics.
 
-    参数:
+    Args:
         records: Processed records from :func:`process_text_record`.
 
-    返回:
+    Returns:
         Aggregated metrics including sample size, noise ratio, sentiment score,
         keywords and entity frequency list.
     """

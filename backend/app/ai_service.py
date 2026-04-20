@@ -49,7 +49,7 @@ class AIService:
         """
         检查 AI 服务状态
 
-        返回:
+        Returns:
             服务状态信息
         """
         return {
@@ -62,14 +62,14 @@ class AIService:
         """
         通用问答：B站数据分析助手人设。
 
-        参数:
+        Args:
             message: 用户消息
             context: 可选的额外上下文（将追加到 system_prompt 末尾）
 
-        返回:
+        Returns:
             AI 回复内容
 
-        异常:
+        Raises:
             HTTPException: 服务不可用或请求失败
         """
         system_prompt = (
@@ -83,14 +83,14 @@ class AIService:
         """
         Auto-EDA：资深二次元数据分析师人设，生成结构化数据洞察报告。
 
-        参数:
+        Args:
             data:         前端传来的图表数据（字典或列表，可序列化为 JSON）
             context_hint: 可选的番剧名称等上下文
 
-        返回:
+        Returns:
             约 300 字的结构化数据洞察文本
 
-        异常:
+        Raises:
             HTTPException: AI 服务不可用或请求失败
         """
         data_str = json.dumps(data, ensure_ascii=False, default=str)
@@ -111,14 +111,14 @@ class AIService:
         """
         Text-to-SQL：SQLite 专家人设，将自然语言转换为 SELECT 语句。
 
-        参数:
+        Args:
             natural_language: 用户的自然语言查询（中文）
             schema_hint:      额外 schema 说明（默认使用内置 schema）
 
-        返回:
+        Returns:
             纯 SQL 字符串（无其余解释文字）
 
-        异常:
+        Raises:
             HTTPException: AI 服务不可用或请求失败
         """
         default_schema = (
@@ -158,14 +158,14 @@ class AIService:
           6. 将结果写入缓存
           7. 对网络异常和 API 返回异常进行分类日志记录和错误透传
 
-        参数:
+        Args:
             message:       用户侧的输入文本（user role）
             system_prompt: 本次调用的系统提示词（system role）
 
-        返回:
+        Returns:
             AI 回复的纯文本内容
 
-        异常:
+        Raises:
             HTTPException 503: API Key 未配置
             HTTPException 500: 网络异常、响应解析失败或其他意外错误
         """
@@ -262,7 +262,7 @@ class AIService:
                 detail="AI 服务请求超时（30s），请稍后重试"
             )
         except requests.exceptions.RequestException as exc:
-            app_logger.error("豆包 API 请求异常: {}", exc)
+            app_logger.error("豆包 API 请求Raises: {}", exc)
             self._record_telemetry(
                 api_type="request",
                 latency_ms=int((time.perf_counter() - request_start) * 1000),

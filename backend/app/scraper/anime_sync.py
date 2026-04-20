@@ -32,7 +32,7 @@ class AnimeSyncService:
     def __init__(self, crawler: BilibiliBangumiCrawler) -> None:
         """Bind the service to the shared crawler runtime context.
 
-        参数:
+        Args:
             crawler: Shared scraper facade providing session, request helpers and config.
         """
         self._crawler = crawler
@@ -56,7 +56,7 @@ class AnimeSyncService:
         更新番剧数据库
         从 B站 API 抓取数据并存储到数据库
 
-        返回:
+        Returns:
             成功返回 True，失败返回 False
         """
         logger.info("🚀 [任务开始] 更新番剧数据库")
@@ -116,10 +116,10 @@ class AnimeSyncService:
         """
         通过关键词搜索番剧，抓取详情后将 Anime 信息和所有分集（含完整统计）写入数据库
 
-        参数:
+        Args:
             keyword: 搜索关键词
 
-        返回:
+        Returns:
             成功时返回 season_id，失败时返回 None
         """
         logger.info(f"🔍 正在搜索番剧: {keyword}")
@@ -263,10 +263,10 @@ class AnimeSyncService:
         """
         通过标题搜索番剧，返回 season_id
 
-        参数:
+        Args:
             title: 番剧标题
 
-        返回:
+        Returns:
             season_id 或 None
         """
         anime = self.session.exec(select(Anime).where(Anime.title == title)).first()
@@ -277,10 +277,10 @@ class AnimeSyncService:
         """
         执行单次 API 请求
 
-        参数:
+        Args:
             params: API 请求参数
 
-        返回:
+        Returns:
             返回数据列表
         """
         all_items = []
@@ -589,7 +589,7 @@ class AnimeSyncService:
                 batch[season_id] = anime_data
                 success_count += 1
             except Exception as exc:
-                logger.warning(f"  ⚠️ season_id={season_id} 详情获取异常: {exc}")
+                logger.warning(f"  ⚠️ season_id={season_id} 详情获取Raises: {exc}")
             finally:
                 # 随机延迟 0.1~2.0 秒，防止触发 B站反爬
                 time.sleep(random.uniform(0.1, 2.0))
@@ -704,10 +704,10 @@ class AnimeSyncService:
           pub_time                  — 首播日期字符串（来自 publish.pub_time）
           copyright                 — 版权类型：bilibili / dujia（来自 rights.copyright）
 
-        参数:
+        Args:
             season_id: 番剧 season_id
 
-        返回:
+        Returns:
             番剧详细信息字典，请求失败时返回 None
         """
         url = f"https://api.bilibili.com/pgc/view/web/season?season_id={season_id}"
@@ -759,10 +759,10 @@ class AnimeSyncService:
         """
         通过关键词在 B站 搜索番剧，返回最匹配的 season_id
 
-        参数:
+        Args:
             keyword: 搜索关键词
 
-        返回:
+        Returns:
             season_id 或 None
         """
         url = "https://api.bilibili.com/x/web-interface/search/type"

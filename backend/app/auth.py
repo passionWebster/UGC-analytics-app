@@ -58,11 +58,11 @@ class AuthService:
         """
         创建 JWT 访问令牌
         
-        参数:
+        Args:
             data: 要编码的数据字典
             expires_delta: 过期时间增量
             
-        返回:
+        Returns:
             JWT token 字符串
         """
         to_encode = data.copy()
@@ -80,10 +80,10 @@ class AuthService:
         """
         验证 JWT token
         
-        参数:
+        Args:
             token: JWT token
             
-        返回:
+        Returns:
             用户名或 None
         """
         try:
@@ -99,13 +99,13 @@ class AuthService:
         """
         注册新用户
         
-        参数:
+        Args:
             user_create: 用户创建数据
             
-        返回:
+        Returns:
             创建的用户信息
             
-        异常:
+        Raises:
             HTTPException: 如果用户名或邮箱已存在
         """
         # 检查用户名是否已存在
@@ -157,10 +157,10 @@ class AuthService:
         """
         验证用户凭证
         
-        参数:
+        Args:
             user_login: 用户登录数据
             
-        返回:
+        Returns:
             用户对象或 None
         """
         user = self.session.exec(
@@ -185,13 +185,13 @@ class AuthService:
         """
         用户登录
         
-        参数:
+        Args:
             user_login: 登录凭证
             
-        返回:
+        Returns:
             包含 token 和用户信息的字典
             
-        异常:
+        Raises:
             HTTPException: 如果凭证无效
         """
         user = self.authenticate_user(user_login)
@@ -242,10 +242,10 @@ class AuthService:
         """
         根据用户名获取用户
         
-        参数:
+        Args:
             username: 用户名
             
-        返回:
+        Returns:
             用户对象或 None
         """
         return self.session.exec(
@@ -256,14 +256,14 @@ class AuthService:
         """
         更新用户偏好设置
         
-        参数:
+        Args:
             username: 用户名
             preferences: 偏好列表
             
-        返回:
+        Returns:
             成功返回 True
             
-        异常:
+        Raises:
             HTTPException: 如果用户不存在
         """
         user = self.get_user_by_username(username)

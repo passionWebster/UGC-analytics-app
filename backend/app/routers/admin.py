@@ -29,11 +29,11 @@ def list_users(
 ) -> dict[str, Any]:
     """获取用户列表。
 
-    参数:
+    Args:
         session: 数据库会话。
         _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
 
-    返回:
+    Returns:
         dict[str, Any]: 包含用户列表的响应字典。
     """
     users: list[User] = session.exec(
@@ -65,16 +65,16 @@ def update_user_status(
 ) -> dict[str, Any]:
     """更新用户启用状态。
 
-    参数:
+    Args:
         user_id: 目标用户 ID。
         payload: 用户状态更新请求体。
         session: 数据库会话。
         admin: 当前管理员用户。
 
-    返回:
+    Returns:
         dict[str, Any]: 更新结果响应。
 
-    异常:
+    Raises:
         HTTPException: 用户不存在或尝试停用当前管理员自身账户时抛出。
     """
     user = session.get(User, user_id)
@@ -101,16 +101,16 @@ def reset_user_password(
 ) -> dict[str, Any]:
     """重置指定用户密码。
 
-    参数:
+    Args:
         user_id: 目标用户 ID。
         payload: 新密码请求体。
         session: 数据库会话。
         _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
 
-    返回:
+    Returns:
         dict[str, Any]: 重置结果响应。
 
-    异常:
+    Raises:
         HTTPException: 当用户不存在时抛出。
     """
     user = session.get(User, user_id)
@@ -132,12 +132,12 @@ def get_crawler_logs(
 ) -> dict[str, Any]:
     """获取最近爬虫任务日志。
 
-    参数:
+    Args:
         limit: 返回日志条数上限。
         session: 数据库会话。
         _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
 
-    返回:
+    Returns:
         dict[str, Any]: 包含爬虫日志列表的响应字典。
     """
     logs = session.exec(
@@ -183,11 +183,11 @@ def trigger_crawler_update(
 ) -> dict[str, Any]:
     """手动触发爬虫更新任务。
 
-    参数:
+    Args:
         background_tasks: 后台任务调度器。
         _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
 
-    返回:
+    Returns:
         dict[str, Any]: 任务触发结果响应。
     """
     background_tasks.add_task(_run_update_task)
@@ -201,11 +201,11 @@ def admin_overview(
 ) -> dict[str, Any]:
     """获取后台运营总览数据。
 
-    参数:
+    Args:
         session: 数据库会话。
         _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
 
-    返回:
+    Returns:
         dict[str, Any]: 包含用户、爬虫与题材分布等指标的响应字典。
     """
     total_users = session.exec(select(func.count()).select_from(User)).one()
@@ -266,12 +266,12 @@ def ai_stats(
 ) -> dict[str, Any]:
     """获取 AI 调用监控统计。
 
-    参数:
+    Args:
         days: 统计时间窗口（天）。
         session: 数据库会话。
         _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
 
-    返回:
+    Returns:
         dict[str, Any]: AI 调用次数、延迟、成功率与错误分布等聚合结果。
     """
     end_time = datetime.now()
@@ -359,11 +359,11 @@ def get_recommendation_strategy(
 ) -> dict[str, Any]:
     """获取当前推荐策略配置。
 
-    参数:
+    Args:
         session: 数据库会话。
         _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
 
-    返回:
+    Returns:
         dict[str, Any]: 推荐策略配置响应。
     """
     strategy = session.exec(
@@ -398,15 +398,15 @@ def update_recommendation_strategy(
 ) -> dict[str, Any]:
     """更新推荐策略配置。
 
-    参数:
+    Args:
         payload: 推荐策略更新请求体。
         session: 数据库会话。
         _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
 
-    返回:
+    Returns:
         dict[str, Any]: 更新后的推荐策略配置响应。
 
-    异常:
+    Raises:
         HTTPException: 当权重总和不大于 0 时抛出。
     """
     total_weight = payload.views_weight + payload.ai_weight + payload.tmdb_weight + payload.diversity_weight

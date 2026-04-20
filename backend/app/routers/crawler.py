@@ -20,9 +20,9 @@ def trigger_update(
     """
     触发数据更新
     
-    参数:
+    Args:
         background_tasks: 后台任务
-    返回:
+    Returns:
         触发结果
     """
     # 在后台执行爬虫任务（任务内自行创建独立会话）
@@ -39,10 +39,10 @@ def get_crawler_status(session: Session = Depends(get_session)) -> dict[str, Any
     """
     获取爬虫状态
     
-    参数:
+    Args:
         session: 数据库会话
         
-    返回:
+    Returns:
         爬虫状态信息
     """
     from ..models import CrawlLog
@@ -76,11 +76,11 @@ def search_anime_id(title: str, session: Session = Depends(get_session)) -> dict
     """
     根据标题搜索番剧 ID
     
-    参数:
+    Args:
         title: 番剧标题
         session: 数据库会话
         
-    返回:
+    Returns:
         番剧 ID
     """
     crawler = BilibiliBangumiCrawler(session)
@@ -154,10 +154,10 @@ def trigger_danmaku_scrape(
     """
     触发指定番剧的弹幕与评论抓取（后台异步执行）。
 
-    参数:
+    Args:
         req: 包含 season_id、max_episodes、comment_limit、run_sentiment
 
-    返回:
+    Returns:
         {"success": True, "message": "..."}
     """
     background_tasks.add_task(

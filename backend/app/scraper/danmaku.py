@@ -36,7 +36,7 @@ class DanmakuService:
     def __init__(self, crawler: BilibiliBangumiCrawler) -> None:
         """Bind the service to the shared crawler runtime context.
 
-        参数:
+        Args:
             crawler: Shared scraper facade providing session, request helpers and config.
         """
         self._crawler = crawler
@@ -59,10 +59,10 @@ class DanmakuService:
         """
         通过 B站弹幕 XML 接口获取当前弹幕池。
 
-        参数:
+        Args:
             cid: 分 P 的弹幕 ID
 
-        返回:
+        Returns:
             弹幕记录列表。
             其中 progress/ctime/sender_hash 为新字段，video_time/timestamp 为兼容字段。
         """
@@ -210,10 +210,10 @@ class DanmakuService:
         """
         对请求参数进行 Wbi 签名，自动附加 wts 和 w_rid 字段。
 
-        参数:
+        Args:
             params: 原始请求参数字典
 
-        返回:
+        Returns:
             含有 wts、w_rid 签名字段的新参数字典
         """
         img_key, sub_key = self._get_wbi_keys()

@@ -22,7 +22,7 @@ class CommentsService:
     def __init__(self, crawler: BilibiliBangumiCrawler) -> None:
         """Bind the service to the shared crawler runtime context.
 
-        参数:
+        Args:
             crawler: Shared scraper facade providing session, request helpers and config.
         """
         self._crawler = crawler
@@ -52,13 +52,13 @@ class CommentsService:
         """
         抓取指定主楼下的楼中楼评论。
 
-        参数:
+        Args:
             avid: 视频 avid（oid）
             root_rpid: 主楼评论 ID
             limit: 楼中楼最多抓取条数
             page_size: 每页抓取条数
 
-        返回:
+        Returns:
             楼中楼评论列表（含层级和父子关系字段）
         """
         url = "https://api.bilibili.com/x/v2/reply/reply"
@@ -121,11 +121,11 @@ class CommentsService:
         """
         通过 B站评论接口抓取主楼评论，并可选抓取楼中楼回复。
 
-        参数:
+        Args:
             avid:  视频 avid（即 oid）
             limit: 最多返回评论条数（按热门排序）
 
-        返回:
+        Returns:
             评论列表，包含层级和父子关系字段
         """
         url = "https://api.bilibili.com/x/v2/reply/main"
@@ -214,13 +214,13 @@ class CommentsService:
           4. 若提供 sentiment_fn，对每条文本打分后写入 sentiment_score
           5. 批量写入 DanmuRecord / CommentRecord
 
-        参数:
+        Args:
             season_id:     目标番剧 season_id
             max_episodes:  最多抓取前 N 集弹幕，默认 3
             comment_limit: 每集最多抓取评论数，默认 50
             sentiment_fn:  可选的情感打分函数，签名为 (text: str) -> float
 
-        返回:
+        Returns:
             统计字典，包含写入数量与请求重试指标
         """
         self.override_retry_attempts = max(1, retry_attempts) if retry_attempts else None

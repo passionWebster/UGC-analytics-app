@@ -115,7 +115,7 @@ def create_scheduler() -> AsyncIOScheduler:
     """
     创建并配置 AsyncIOScheduler 调度器。
 
-    返回:
+    Returns:
         配置好任务的 AsyncIOScheduler 实例（尚未启动）
     """
     scheduler = AsyncIOScheduler(

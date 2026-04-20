@@ -30,12 +30,12 @@ def get_user_favorites(
 ) -> dict[str, Any]:
     """获取当前用户追番列表。
 
-    参数:
+    Args:
         status: 可选的追番状态筛选值。
         session: 数据库会话。
         current_user: 当前登录用户。
 
-    返回:
+    Returns:
         dict[str, Any]: 包含追番列表与总数的响应字典。
     """
     query = (
@@ -73,15 +73,15 @@ def toggle_user_favorite(
 ) -> dict[str, Any]:
     """切换用户追番收藏状态。
 
-    参数:
+    Args:
         payload: 收藏切换请求体。
         session: 数据库会话。
         current_user: 当前登录用户。
 
-    返回:
+    Returns:
         dict[str, Any]: 添加或取消收藏后的响应字典。
 
-    异常:
+    Raises:
         HTTPException: 当番剧不存在时抛出。
     """
     anime = session.exec(select(Anime).where(Anime.season_id == payload.season_id)).first()
@@ -135,16 +135,16 @@ def update_favorite_status(
 ) -> dict[str, Any]:
     """更新当前用户追番状态。
 
-    参数:
+    Args:
         season_id: 番剧季 ID。
         payload: 追番状态更新请求体。
         session: 数据库会话。
         current_user: 当前登录用户。
 
-    返回:
+    Returns:
         dict[str, Any]: 更新结果响应。
 
-    异常:
+    Raises:
         HTTPException: 当追番记录不存在时抛出。
     """
     favorite = session.exec(
@@ -178,12 +178,12 @@ def update_user_password(
 ) -> dict[str, Any]:
     """修改当前用户密码。
 
-    参数:
+    Args:
         payload: 密码更新请求体（包含旧密码与新密码）。
         session: 数据库会话。
         current_user: 当前登录用户。
 
-    返回:
+    Returns:
         dict[str, Any]: 密码修改结果响应。
     """
     auth_service = AuthService(session)
@@ -198,11 +198,11 @@ def get_user_space_analytics(
 ) -> dict[str, Any]:
     """获取个人空间看板聚合数据。
 
-    参数:
+    Args:
         session: 数据库会话。
         current_user: 当前登录用户。
 
-    返回:
+    Returns:
         dict[str, Any]: 包含追番分布、题材分布与周增长指标的响应字典。
     """
     favorite_rows = session.exec(

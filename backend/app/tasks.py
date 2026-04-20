@@ -19,10 +19,10 @@ _mongo_repo = DanmakuMongoRepository()
 def _load_episode_doc_from_mongo(cid: str | None) -> dict[str, Any] | None:
     """Load episode danmaku document from MongoDB by cid.
 
-    参数:
+    Args:
         cid: Episode cid.
 
-    返回:
+    Returns:
         MongoDB document dict when available, otherwise None.
     """
     if not cid:
@@ -40,15 +40,15 @@ def run_episode_nlp_analysis(
 ) -> dict[str, Any]:
     """Run NLP analysis for a season episode and persist analysis outputs.
 
-    参数:
+    Args:
         season_id: Target season ID.
         episode_number: 1-based episode index in the season.
         cid: Optional episode cid for direct lookup.
 
-    返回:
+    Returns:
         Processing summary payload including source and processed sample size.
 
-    异常:
+    Raises:
         Exception: Re-raises any runtime error after updating episode NLP status.
     """
     with Session(engine) as session:
@@ -190,12 +190,12 @@ def enqueue_episode_nlp_task(
 ) -> str | None:
     """Enqueue NLP task to worker pool, with optional local fallback execution.
 
-    参数:
+    Args:
         season_id: Target season ID.
         episode_number: 1-based episode index in the season.
         cid: Optional episode cid.
 
-    返回:
+    Returns:
         Task ID when enqueue succeeds, otherwise None.
     """
     task_id = enqueue_nlp_task(season_id=season_id, episode_number=episode_number, cid=cid)

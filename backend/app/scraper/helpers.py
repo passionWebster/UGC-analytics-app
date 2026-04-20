@@ -8,10 +8,10 @@ from typing import Any
 def convert_order_to_int(order_str: Any) -> int:
     """将带单位的热度字符串转换为整数。
 
-    参数:
+    Args:
         order_str: 原始热度文本，可能包含“万”“亿”等单位。
 
-    返回:
+    Returns:
         解析后的整数值；无法解析时返回 0。
     """
     if not isinstance(order_str, str):
@@ -30,10 +30,10 @@ def convert_order_to_int(order_str: Any) -> int:
 def is_valid_main_episode(episode: dict[str, Any]) -> bool:
     """判断分集是否属于正片。
 
-    参数:
+    Args:
         episode: 单集信息字典。
 
-    返回:
+    Returns:
         若为正片返回 True，否则返回 False。
     """
     badge = episode.get("badge", "")
@@ -51,10 +51,10 @@ def is_valid_main_episode(episode: dict[str, Any]) -> bool:
 def get_quarter_month(month: int) -> int | None:
     """根据月份返回季度首月。
 
-    参数:
+    Args:
         month: 月份（1-12）。
 
-    返回:
+    Returns:
         所属季度首月；输入非法时返回 None。
     """
     if 1 <= month <= 3:
@@ -71,10 +71,10 @@ def get_quarter_month(month: int) -> int | None:
 def parse_release_date_from_order(order_str: Any) -> tuple[Any | None, int | None]:
     """从开播文案中提取年份与季度首月。
 
-    参数:
+    Args:
         order_str: B 站接口返回的开播相关文本。
 
-    返回:
+    Returns:
         (year, quarter_month) 元组；year 可能为整数或“敬请期待/更早”。
     """
     if not isinstance(order_str, str) or not order_str.strip():
@@ -119,11 +119,11 @@ def parse_release_date_from_order(order_str: Any) -> tuple[Any | None, int | Non
 def read_proto_varint(buf: bytes, start: int) -> tuple[int | None, int]:
     """读取 protobuf varint。
 
-    参数:
+    Args:
         buf: 原始二进制缓冲区。
         start: 起始偏移量。
 
-    返回:
+    Returns:
         (解析后的整数值或 None, 下一偏移量) 元组。
     """
     value = 0

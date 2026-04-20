@@ -80,7 +80,7 @@ class BilibiliBangumiCrawler:
     def __init__(self, session: Session) -> None:
         """Initialize shared runtime and compose domain subservices.
 
-        参数:
+        Args:
             session: SQLModel database session used by all scraper subservices.
         """
         self.session = session

@@ -54,7 +54,7 @@ def get_ai_service_status() -> dict[str, Any]:
     """
     获取 AI 服务状态
 
-    返回:
+    Returns:
         服务状态信息
     """
     return ai_service.check_service_status()
@@ -65,10 +65,10 @@ def chat_with_ai(chat_message: ChatMessage) -> dict[str, Any]:
     """
     与 AI 助手对话
 
-    参数:
+    Args:
         chat_message: 聊天消息
 
-    返回:
+    Returns:
         AI 回复
     """
     try:
@@ -85,10 +85,10 @@ def generate_insight(req: InsightRequest) -> dict[str, Any]:
     """
     自动探索洞察：接收图表数据，返回 300 字以内的结构化分析报告。
 
-    参数:
+    Args:
         req: 包含图表数据与上下文提示
 
-    返回:
+    Returns:
         结构化洞察结果
     """
     try:
@@ -110,10 +110,10 @@ def text_to_sql(req: TextToSQLRequest, session: Session = Depends(get_session)) 
 
     为安全起见，仅允许只读查询语句；任何写入或结构变更语句都会被拒绝。
 
-    参数:
+    Args:
         req: 包含自然语言查询与可选数据结构提示
 
-    返回:
+    Returns:
         查询执行结果
     """
     try:
@@ -167,10 +167,10 @@ def get_sentiment_timeline_api(
     """
     获取指定番剧按集数聚合的弹幕情感均分，用于折线图展示。
 
-    参数:
+    Args:
         season_id: 番剧 season_id
 
-    返回:
+    Returns:
         情感时间线结果
     """
     timeline = get_sentiment_timeline(session, season_id)
@@ -186,11 +186,11 @@ def get_top_comments_api(
     """
     返回指定番剧高赞评论列表（含情感得分），供智能分析或前端展示。
 
-    参数:
+    Args:
         season_id: 番剧 season_id
         limit:     最多返回条数（默认 50）
 
-    返回:
+    Returns:
         评论列表结果
     """
     comments = get_top_comments(session, season_id, limit=limit)

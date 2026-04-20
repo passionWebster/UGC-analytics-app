@@ -121,12 +121,12 @@ def stop_nlp_worker_pool() -> None:
 def enqueue_nlp_task(season_id: int, episode_number: int, cid: str | None = None) -> str | None:
     """Enqueue an episode NLP task to multiprocessing queue.
 
-    参数:
+    Args:
         season_id: Target season ID.
         episode_number: 1-based episode index in the season.
         cid: Optional episode cid for direct record binding.
 
-    返回:
+    Returns:
         Generated task ID when enqueue succeeds, otherwise None.
     """
     if not settings.nlp_worker_pool_enabled:
