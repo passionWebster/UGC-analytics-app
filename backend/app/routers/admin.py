@@ -1,11 +1,11 @@
-"""后台管理相关 API 路由
+"""Admin management API routes.
 
 提供用户管理、爬虫监控与基础运营看板功能，全部接口均需管理员权限。
 """
+from datetime import datetime, timedelta
 from collections import Counter
 import json
-from typing import List
-from datetime import datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Query
 from sqlalchemy import desc, func, case
@@ -26,9 +26,9 @@ router = APIRouter(prefix="/api/admin", tags=["后台管理"])
 def list_users(
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """获取所有用户列表"""
-    users: List[User] = session.exec(
+    users: list[User] = session.exec(
         select(User).order_by(desc(User.created_at))
     ).all()
 
@@ -54,7 +54,7 @@ def update_user_status(
     payload: UserStatusUpdate,
     session: Session = Depends(get_session),
     admin=Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """封禁/解封用户"""
     user = session.get(User, user_id)
     if not user:
@@ -77,7 +77,7 @@ def reset_user_password(
     payload: ResetPasswordRequest,
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """重置用户密码"""
     user = session.get(User, user_id)
     if not user:
@@ -95,7 +95,7 @@ def get_crawler_logs(
     limit: int = 20,
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """获取最近的爬虫任务日志"""
     logs = session.exec(
         select(CrawlLog).order_by(desc(CrawlLog.started_at)).limit(limit)
@@ -134,7 +134,7 @@ def _run_update_task() -> None:
 def trigger_crawler_update(
     background_tasks: BackgroundTasks,
     _admin=Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """手动触发爬虫更新任务"""
     background_tasks.add_task(_run_update_task)
     return {"success": True, "message": "数据更新任务已启动"}
@@ -144,7 +144,7 @@ def trigger_crawler_update(
 def admin_overview(
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """运营/监控大盘"""
     total_users = session.exec(select(func.count()).select_from(User)).one()
     active_users = session.exec(
@@ -201,7 +201,7 @@ def ai_stats(
     days: int = Query(default=7, ge=1, le=90),
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """AI 服务调用监控接口（基于 ai_telemetry_logs 聚合）。"""
     end_time = datetime.now()
     start_time = end_time - timedelta(days=days)
@@ -285,7 +285,7 @@ def ai_stats(
 def get_recommendation_strategy(
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """获取当前推荐策略配置。"""
     strategy = session.exec(
         select(RecommendationStrategyConfig).order_by(desc(RecommendationStrategyConfig.updated_at)).limit(1)
@@ -316,7 +316,7 @@ def update_recommendation_strategy(
     payload: RecommendationStrategyUpdate,
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """更新推荐策略配置。"""
     total_weight = payload.views_weight + payload.ai_weight + payload.tmdb_weight + payload.diversity_weight
     if total_weight <= 0:

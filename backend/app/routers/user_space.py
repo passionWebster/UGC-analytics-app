@@ -1,9 +1,8 @@
-"""
-个人空间相关 API 路由
-"""
+"""User space related API routes."""
 import json
 import logging
 from datetime import datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc
@@ -28,7 +27,7 @@ def get_user_favorites(
     status: str | None = Query(default=None, description="追番状态筛选"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> dict[str, Any]:
     """
     获取当前登录用户追番列表。
     """
@@ -64,7 +63,7 @@ def toggle_user_favorite(
     payload: FavoriteToggleRequest,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> dict[str, Any]:
     """
     添加/取消当前登录用户追番收藏。
     """
@@ -116,7 +115,7 @@ def update_favorite_status(
     payload: FavoriteStatusUpdateRequest,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> dict[str, Any]:
     """
     更新当前用户追番状态。
     """
@@ -148,7 +147,7 @@ def update_user_password(
     payload: UserPasswordUpdate,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> dict[str, Any]:
     """
     当前用户修改密码（校验旧密码）。
     """
@@ -161,7 +160,7 @@ def update_user_password(
 def get_user_space_analytics(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> dict[str, Any]:
     """
     获取个人看板聚合数据。
     """

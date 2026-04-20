@@ -6,7 +6,7 @@ from typing import Any
 
 
 def convert_order_to_int(order_str: Any) -> int:
-    """将 B 站 API 返回的带单位数字字符串转换为整数。"""
+    """Convert unit-suffixed order string (万/亿) to integer count."""
     if not isinstance(order_str, str):
         return 0
     num_match = re.search(r"(\d+(\.\d+)?)", order_str)
@@ -21,7 +21,7 @@ def convert_order_to_int(order_str: Any) -> int:
 
 
 def is_valid_main_episode(episode: dict[str, Any]) -> bool:
-    """根据 API 返回字段判断是否为正片。"""
+    """Check whether an episode payload should be treated as a main episode."""
     badge = episode.get("badge", "")
     if badge in ["预告", "PV", "CM", "特报", "花絮"]:
         return False
@@ -35,7 +35,7 @@ def is_valid_main_episode(episode: dict[str, Any]) -> bool:
 
 
 def get_quarter_month(month: int) -> int | None:
-    """根据月份获取季度首月。"""
+    """Map month to first month of its quarter."""
     if 1 <= month <= 3:
         return 1
     if 4 <= month <= 6:
@@ -48,7 +48,7 @@ def get_quarter_month(month: int) -> int | None:
 
 
 def parse_release_date_from_order(order_str: Any) -> tuple[Any | None, int | None]:
-    """从 order 字符串解析发布日期，返回 (year, quarter_month)。"""
+    """Parse release date hints from order text into (year, quarter_month)."""
     if not isinstance(order_str, str) or not order_str.strip():
         return None, None
 
@@ -89,7 +89,7 @@ def parse_release_date_from_order(order_str: Any) -> tuple[Any | None, int | Non
 
 
 def read_proto_varint(buf: bytes, start: int) -> tuple[int | None, int]:
-    """读取 protobuf varint，返回 (value, next_offset)。"""
+    """Read protobuf varint and return (value, next_offset)."""
     value = 0
     shift = 0
     offset = start

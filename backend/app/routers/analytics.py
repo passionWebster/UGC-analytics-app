@@ -10,7 +10,7 @@ import re
 import threading
 from enum import Enum
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Any, List, Optional
 from urllib.parse import urlparse
 import asyncio
 import httpx
@@ -93,7 +93,7 @@ class SeasonEnum(str, Enum):
     winter = "winter"
 
 
-def _validate_category_value(category: Optional[str]) -> Optional[str]:
+def _validate_category_value(category: str | None) -> str | None:
     """
     校验 category 参数，防止前端参数被篡改后携带异常字符。
     """
@@ -110,7 +110,7 @@ def _validate_category_value(category: Optional[str]) -> Optional[str]:
     return category
 
 
-def _parse_areas_param(areas: Optional[str]) -> Optional[List[str]]:
+def _parse_areas_param(areas: str | None) -> list[str] | None:
     """
     解析逗号分隔地区参数，并限制在 AreaEnum 白名单内。
     """
@@ -128,8 +128,8 @@ def _parse_areas_param(areas: Optional[str]) -> Optional[List[str]]:
 
 def _is_dataset_stable(
     session: Session,
-    season_id: Optional[int] = None,
-    cid: Optional[str] = None,
+    season_id: int | None = None,
+    cid: str | None = None,
 ) -> bool:
     """
     判断数据是否超过稳定窗口（默认 7 天），稳定后才启用聚合缓存。
@@ -149,7 +149,7 @@ def _is_dataset_stable(
     return latest_updated <= (datetime.now() - timedelta(days=_STABLE_DATA_DAYS))
 
 
-def _read_cache(cache_key: str):
+def _read_cache(cache_key: str) -> dict[str, Any] | None:
     with _ANALYTICS_CACHE_LOCK:
         return _ANALYTICS_CACHE.get(cache_key)
 
@@ -159,7 +159,7 @@ def _write_cache(cache_key: str, payload: dict) -> None:
         _ANALYTICS_CACHE[cache_key] = payload
 
 
-def _parse_release_date_to_datetime(value: Optional[str]) -> Optional[datetime]:
+def _parse_release_date_to_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
     value = value.strip()
@@ -363,7 +363,7 @@ def get_episode_timeline(
     bin_size: int = Query(10, ge=1, le=300, description="时间窗大小（秒）"),
     keyword_topk: int = Query(5, ge=1, le=20, description="每个切片返回关键词数量"),
     session: Session = Depends(get_session),
-):
+) -> dict[str, Any]:
     """
     获取单集按时间窗切片后的弹幕聚合数据。
     """
@@ -400,7 +400,7 @@ def get_episode_analysis_with_cache(
     keyword_topk: int = Query(5, ge=1, le=20, description="每个切片返回关键词数量"),
     top_n: int = Query(120, ge=10, le=500, description="词云词条数量上限"),
     session: Session = Depends(get_session),
-):
+) -> dict[str, Any]:
     """
     单集分析统一入口：优先返回 SQLite 缓存，必要时刷新缓存；无源数据时触发抓取。
     """
@@ -522,10 +522,10 @@ def get_episode_analysis_with_cache(
 @router.get("/season/{season_id}/wordcloud", response_model=dict)
 def get_season_wordcloud_api(
     season_id: int,
-    cid: Optional[str] = Query(None, description="可选：按单集 CID 聚合词云"),
+    cid: str | None = Query(None, description="可选：按单集 CID 聚合词云"),
     top_n: int = Query(120, ge=10, le=500, description="返回词条数量上限"),
     session: Session = Depends(get_session),
-):
+) -> dict[str, Any]:
     """
     获取整季（或单集）词云权重数据。
     """
@@ -558,7 +558,7 @@ def get_season_characters_api(
     season_id: int,
     top_n: int = Query(8, ge=1, le=30, description="返回角色数量上限"),
     session: Session = Depends(get_session),
-):
+) -> dict[str, Any]:
     """
     获取整季核心角色讨论度趋势。
     """
@@ -591,7 +591,7 @@ def get_season_insight_cards_api(
     limit: int = Query(300, ge=30, le=1000, description="用于聚类的评论采样数"),
     top_n: int = Query(6, ge=1, le=20, description="返回观点卡片数量"),
     session: Session = Depends(get_session),
-):
+) -> dict[str, Any]:
     """
     获取整季热门评论观点提取卡片数据。
     """
