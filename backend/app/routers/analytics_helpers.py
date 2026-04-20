@@ -7,6 +7,7 @@ import re
 import threading
 from datetime import datetime, timedelta
 from enum import Enum
+from pathlib import Path
 from typing import List, Optional
 
 from cachetools import TTLCache
@@ -29,10 +30,7 @@ _MONGO_SENTIMENT_KEYS = ("nlp_sentiment_score", "sentiment_score", "sentiment")
 _RECENT_EPISODE_DAYS = 30
 _FROZEN_EPISODE_DAYS = 180
 
-_COVER_CACHE_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-    "cover_cache",
-)
+_COVER_CACHE_DIR = str(Path(__file__).resolve().parents[3] / "cover_cache")
 
 _ALLOWED_IMAGE_HOSTS = {
     "i0.hdslb.com",

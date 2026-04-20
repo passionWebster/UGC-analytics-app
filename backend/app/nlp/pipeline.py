@@ -38,7 +38,13 @@ def _ensure_jieba_user_dict_loaded() -> None:
     else:
         candidate = Path(__file__).resolve().parent / "nlp_user_dict.txt"
         if not candidate.exists():
-            candidate = Path(__file__).resolve().parent.parent / "nlp_user_dict.txt"
+            legacy_candidate = Path(__file__).resolve().parent.parent / "nlp_user_dict.txt"
+            if legacy_candidate.exists():
+                logger.warning(
+                    "⚠️ 使用旧路径 NLP 词典：{}；建议迁移到 app/nlp/nlp_user_dict.txt",
+                    legacy_candidate,
+                )
+                candidate = legacy_candidate
     if candidate.exists():
         jieba.load_userdict(str(candidate))
         logger.info("✅ NLP 已加载 Jieba 自定义词典 path={}", candidate)
