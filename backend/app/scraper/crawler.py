@@ -1,7 +1,7 @@
-# scraper/crawler.py
-"""
-B站数据爬虫服务 - 重构版
-将原 scraper.py 和 data_manager.py 的功能整合，数据直接写入 SQLite 数据库
+"""Crawler facade and shared HTTP/runtime utilities.
+
+`BilibiliBangumiCrawler` is the composition root of scraper subservices:
+`anime_sync`, `episode_sync`, `danmaku`, and `comments`.
 """
 
 from __future__ import annotations
@@ -45,9 +45,15 @@ from .helpers import (
 
 
 class BilibiliBangumiCrawler:
-    """
-    B站番剧爬虫类
-    负责从 B站 API 抓取数据并存储到 SQLite 数据库
+    """Facade for scraper domain services plus shared request/session context.
+
+    Attributes:
+        session: Shared SQLModel session.
+        http_session: Shared requests session with default headers/cookies.
+        anime_sync: Anime-level sync service.
+        episode_sync: Episode-level sync service.
+        danmaku: Danmaku crawl/parse service.
+        comments: Comment crawl/persistence service.
     """
 
     # B站番剧索引API的URL
@@ -72,11 +78,10 @@ class BilibiliBangumiCrawler:
     DM_HISTORY_STOP_CODES = SCRAPER_DM_HISTORY_STOP_CODES
 
     def __init__(self, session: Session) -> None:
-        """
-        初始化爬虫
+        """Initialize shared runtime and compose domain subservices.
 
         Args:
-            session: SQLModel 数据库会话
+            session: SQLModel database session used by all scraper subservices.
         """
         self.session = session
         self.http_session = requests.Session()
@@ -94,6 +99,7 @@ class BilibiliBangumiCrawler:
         self.mongo_repo = DanmakuMongoRepository()
         self.override_retry_attempts: int | None = None
         self.request_counters: dict[str, int] = {"requests": 0, "retries": 0, "failed": 0}
+        # 组合子服务：所有业务能力通过显式子服务入口访问。
         self.anime_sync = AnimeSyncService(self)
         self.episode_sync = EpisodeSyncService(self)
         self.danmaku = DanmakuService(self)

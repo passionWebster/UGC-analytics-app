@@ -1,11 +1,11 @@
-"""EpisodeSyncService domain service for scraper facade."""
+"""Episode domain synchronization service."""
 
 from __future__ import annotations
 
 import json
 import time
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlmodel import select
 
@@ -14,17 +14,27 @@ from ..logger import scraper_logger as logger
 from ..models import EpisodeStats
 from .runtime import sqlite_write_lock
 
+if TYPE_CHECKING:
+    from .crawler import BilibiliBangumiCrawler
+
 
 class EpisodeSyncService:
-    """Domain service delegated by ``BilibiliBangumiCrawler`` facade."""
+    """Handle episode-level crawl, update and persistence workflows."""
 
-    def __init__(self, crawler: Any) -> None:
+    def __init__(self, crawler: BilibiliBangumiCrawler) -> None:
+        """Bind the service to the shared crawler runtime context.
+
+        Args:
+            crawler: Shared scraper facade providing session, request helpers and config.
+        """
         self._crawler = crawler
 
     def __getattr__(self, name: str) -> Any:
+        """Fallback unknown attributes to the shared crawler facade."""
         return getattr(self._crawler, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
+        """Route unknown attribute writes to the shared crawler facade."""
         if name == "_crawler" or "_crawler" not in self.__dict__:
             object.__setattr__(self, name, value)
             return

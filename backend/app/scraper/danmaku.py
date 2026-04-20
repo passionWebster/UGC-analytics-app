@@ -1,4 +1,4 @@
-"""DanmakuService domain service for scraper facade."""
+"""Danmaku fetch, parse and signature service."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from functools import reduce
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..config import settings
 from ..logger import scraper_logger as logger
@@ -20,9 +20,12 @@ from .constants import (
 )
 from .helpers import read_proto_varint
 
+if TYPE_CHECKING:
+    from .crawler import BilibiliBangumiCrawler
+
 
 class DanmakuService:
-    """Domain service delegated by ``BilibiliBangumiCrawler`` facade."""
+    """Handle current/history danmaku crawling and payload normalization."""
 
     _MIXIN_KEY_ENC_TAB = SCRAPER_MIXIN_KEY_ENC_TAB
     _wbi_keys_cache: tuple[str, str] | None = None
@@ -30,13 +33,20 @@ class DanmakuService:
     _WBI_CACHE_TTL = 3600
     DM_HISTORY_STOP_CODES = SCRAPER_DM_HISTORY_STOP_CODES
 
-    def __init__(self, crawler: Any) -> None:
+    def __init__(self, crawler: BilibiliBangumiCrawler) -> None:
+        """Bind the service to the shared crawler runtime context.
+
+        Args:
+            crawler: Shared scraper facade providing session, request helpers and config.
+        """
         self._crawler = crawler
 
     def __getattr__(self, name: str) -> Any:
+        """Fallback unknown attributes to the shared crawler facade."""
         return getattr(self._crawler, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
+        """Route unknown attribute writes to the shared crawler facade."""
         if name == "_crawler" or "_crawler" not in self.__dict__:
             object.__setattr__(self, name, value)
             return

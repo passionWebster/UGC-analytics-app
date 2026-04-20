@@ -1,4 +1,4 @@
-"""AnimeSyncService domain service for scraper facade."""
+"""Anime domain synchronization service."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import random
 import time
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlmodel import select
 from tqdm import tqdm
@@ -18,17 +18,31 @@ from .runtime import sqlite_write_lock
 
 AnimePayload = dict[str, Any]
 
+if TYPE_CHECKING:
+    from .crawler import BilibiliBangumiCrawler
+
 
 class AnimeSyncService:
-    """Domain service delegated by ``BilibiliBangumiCrawler`` facade."""
+    """Handle anime-level crawl and persistence workflows.
 
-    def __init__(self, crawler: Any) -> None:
+    This service owns season-level ingestion logic, while request/session/state are
+    still shared through the crawler facade instance.
+    """
+
+    def __init__(self, crawler: BilibiliBangumiCrawler) -> None:
+        """Bind the service to the shared crawler runtime context.
+
+        Args:
+            crawler: Shared scraper facade providing session, request helpers and config.
+        """
         self._crawler = crawler
 
     def __getattr__(self, name: str) -> Any:
+        """Fallback unknown attributes to the shared crawler facade."""
         return getattr(self._crawler, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
+        """Route unknown attribute writes to the shared crawler facade."""
         if name == "_crawler" or "_crawler" not in self.__dict__:
             object.__setattr__(self, name, value)
             return
