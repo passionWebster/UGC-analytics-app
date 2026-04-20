@@ -1,6 +1,7 @@
 """User authentication related API routes."""
 
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,7 @@ from ..auth import AuthService
 
 
 router = APIRouter(prefix="/api", tags=["认证"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/register", response_model=dict)
@@ -75,6 +77,7 @@ def get_user_info(username: str, session: Session = Depends(get_session)) -> dic
         try:
             preferences = json.loads(user.preferences)
         except (TypeError, json.JSONDecodeError):
+            logger.warning("⚠️ 用户偏好解析失败 username=%s", user.username)
             preferences = []
     
     return {

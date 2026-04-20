@@ -152,7 +152,7 @@ def aggregate_episode_nlp(records: list[dict[str, Any]]) -> dict[str, Any]:
     valid_texts = [r.get("cleaned_text", "") for r in records if not r.get("is_noise")]
     valid_texts = [t for t in valid_texts if t]
 
-    keywords: List[str] = []
+    keywords: list[str] = []
     entities: list[dict[str, Any]] = []
     if _JIEBA_AVAILABLE and valid_texts:
         joined = "\n".join(valid_texts)
