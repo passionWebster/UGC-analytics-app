@@ -77,7 +77,7 @@ def get_user_info(username: str, session: Session = Depends(get_session)) -> dic
         try:
             preferences = json.loads(user.preferences)
         except (TypeError, json.JSONDecodeError):
-            logger.warning("⚠️ 用户偏好解析失败 username=%s", user.username)
+            logger.warning("⚠️ 用户偏好解析失败 username={}", user.username)
             preferences = []
     
     return {

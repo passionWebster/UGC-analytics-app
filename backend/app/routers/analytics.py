@@ -62,7 +62,7 @@ _COVER_CACHE_DIR = os.path.join(
     "cover_cache",
 )
 
-# 哔哩哔哩图片分发域名白名单（用于防止服务端请求伪造，SSRF）
+# 哔哩哔哩图片分发域名白名单（用于防止服务端请求伪造）
 _ALLOWED_IMAGE_HOSTS = {
     "i0.hdslb.com",
     "i1.hdslb.com",

@@ -124,7 +124,7 @@ def read_proto_varint(buf: bytes, start: int) -> tuple[int | None, int]:
         start: 起始偏移量。
 
     返回:
-        (value, next_offset) 元组。
+        (解析后的整数值或 None, 下一偏移量) 元组。
     """
     value = 0
     shift = 0
