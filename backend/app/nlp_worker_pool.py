@@ -1,8 +1,10 @@
+"""Multiprocessing worker pool for asynchronous episode NLP tasks."""
+
 import multiprocessing as mp
 import queue
 import threading
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .config import settings
 from .logger import app_logger as logger
@@ -17,12 +19,13 @@ if settings.nlp_worker_start_method not in _VALID_START_METHODS:
         sorted(_VALID_START_METHODS),
     )
 _CTX = mp.get_context(_START_METHOD)
-_TASK_QUEUE: Optional[mp.Queue] = None
-_WORKERS: List[mp.Process] = []
+_TASK_QUEUE: mp.Queue | None = None
+_WORKERS: list[mp.Process] = []
 _STARTED = False
 
 
 def _nlp_worker(worker_id: int, task_queue: mp.Queue) -> None:
+    """Worker loop that consumes queued NLP tasks and executes processing."""
     from .tasks import run_episode_nlp_analysis
 
     logger.info("👷 NLP 打工人 {} 已就绪，等待任务...", worker_id)
@@ -71,6 +74,7 @@ def _nlp_worker(worker_id: int, task_queue: mp.Queue) -> None:
 
 
 def start_nlp_worker_pool() -> None:
+    """Start NLP worker processes and initialize the shared task queue once."""
     global _TASK_QUEUE, _STARTED, _WORKERS
     if not settings.nlp_worker_pool_enabled:
         logger.info("ℹ️ NLP 多进程任务池已禁用，任务将按回退策略执行")
@@ -92,6 +96,7 @@ def start_nlp_worker_pool() -> None:
 
 
 def stop_nlp_worker_pool() -> None:
+    """Gracefully stop NLP workers and release queue resources."""
     global _TASK_QUEUE, _STARTED, _WORKERS
     with _LOCK:
         if not _STARTED or _TASK_QUEUE is None:
@@ -113,7 +118,17 @@ def stop_nlp_worker_pool() -> None:
         logger.info("✅ NLP 多进程任务池已停止")
 
 
-def enqueue_nlp_task(season_id: int, episode_number: int, cid: Optional[str] = None) -> Optional[str]:
+def enqueue_nlp_task(season_id: int, episode_number: int, cid: str | None = None) -> str | None:
+    """Enqueue an episode NLP task to multiprocessing queue.
+
+    Args:
+        season_id: Target season ID.
+        episode_number: 1-based episode index in the season.
+        cid: Optional episode cid for direct record binding.
+
+    Returns:
+        Generated task ID when enqueue succeeds, otherwise None.
+    """
     if not settings.nlp_worker_pool_enabled:
         return None
     if not _STARTED or _TASK_QUEUE is None:
@@ -121,7 +136,7 @@ def enqueue_nlp_task(season_id: int, episode_number: int, cid: Optional[str] = N
         return None
 
     task_id = str(uuid.uuid4())
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "task_id": task_id,
         "season_id": season_id,
         "episode_number": episode_number,

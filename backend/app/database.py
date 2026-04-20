@@ -1,4 +1,4 @@
-# database.py
+# 数据库连接与迁移辅助文件
 """
 数据库连接和会话管理
 使用 SQLite 作为数据存储，提供数据库引擎和会话工厂
@@ -232,7 +232,7 @@ def get_session() -> Generator[Session, None, None]:
     获取数据库会话
     用于依赖注入，自动管理会话的创建和关闭
     
-    使用示例:
+    Examples:
         @app.get("/items")
         def read_items(session: Session = Depends(get_session)):
             items = session.exec(select(Item)).all()

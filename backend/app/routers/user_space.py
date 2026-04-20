@@ -1,9 +1,8 @@
-"""
-个人空间相关 API 路由
-"""
+"""个人空间相关接口路由。"""
 import json
 import logging
 from datetime import datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc
@@ -28,9 +27,16 @@ def get_user_favorites(
     status: str | None = Query(default=None, description="追番状态筛选"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
-    """
-    获取当前登录用户追番列表。
+) -> dict[str, Any]:
+    """获取当前用户追番列表。
+
+    Args:
+        status: 可选的追番状态筛选值。
+        session: 数据库会话。
+        current_user: 当前登录用户。
+
+    Returns:
+        dict[str, Any]: 包含追番列表与总数的响应字典。
     """
     query = (
         select(UserFavorite, Anime)
@@ -64,9 +70,19 @@ def toggle_user_favorite(
     payload: FavoriteToggleRequest,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
-    """
-    添加/取消当前登录用户追番收藏。
+) -> dict[str, Any]:
+    """切换用户追番收藏状态。
+
+    Args:
+        payload: 收藏切换请求体。
+        session: 数据库会话。
+        current_user: 当前登录用户。
+
+    Returns:
+        dict[str, Any]: 添加或取消收藏后的响应字典。
+
+    Raises:
+        HTTPException: 当番剧不存在时抛出。
     """
     anime = session.exec(select(Anime).where(Anime.season_id == payload.season_id)).first()
     if not anime:
@@ -116,9 +132,20 @@ def update_favorite_status(
     payload: FavoriteStatusUpdateRequest,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
-    """
-    更新当前用户追番状态。
+) -> dict[str, Any]:
+    """更新当前用户追番状态。
+
+    Args:
+        season_id: 番剧季 ID。
+        payload: 追番状态更新请求体。
+        session: 数据库会话。
+        current_user: 当前登录用户。
+
+    Returns:
+        dict[str, Any]: 更新结果响应。
+
+    Raises:
+        HTTPException: 当追番记录不存在时抛出。
     """
     favorite = session.exec(
         select(UserFavorite).where(
@@ -148,9 +175,16 @@ def update_user_password(
     payload: UserPasswordUpdate,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
-    """
-    当前用户修改密码（校验旧密码）。
+) -> dict[str, Any]:
+    """修改当前用户密码。
+
+    Args:
+        payload: 密码更新请求体（包含旧密码与新密码）。
+        session: 数据库会话。
+        current_user: 当前登录用户。
+
+    Returns:
+        dict[str, Any]: 密码修改结果响应。
     """
     auth_service = AuthService(session)
     auth_service.change_password(current_user, payload.old_password, payload.new_password)
@@ -161,9 +195,15 @@ def update_user_password(
 def get_user_space_analytics(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
-    """
-    获取个人看板聚合数据。
+) -> dict[str, Any]:
+    """获取个人空间看板聚合数据。
+
+    Args:
+        session: 数据库会话。
+        current_user: 当前登录用户。
+
+    Returns:
+        dict[str, Any]: 包含追番分布、题材分布与周增长指标的响应字典。
     """
     favorite_rows = session.exec(
         select(UserFavorite, Anime)
@@ -225,7 +265,7 @@ def get_user_space_analytics(
             .order_by(DailyStats.season_id, desc(DailyStats.date))
         ).all()
 
-        # 记录每个番剧最近一条统计数据: (latest_date, latest_views)
+        # 记录每个番剧最近一条统计数据：（最近日期, 最近播放量）
         latest_by_season: dict[int, tuple[datetime, int]] = {}
         week_ago_by_season: dict[int, int] = {}
 

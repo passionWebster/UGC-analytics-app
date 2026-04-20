@@ -1,10 +1,9 @@
-# routers/crawler.py
-"""
-爬虫控制相关的 API 路由
-"""
+"""爬虫控制相关接口路由。"""
+
+from typing import Any, Literal
+
 from fastapi import APIRouter, Depends, BackgroundTasks
 from pydantic import BaseModel
-from typing import Optional, Literal
 from sqlmodel import Session
 
 from ..database import get_session, engine
@@ -17,18 +16,16 @@ router = APIRouter(prefix="/api/crawler", tags=["爬虫"])
 @router.post("/update", response_model=dict)
 def trigger_update(
     background_tasks: BackgroundTasks,
-):
+) -> dict[str, Any]:
     """
     触发数据更新
     
     Args:
         background_tasks: 后台任务
-        session: 数据库会话
-        
     Returns:
         触发结果
     """
-    # 在后台执行爬虫任务（任务内自行创建独立 Session）
+    # 在后台执行爬虫任务（任务内自行创建独立会话）
     background_tasks.add_task(_run_update_task)
     
     return {
@@ -38,7 +35,7 @@ def trigger_update(
 
 
 @router.get("/status", response_model=dict)
-def get_crawler_status(session: Session = Depends(get_session)):
+def get_crawler_status(session: Session = Depends(get_session)) -> dict[str, Any]:
     """
     获取爬虫状态
     
@@ -75,7 +72,7 @@ def get_crawler_status(session: Session = Depends(get_session)):
 
 
 @router.get("/search/{title}", response_model=dict)
-def search_anime_id(title: str, session: Session = Depends(get_session)):
+def search_anime_id(title: str, session: Session = Depends(get_session)) -> dict[str, Any]:
     """
     根据标题搜索番剧 ID
     
@@ -87,7 +84,7 @@ def search_anime_id(title: str, session: Session = Depends(get_session)):
         番剧 ID
     """
     crawler = BilibiliBangumiCrawler(session)
-    season_id = crawler.search_anime_by_title(title)
+    season_id = crawler.anime_sync.search_anime_by_title(title)
     
     if not season_id:
         return {
@@ -103,15 +100,16 @@ def search_anime_id(title: str, session: Session = Depends(get_session)):
 
 
 class ScrapeDanmakuRequest(BaseModel):
-    """弹幕/评论抓取请求模型"""
+    """弹幕/评论抓取请求模型。"""
+
     season_id: int
     mode: Literal["incremental", "full"] = "incremental"
-    max_episodes: Optional[int] = 3      # 最多抓取前 N 集，默认 3
-    comment_limit: Optional[int] = 50    # 每集最多评论条数，默认 50
-    include_comment_replies: Optional[bool] = True
-    nested_reply_limit: Optional[int] = 20
-    retry_attempts: Optional[int] = None
-    run_sentiment: Optional[bool] = True  # 是否在抓取后立即进行情感分析
+    max_episodes: int | None = 3  # 最多抓取前若干集，默认 3
+    comment_limit: int | None = 50  # 每集最多评论条数，默认 50
+    include_comment_replies: bool | None = True
+    nested_reply_limit: int | None = 20
+    retry_attempts: int | None = None
+    run_sentiment: bool | None = True  # 是否在抓取后立即进行情感分析
 
 
 def _scrape_and_score(
@@ -121,14 +119,14 @@ def _scrape_and_score(
     comment_limit: int,
     include_comment_replies: bool,
     nested_reply_limit: int,
-    retry_attempts: Optional[int],
+    retry_attempts: int | None,
     run_sentiment: bool,
 ) -> None:
-    """后台任务：抓取弹幕/评论，并触发异步 NLP 处理"""
+    """后台任务：抓取弹幕与评论，并触发异步情感分析处理。"""
 
     with Session(engine) as session:
         crawler = BilibiliBangumiCrawler(session)
-        crawler.scrape_danmaku_and_comments(
+        crawler.comments.scrape_danmaku_and_comments(
             season_id=season_id,
             max_episodes=max_episodes,
             comment_limit=comment_limit,
@@ -142,17 +140,17 @@ def _scrape_and_score(
 
 
 def _run_update_task() -> None:
-    """后台任务：更新番剧基础数据（使用独立 Session）"""
+    """后台任务：更新番剧基础数据（使用独立会话）。"""
     with Session(engine) as session:
         crawler = BilibiliBangumiCrawler(session)
-        crawler.update_anime_database()
+        crawler.anime_sync.update_anime_database()
 
 
 @router.post("/scrape-danmaku", response_model=dict)
 def trigger_danmaku_scrape(
     req: ScrapeDanmakuRequest,
     background_tasks: BackgroundTasks,
-):
+) -> dict[str, Any]:
     """
     触发指定番剧的弹幕与评论抓取（后台异步执行）。
 

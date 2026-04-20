@@ -1,4 +1,4 @@
-# scheduler.py
+# 定时调度模块实现文件
 """
 定时任务调度器
 使用 APScheduler AsyncIOScheduler 实现：
@@ -107,7 +107,7 @@ def _task_d_hourly_online_viewers():
     logger.info("🔄 [任务 D] 开始记录每小时在线人数...")
     with Session(engine) as session:
         crawler = BilibiliBangumiCrawler(session)
-        crawler.record_hourly_online_viewers()
+        crawler.episode_sync.record_hourly_online_viewers()
     logger.success("✅ 任务 D 完成")
 
 
@@ -160,4 +160,3 @@ def create_scheduler() -> AsyncIOScheduler:
     )
 
     return scheduler
-

@@ -1,6 +1,5 @@
-# routers/analytics.py
 """
-数据分析相关的 API 路由
+数据分析相关的接口路由
 """
 import hashlib
 import json
@@ -10,7 +9,7 @@ import re
 import threading
 from enum import Enum
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Any, List, Optional
 from urllib.parse import urlparse
 import asyncio
 import httpx
@@ -46,7 +45,7 @@ from ..schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analytics", tags=["数据分析"])
-# 图片代理路由（路径为 /api/image_proxy，与 analytics 路由独立）
+# 图片代理路由（与分析主路由独立挂载）
 proxy_router = APIRouter(prefix="/api", tags=["图片代理"])
 
 _STABLE_DATA_DAYS = 7
@@ -63,7 +62,7 @@ _COVER_CACHE_DIR = os.path.join(
     "cover_cache",
 )
 
-# B站图片 CDN 允许域名白名单（防止 SSRF）
+# 哔哩哔哩图片分发域名白名单（用于防止服务端请求伪造）
 _ALLOWED_IMAGE_HOSTS = {
     "i0.hdslb.com",
     "i1.hdslb.com",
@@ -72,11 +71,11 @@ _ALLOWED_IMAGE_HOSTS = {
     "s2.hdslb.com",
     "pic.bilibili.com",
     "static.hdslb.com",
-    # TMDB 图片服务器（背景图、Logo、海报均由此域名提供）
+    # TMDB 图片服务器（背景图、标识图、海报均由此域名提供）
     "image.tmdb.org",
 }
 
-# 仅允许中文、ASCII 单词字符和少量常见分隔符，长度限制 1~30
+# 仅允许中文、字母数字与少量常见分隔符，长度限制为 1~30
 _VALID_CATEGORY_PATTERN = re.compile(r"^[\w\u4e00-\u9fff·、&+\-/]{1,30}$")
 
 
@@ -93,9 +92,17 @@ class SeasonEnum(str, Enum):
     winter = "winter"
 
 
-def _validate_category_value(category: Optional[str]) -> Optional[str]:
-    """
-    校验 category 参数，防止前端参数被篡改后携带异常字符。
+def _validate_category_value(category: str | None) -> str | None:
+    """校验分类参数合法性。
+
+    Args:
+        category: 原始分类参数。
+
+    Returns:
+        str | None: 清洗后的分类值；空值返回 None。
+
+    Raises:
+        HTTPException: 当分类参数包含非法字符或长度超限时抛出。
     """
     if category is None:
         return None
@@ -110,9 +117,17 @@ def _validate_category_value(category: Optional[str]) -> Optional[str]:
     return category
 
 
-def _parse_areas_param(areas: Optional[str]) -> Optional[List[str]]:
-    """
-    解析逗号分隔地区参数，并限制在 AreaEnum 白名单内。
+def _parse_areas_param(areas: str | None) -> list[str] | None:
+    """解析地区筛选参数。
+
+    Args:
+        areas: 逗号分隔的地区参数字符串。
+
+    Returns:
+        list[str] | None: 解析后的地区列表；为空时返回 None。
+
+    Raises:
+        HTTPException: 当地区值不在白名单中时抛出。
     """
     if not areas:
         return None
@@ -128,11 +143,18 @@ def _parse_areas_param(areas: Optional[str]) -> Optional[List[str]]:
 
 def _is_dataset_stable(
     session: Session,
-    season_id: Optional[int] = None,
-    cid: Optional[str] = None,
+    season_id: int | None = None,
+    cid: str | None = None,
 ) -> bool:
-    """
-    判断数据是否超过稳定窗口（默认 7 天），稳定后才启用聚合缓存。
+    """判断目标数据是否进入稳定期。
+
+    Args:
+        session: 数据库会话。
+        season_id: 可选 season_id。
+        cid: 可选分集 CID。
+
+    Returns:
+        bool: 数据超过稳定窗口返回 True，否则返回 False。
     """
     if season_id is None and cid is None:
         return False
@@ -149,17 +171,39 @@ def _is_dataset_stable(
     return latest_updated <= (datetime.now() - timedelta(days=_STABLE_DATA_DAYS))
 
 
-def _read_cache(cache_key: str):
+def _read_cache(cache_key: str) -> dict[str, Any] | None:
+    """读取内存缓存。
+
+    Args:
+        cache_key: 缓存键。
+
+    Returns:
+        dict[str, Any] | None: 命中时返回缓存值，否则返回 None。
+    """
     with _ANALYTICS_CACHE_LOCK:
         return _ANALYTICS_CACHE.get(cache_key)
 
 
 def _write_cache(cache_key: str, payload: dict) -> None:
+    """写入内存缓存。
+
+    Args:
+        cache_key: 缓存键。
+        payload: 需要缓存的响应数据。
+    """
     with _ANALYTICS_CACHE_LOCK:
         _ANALYTICS_CACHE[cache_key] = payload
 
 
-def _parse_release_date_to_datetime(value: Optional[str]) -> Optional[datetime]:
+def _parse_release_date_to_datetime(value: str | None) -> datetime | None:
+    """将发布日期字符串解析为 datetime。
+
+    Args:
+        value: 发布日期字符串，支持 YYYY / YYYY-MM / YYYY-MM-DD。
+
+    Returns:
+        datetime | None: 解析成功返回 datetime，失败返回 None。
+    """
     if not value:
         return None
     value = value.strip()
@@ -177,6 +221,17 @@ def _get_episode_publish_anchor(
     session: Session,
     target_ep: EpisodeStats,
 ) -> datetime:
+    """获取分集发布时间锚点。
+
+    优先使用番剧发布日期；缺失时回退到分集更新时间或当前时间。
+
+    Args:
+        session: 数据库会话。
+        target_ep: 目标分集记录。
+
+    Returns:
+        datetime: 计算后的发布时间锚点。
+    """
     anime = session.exec(sql_select(Anime).where(Anime.season_id == target_ep.season_id)).first()
     release_dt = _parse_release_date_to_datetime(anime.release_date if anime else None)
     if release_dt:
@@ -185,6 +240,16 @@ def _get_episode_publish_anchor(
 
 
 def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool:
+    """判断分集是否存在可用弹幕源数据。
+
+    Args:
+        session: 数据库会话。
+        cid: 分集 CID。
+        season_id: 番剧季 ID。
+
+    Returns:
+        bool: Mongo 或 SQLite 任一来源存在弹幕数据即返回 True。
+    """
     mongo_doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(cid)
     if mongo_doc and isinstance(mongo_doc.get("danmaku_items"), list) and mongo_doc.get("danmaku_items"):
         return True
@@ -198,11 +263,21 @@ def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool
 
 
 def _episode_needs_nlp_refresh(session: Session, target_ep: EpisodeStats, cid: str, season_id: int) -> bool:
-    """
-    判断单集是否需要补跑 NLP：
-    1) EpisodeStats 尚未成功处理或没有处理时间；
-    2) Mongo 弹幕存在但逐条无情感字段；
-    3) Mongo 不可用时，SQLite 也不存在可用情感字段。
+    """判断单集是否需要补跑 NLP。
+
+    触发条件包括：
+    1) 分集状态未成功或缺少处理时间；
+    2) Mongo 弹幕存在但无可用情感字段；
+    3) Mongo 不可用且 SQLite 也无可用情感字段。
+
+    Args:
+        session: 数据库会话。
+        target_ep: 目标分集记录。
+        cid: 分集 CID。
+        season_id: 番剧季 ID。
+
+    Returns:
+        bool: 需要补跑返回 True，否则返回 False。
     """
     if target_ep.nlp_status != "success" or target_ep.nlp_processed_at is None:
         return True
@@ -343,7 +418,7 @@ def _trigger_danmaku_scrape_for_episode(
                 logger.warning("⚠️ skip background scrape: cid not found season_id={} cid={}", season_id, cid)
                 return
             crawler = BilibiliBangumiCrawler(bg_session)
-            crawler.scrape_danmaku_and_comments(
+            crawler.comments.scrape_danmaku_and_comments(
                 season_id=season_id,
                 max_episodes=target_index,
                 comment_limit=50,
@@ -363,9 +438,20 @@ def get_episode_timeline(
     bin_size: int = Query(10, ge=1, le=300, description="时间窗大小（秒）"),
     keyword_topk: int = Query(5, ge=1, le=20, description="每个切片返回关键词数量"),
     session: Session = Depends(get_session),
-):
-    """
-    获取单集按时间窗切片后的弹幕聚合数据。
+) -> dict[str, Any]:
+    """获取单集时间窗弹幕聚合数据。
+
+    Args:
+        cid: 分集 CID。
+        bin_size: 时间窗大小（秒）。
+        keyword_topk: 每个切片返回关键词数量。
+        session: 数据库会话。
+
+    Returns:
+        dict[str, Any]: 时间线聚合响应。
+
+    Raises:
+        HTTPException: 未找到对应分集数据时抛出 404。
     """
     cache_key = f"episode_timeline:{cid}:bin={bin_size}:topk={keyword_topk}"
     cache_enabled = _is_dataset_stable(session=session, cid=cid)
@@ -400,9 +486,26 @@ def get_episode_analysis_with_cache(
     keyword_topk: int = Query(5, ge=1, le=20, description="每个切片返回关键词数量"),
     top_n: int = Query(120, ge=10, le=500, description="词云词条数量上限"),
     session: Session = Depends(get_session),
-):
-    """
-    单集分析统一入口：优先返回 SQLite 缓存，必要时刷新缓存；无源数据时触发抓取。
+) -> dict[str, Any]:
+    """获取单集分析结果并管理缓存刷新。
+
+    策略为优先返回 SQLite 缓存，并根据分集状态决定是否调度 NLP 刷新
+    或触发弹幕抓取任务。
+
+    Args:
+        season_id: 番剧季 ID。
+        cid: 分集 CID。
+        background_tasks: 后台任务调度器。
+        bin_size: 时间窗大小（秒）。
+        keyword_topk: 每个切片返回关键词数量。
+        top_n: 词云词条数量上限。
+        session: 数据库会话。
+
+    Returns:
+        dict[str, Any]: 单集分析响应，可能为缓存结果、待处理状态或实时计算结果。
+
+    Raises:
+        HTTPException: 当分集不存在时抛出 404。
     """
     target_ep = session.exec(
         sql_select(EpisodeStats).where(
@@ -522,12 +625,23 @@ def get_episode_analysis_with_cache(
 @router.get("/season/{season_id}/wordcloud", response_model=dict)
 def get_season_wordcloud_api(
     season_id: int,
-    cid: Optional[str] = Query(None, description="可选：按单集 CID 聚合词云"),
+    cid: str | None = Query(None, description="可选：按单集 CID 聚合词云"),
     top_n: int = Query(120, ge=10, le=500, description="返回词条数量上限"),
     session: Session = Depends(get_session),
-):
-    """
-    获取整季（或单集）词云权重数据。
+) -> dict[str, Any]:
+    """获取整季或单集词云数据。
+
+    Args:
+        season_id: 番剧季 ID。
+        cid: 可选分集 CID。
+        top_n: 返回词条数量上限。
+        session: 数据库会话。
+
+    Returns:
+        dict[str, Any]: 词云聚合响应。
+
+    Raises:
+        HTTPException: 当目标分集不存在可聚合数据时抛出 404。
     """
     cache_key = f"season_wordcloud:{season_id}:cid={cid or ''}:top={top_n}"
     cache_enabled = _is_dataset_stable(session=session, season_id=season_id, cid=cid)
@@ -558,9 +672,19 @@ def get_season_characters_api(
     season_id: int,
     top_n: int = Query(8, ge=1, le=30, description="返回角色数量上限"),
     session: Session = Depends(get_session),
-):
-    """
-    获取整季核心角色讨论度趋势。
+) -> dict[str, Any]:
+    """获取整季核心角色讨论趋势。
+
+    Args:
+        season_id: 番剧季 ID。
+        top_n: 返回角色数量上限。
+        session: 数据库会话。
+
+    Returns:
+        dict[str, Any]: 角色趋势分析响应。
+
+    Raises:
+        HTTPException: 当 season_id 无对应数据时抛出 404。
     """
     cache_key = f"season_characters:{season_id}:top={top_n}"
     cache_enabled = _is_dataset_stable(session=session, season_id=season_id)
@@ -591,9 +715,17 @@ def get_season_insight_cards_api(
     limit: int = Query(300, ge=30, le=1000, description="用于聚类的评论采样数"),
     top_n: int = Query(6, ge=1, le=20, description="返回观点卡片数量"),
     session: Session = Depends(get_session),
-):
-    """
-    获取整季热门评论观点提取卡片数据。
+) -> dict[str, Any]:
+    """获取整季评论观点卡片。
+
+    Args:
+        season_id: 番剧季 ID。
+        limit: 聚类前的评论采样数。
+        top_n: 返回观点卡片数量。
+        session: 数据库会话。
+
+    Returns:
+        dict[str, Any]: 评论观点卡片响应。
     """
     cache_key = f"season_insight_cards:{season_id}:limit={limit}:top={top_n}"
     cache_enabled = _is_dataset_stable(session=session, season_id=season_id)
@@ -641,7 +773,7 @@ def image_proxy(
     """
     os.makedirs(_COVER_CACHE_DIR, exist_ok=True)
 
-    # 校验 URL 只能指向白名单域名（防止 SSRF）
+    # 校验图片地址仅指向白名单域名（防止服务端请求伪造）
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or parsed.hostname not in _ALLOWED_IMAGE_HOSTS:
         raise HTTPException(status_code=400, detail="不支持的图片域名，仅允许 B站图片 CDN 及 TMDB 图片域名")
@@ -649,7 +781,7 @@ def image_proxy(
     # 生成安全的文件名：清理特殊字符，保留字母、数字、中文、连字符
     safe_title = re.sub(r"[^\w\u4e00-\u9fff\-]", "_", title)
     safe_season_id = re.sub(r"[^\w]", "_", str(season_id))
-    # 尝试从 URL 中推断扩展名，默认使用 .jpg
+    # 尝试从图片地址推断扩展名，默认使用常见图片后缀
     url_path = url.split("?")[0]
     ext = os.path.splitext(url_path)[-1].lower()
     if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
@@ -662,7 +794,7 @@ def image_proxy(
     if os.path.exists(filepath):
         return FileResponse(filepath)
 
-    # 按域名区分请求头策略：B站需要伪造 Referer，TMDB 无需
+    # 按域名区分请求头策略：哔哩哔哩需要伪造来源页，TMDB 无需
     is_bilibili = parsed.hostname != "image.tmdb.org"
     headers = {"User-Agent": "Mozilla/5.0"}
     if is_bilibili:
@@ -731,7 +863,7 @@ async def get_anime_detail(season_id: int, session: Session = Depends(get_sessio
     if not anime:
         raise HTTPException(status_code=404, detail="番剧不存在")
 
-    # 若尚未绑定 TMDB 数据，自动触发富集（失败时降级，不阻断主流程）
+    # 若尚未绑定 TMDB 数据，则自动触发富集（失败时降级，不阻断主流程）
     if anime.get("tmdb_info") is None:
         try:
             from ..tmdb_service import TmdbService  # 延迟导入，避免模块加载期语法错误影响路由注册
@@ -861,7 +993,7 @@ def search_animes(
     session: Session = Depends(get_session)
 ):
     """
-    搜索番剧。若本地数据库中无匹配结果，则实时调用 B站 API 抓取并写入数据库。
+    搜索番剧。若本地数据库中无匹配结果，则实时调用 B 站开放接口抓取并写入数据库。
 
     Args:
         keyword: 搜索关键词
@@ -878,7 +1010,7 @@ def search_animes(
     if not results:
         # 本地未命中，触发实时抓取
         crawler = BilibiliBangumiCrawler(session)
-        season_id = crawler.fetch_and_save_anime_with_episodes(keyword)
+        season_id = crawler.anime_sync.fetch_and_save_anime_with_episodes(keyword)
         if season_id:
             # 抓取成功后重新查询数据库
             results = analytics_service.search_anime_by_title(keyword)

@@ -1,11 +1,11 @@
-"""后台管理相关 API 路由
+"""后台管理接口路由。
 
-提供用户管理、爬虫监控与基础运营看板功能，全部接口均需管理员权限。
+提供用户管理、爬虫监控与运营看板能力，所有接口均需管理员权限。
 """
+from datetime import datetime, timedelta
 from collections import Counter
 import json
-from typing import List
-from datetime import datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Query
 from sqlalchemy import desc, func, case
@@ -26,9 +26,17 @@ router = APIRouter(prefix="/api/admin", tags=["后台管理"])
 def list_users(
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
-    """获取所有用户列表"""
-    users: List[User] = session.exec(
+) -> dict[str, Any]:
+    """获取用户列表。
+
+    Args:
+        session: 数据库会话。
+        _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
+
+    Returns:
+        dict[str, Any]: 包含用户列表的响应字典。
+    """
+    users: list[User] = session.exec(
         select(User).order_by(desc(User.created_at))
     ).all()
 
@@ -54,8 +62,21 @@ def update_user_status(
     payload: UserStatusUpdate,
     session: Session = Depends(get_session),
     admin=Depends(get_current_admin_user),
-):
-    """封禁/解封用户"""
+) -> dict[str, Any]:
+    """更新用户启用状态。
+
+    Args:
+        user_id: 目标用户 ID。
+        payload: 用户状态更新请求体。
+        session: 数据库会话。
+        admin: 当前管理员用户。
+
+    Returns:
+        dict[str, Any]: 更新结果响应。
+
+    Raises:
+        HTTPException: 用户不存在或尝试停用当前管理员自身账户时抛出。
+    """
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -77,8 +98,21 @@ def reset_user_password(
     payload: ResetPasswordRequest,
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
-    """重置用户密码"""
+) -> dict[str, Any]:
+    """重置指定用户密码。
+
+    Args:
+        user_id: 目标用户 ID。
+        payload: 新密码请求体。
+        session: 数据库会话。
+        _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
+
+    Returns:
+        dict[str, Any]: 重置结果响应。
+
+    Raises:
+        HTTPException: 当用户不存在时抛出。
+    """
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -95,8 +129,17 @@ def get_crawler_logs(
     limit: int = 20,
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
-    """获取最近的爬虫任务日志"""
+) -> dict[str, Any]:
+    """获取最近爬虫任务日志。
+
+    Args:
+        limit: 返回日志条数上限。
+        session: 数据库会话。
+        _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
+
+    Returns:
+        dict[str, Any]: 包含爬虫日志列表的响应字典。
+    """
     logs = session.exec(
         select(CrawlLog).order_by(desc(CrawlLog.started_at)).limit(limit)
     ).all()
@@ -124,18 +167,29 @@ def get_crawler_logs(
 
 
 def _run_update_task() -> None:
-    """后台任务：更新番剧基础数据（使用独立 Session）"""
+    """执行后台更新任务。
+
+    使用独立数据库会话触发番剧基础数据更新，避免复用请求上下文会话。
+    """
     with Session(engine) as background_session:
         crawler = BilibiliBangumiCrawler(background_session)
-        crawler.update_anime_database()
+        crawler.anime_sync.update_anime_database()
 
 
 @router.post("/crawler/trigger", response_model=dict)
 def trigger_crawler_update(
     background_tasks: BackgroundTasks,
     _admin=Depends(get_current_admin_user),
-):
-    """手动触发爬虫更新任务"""
+) -> dict[str, Any]:
+    """手动触发爬虫更新任务。
+
+    Args:
+        background_tasks: 后台任务调度器。
+        _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
+
+    Returns:
+        dict[str, Any]: 任务触发结果响应。
+    """
     background_tasks.add_task(_run_update_task)
     return {"success": True, "message": "数据更新任务已启动"}
 
@@ -144,8 +198,16 @@ def trigger_crawler_update(
 def admin_overview(
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
-    """运营/监控大盘"""
+) -> dict[str, Any]:
+    """获取后台运营总览数据。
+
+    Args:
+        session: 数据库会话。
+        _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
+
+    Returns:
+        dict[str, Any]: 包含用户、爬虫与题材分布等指标的响应字典。
+    """
     total_users = session.exec(select(func.count()).select_from(User)).one()
     active_users = session.exec(
         select(func.count()).select_from(User).where(User.is_active.is_(True))
@@ -159,7 +221,7 @@ def admin_overview(
         select(CrawlLog).order_by(desc(CrawlLog.started_at)).limit(1)
     ).first()
 
-    # 统计最常出现的风格（Genre）
+    # 统计最常出现的风格（题材）
     styles_counter: Counter[str] = Counter()
     style_rows = session.exec(
         select(Anime.styles).where(Anime.styles.is_not(None))
@@ -201,8 +263,17 @@ def ai_stats(
     days: int = Query(default=7, ge=1, le=90),
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
-    """AI 服务调用监控接口（基于 ai_telemetry_logs 聚合）。"""
+) -> dict[str, Any]:
+    """获取 AI 调用监控统计。
+
+    Args:
+        days: 统计时间窗口（天）。
+        session: 数据库会话。
+        _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
+
+    Returns:
+        dict[str, Any]: AI 调用次数、延迟、成功率与错误分布等聚合结果。
+    """
     end_time = datetime.now()
     start_time = end_time - timedelta(days=days)
     logs = session.exec(
@@ -285,8 +356,16 @@ def ai_stats(
 def get_recommendation_strategy(
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
-    """获取当前推荐策略配置。"""
+) -> dict[str, Any]:
+    """获取当前推荐策略配置。
+
+    Args:
+        session: 数据库会话。
+        _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
+
+    Returns:
+        dict[str, Any]: 推荐策略配置响应。
+    """
     strategy = session.exec(
         select(RecommendationStrategyConfig).order_by(desc(RecommendationStrategyConfig.updated_at)).limit(1)
     ).first()
@@ -316,8 +395,20 @@ def update_recommendation_strategy(
     payload: RecommendationStrategyUpdate,
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
-):
-    """更新推荐策略配置。"""
+) -> dict[str, Any]:
+    """更新推荐策略配置。
+
+    Args:
+        payload: 推荐策略更新请求体。
+        session: 数据库会话。
+        _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
+
+    Returns:
+        dict[str, Any]: 更新后的推荐策略配置响应。
+
+    Raises:
+        HTTPException: 当权重总和不大于 0 时抛出。
+    """
     total_weight = payload.views_weight + payload.ai_weight + payload.tmdb_weight + payload.diversity_weight
     if total_weight <= 0:
         raise HTTPException(status_code=400, detail="权重总和必须大于 0")

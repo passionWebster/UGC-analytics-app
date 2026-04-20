@@ -1,7 +1,9 @@
+"""NLP text normalization, scoring and episode-level aggregation helpers."""
+
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .config import settings
 from .logger import app_logger as logger
@@ -29,6 +31,7 @@ _STOPWORDS = {"这个", "那个", "真的", "感觉", "就是", "你们", "我�
 
 
 def _ensure_jieba_user_dict_loaded() -> None:
+    """Load custom Jieba dictionary once when NLP extraction is enabled."""
     global _DICT_LOADED
     if _DICT_LOADED or not _JIEBA_AVAILABLE:
         return
@@ -44,17 +47,20 @@ def _ensure_jieba_user_dict_loaded() -> None:
 
 
 def _map_sentiment_to_signed(value_01: float) -> float:
+    """Map SnowNLP [0, 1] sentiment score into signed [-1, 1] interval."""
     value = max(0.0, min(1.0, float(value_01)))
     return round(value * 2.0 - 1.0, 4)
 
 
 def _normalize_text(text: str) -> str:
+    """Normalize whitespace and cap text length for lightweight processing."""
     cleaned = (text or "").strip()
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned[:500]
 
 
-def _classify_special_emotion(text: str) -> Optional[str]:
+def _classify_special_emotion(text: str) -> str | None:
+    """Classify short symbolic patterns to special emotion labels."""
     if not text:
         return "empty"
     if _PURE_233_RE.match(text):
@@ -67,6 +73,7 @@ def _classify_special_emotion(text: str) -> Optional[str]:
 
 
 def _is_spam_like(text: str) -> bool:
+    """Detect repeated-character spam-like content by configurable threshold."""
     try:
         threshold = int(settings.nlp_spam_repeat_threshold)
     except (TypeError, ValueError):
@@ -75,7 +82,15 @@ def _is_spam_like(text: str) -> bool:
     return bool(re.search(rf"(.)\1{{{threshold-1},}}", text))
 
 
-def process_text_record(text: str) -> Dict[str, Any]:
+def process_text_record(text: str) -> dict[str, Any]:
+    """Process a single text record into cleaned/emotion/sentiment features.
+
+    Args:
+        text: Raw danmaku/comment text.
+
+    Returns:
+        Processed NLP feature mapping used by downstream aggregation/storage.
+    """
     cleaned = _normalize_text(text)
     emotion = _classify_special_emotion(cleaned)
     is_noise = emotion is not None
@@ -83,7 +98,7 @@ def process_text_record(text: str) -> Dict[str, Any]:
         is_noise = True
         emotion = "spam_repeat"
 
-    score: Optional[float] = None
+    score: float | None = None
     if is_noise:
         if emotion == "laugh":
             score = 0.3
@@ -109,7 +124,16 @@ def process_text_record(text: str) -> Dict[str, Any]:
     }
 
 
-def aggregate_episode_nlp(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+def aggregate_episode_nlp(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate per-record NLP features into episode-level statistics.
+
+    Args:
+        records: Processed records from :func:`process_text_record`.
+
+    Returns:
+        Aggregated metrics including sample size, noise ratio, sentiment score,
+        keywords and entity frequency list.
+    """
     _ensure_jieba_user_dict_loaded()
     total = len(records)
     if total == 0:
@@ -128,8 +152,8 @@ def aggregate_episode_nlp(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     valid_texts = [r.get("cleaned_text", "") for r in records if not r.get("is_noise")]
     valid_texts = [t for t in valid_texts if t]
 
-    keywords: List[str] = []
-    entities: List[Dict[str, Any]] = []
+    keywords: list[str] = []
+    entities: list[dict[str, Any]] = []
     if _JIEBA_AVAILABLE and valid_texts:
         joined = "\n".join(valid_texts)
         try:

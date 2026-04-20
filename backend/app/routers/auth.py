@@ -1,20 +1,23 @@
-# routers/auth.py
-"""
-用户认证相关的 API 路由
-"""
+"""用户认证相关接口路由。"""
+
+import json
+import logging
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
 from ..database import get_session
-from ..schemas import UserCreate, UserLogin, UserResponse, PreferenceUpdate
+from ..schemas import PreferenceUpdate, UserCreate, UserLogin
 from ..auth import AuthService
 
 
 router = APIRouter(prefix="/api", tags=["认证"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/register", response_model=dict)
-def register(user_create: UserCreate, session: Session = Depends(get_session)):
+def register(user_create: UserCreate, session: Session = Depends(get_session)) -> dict[str, Any]:
     """
     用户注册
     
@@ -36,7 +39,7 @@ def register(user_create: UserCreate, session: Session = Depends(get_session)):
 
 
 @router.post("/login", response_model=dict)
-def login(user_login: UserLogin, session: Session = Depends(get_session)):
+def login(user_login: UserLogin, session: Session = Depends(get_session)) -> dict[str, Any]:
     """
     用户登录
     
@@ -52,7 +55,7 @@ def login(user_login: UserLogin, session: Session = Depends(get_session)):
 
 
 @router.get("/user-info", response_model=dict)
-def get_user_info(username: str, session: Session = Depends(get_session)):
+def get_user_info(username: str, session: Session = Depends(get_session)) -> dict[str, Any]:
     """
     获取用户信息
     
@@ -69,13 +72,13 @@ def get_user_info(username: str, session: Session = Depends(get_session)):
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
     
-    import json
     preferences = []
     if user.preferences:
         try:
             preferences = json.loads(user.preferences)
-        except:
-            pass
+        except (TypeError, json.JSONDecodeError):
+            logger.warning("⚠️ 用户偏好解析失败 username={}", user.username)
+            preferences = []
     
     return {
         "success": True,
@@ -94,8 +97,8 @@ def get_user_info(username: str, session: Session = Depends(get_session)):
 @router.post("/updatePreferences", response_model=dict)
 def update_preferences(
     preference_update: PreferenceUpdate,
-    session: Session = Depends(get_session)
-):
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
     """
     更新用户偏好设置
     
