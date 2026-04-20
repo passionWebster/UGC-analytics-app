@@ -1,4 +1,4 @@
-# scraper.py
+# scraper/crawler.py
 """
 B站数据爬虫服务 - 重构版
 将原 scraper.py 和 data_manager.py 的功能整合，数据直接写入 SQLite 数据库
@@ -53,6 +53,7 @@ from .helpers import (
 # SQLite 写入互斥锁：用于本模块内的爬虫写入操作，防止多线程并发写入时产生数据库锁冲突。
 # 注意：此锁仅在当前进程内、且仅对实际获取它的代码路径生效，并不能保证全项目的所有写入都已串行化。
 sqlite_write_lock = threading.Lock()
+AnimePayload = dict[str, Any]
 
 
 class BilibiliBangumiCrawler:
@@ -314,7 +315,7 @@ class BilibiliBangumiCrawler:
             self.session.commit()
             return False
 
-    def _fetch_domestic_animes(self) -> dict[int, dict]:
+    def _fetch_domestic_animes(self) -> dict[int, AnimePayload]:
         """获取国产番剧数据"""
         animes = {}
         years = list(range(datetime.now().year, 2015, -1))
@@ -379,7 +380,7 @@ class BilibiliBangumiCrawler:
 
         return animes
 
-    def _fetch_regular_animes(self) -> dict[int, dict]:
+    def _fetch_regular_animes(self) -> dict[int, AnimePayload]:
         """获取常规番剧数据"""
         animes = {}
         years = list(range(datetime.now().year, 2015, -1))
@@ -477,7 +478,9 @@ class BilibiliBangumiCrawler:
         }
         return self._fetch_api_data(params)
 
-    def _enrich_regular_styles(self, all_animes: dict[int, dict]) -> dict[int, dict]:
+    def _enrich_regular_styles(
+        self, all_animes: dict[int, AnimePayload]
+    ) -> dict[int, AnimePayload]:
         """
         补充常规番剧风格信息：遍历 REGULAR_API_STYLE_IDS，将返回的番剧追加对应风格
         """
@@ -493,7 +496,9 @@ class BilibiliBangumiCrawler:
 
         return all_animes
 
-    def _enrich_domestic_styles(self, all_animes: dict[int, dict]) -> dict[int, dict]:
+    def _enrich_domestic_styles(
+        self, all_animes: dict[int, AnimePayload]
+    ) -> dict[int, AnimePayload]:
         """
         补充国产番剧风格信息：遍历 DOMESTIC_API_STYLE_IDS，将返回的番剧追加对应风格
         """
@@ -509,7 +514,7 @@ class BilibiliBangumiCrawler:
 
         return all_animes
 
-    def _enrich_details(self, all_animes: dict[int, dict]) -> dict[int, dict]:
+    def _enrich_details(self, all_animes: dict[int, AnimePayload]) -> dict[int, AnimePayload]:
         """
         逐部请求番剧详情 API（/pgc/view/web/season），填充以下字段：
           - 播放量 / 追番量（覆盖底库中的估算值）
@@ -526,7 +531,7 @@ class BilibiliBangumiCrawler:
         success_count = 0
         # 用于每 50 部批量落库的计数器与临时字典
         FLUSH_BATCH = 50
-        batch: dict[int, dict] = {}
+        batch: dict[int, AnimePayload] = {}
 
         for season_id, anime_data in tqdm(all_animes.items(), desc="详情补充", unit="部"):
             try:
@@ -602,7 +607,7 @@ class BilibiliBangumiCrawler:
         logger.info(f"  ✅ 番剧详情补充完成：成功 {success_count} / {total} 部")
         return all_animes
 
-    def _save_animes_to_db(self, animes: dict[int, dict]) -> None:
+    def _save_animes_to_db(self, animes: dict[int, AnimePayload]) -> None:
         """
         将番剧数据保存到数据库
         """
