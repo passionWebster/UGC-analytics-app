@@ -74,7 +74,7 @@ def get_user_info(username: str, session: Session = Depends(get_session)) -> dic
     if user.preferences:
         try:
             preferences = json.loads(user.preferences)
-        except json.JSONDecodeError:
+        except (TypeError, json.JSONDecodeError):
             preferences = []
     
     return {
