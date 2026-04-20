@@ -1,4 +1,3 @@
-# 分析路由实现文件
 """
 数据分析相关的接口路由
 """
@@ -63,7 +62,7 @@ _COVER_CACHE_DIR = os.path.join(
     "cover_cache",
 )
 
-# 哔哩哔哩图片分发域名白名单（用于防止服务端请求伪造）
+# 哔哩哔哩图片分发域名白名单（用于防止服务端请求伪造，SSRF）
 _ALLOWED_IMAGE_HOSTS = {
     "i0.hdslb.com",
     "i1.hdslb.com",
@@ -72,7 +71,7 @@ _ALLOWED_IMAGE_HOSTS = {
     "s2.hdslb.com",
     "pic.bilibili.com",
     "static.hdslb.com",
-    # 影视元数据图片服务器（背景图、标识图、海报均由此域名提供）
+    # TMDB 图片服务器（背景图、标识图、海报均由此域名提供）
     "image.tmdb.org",
 }
 
@@ -795,7 +794,7 @@ def image_proxy(
     if os.path.exists(filepath):
         return FileResponse(filepath)
 
-    # 按域名区分请求头策略：哔哩哔哩需要伪造来源页，影视元数据源无需
+    # 按域名区分请求头策略：哔哩哔哩需要伪造来源页，TMDB 无需
     is_bilibili = parsed.hostname != "image.tmdb.org"
     headers = {"User-Agent": "Mozilla/5.0"}
     if is_bilibili:
@@ -864,7 +863,7 @@ async def get_anime_detail(season_id: int, session: Session = Depends(get_sessio
     if not anime:
         raise HTTPException(status_code=404, detail="番剧不存在")
 
-    # 若尚未绑定影视元数据，则自动触发富集（失败时降级，不阻断主流程）
+    # 若尚未绑定 TMDB 数据，则自动触发富集（失败时降级，不阻断主流程）
     if anime.get("tmdb_info") is None:
         try:
             from ..tmdb_service import TmdbService  # 延迟导入，避免模块加载期语法错误影响路由注册

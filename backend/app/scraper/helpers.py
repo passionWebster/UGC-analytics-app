@@ -12,7 +12,7 @@ def convert_order_to_int(order_str: Any) -> int:
         order_str: 原始热度文本，可能包含“万”“亿”等单位。
 
     返回:
-        int: 解析后的整数值；无法解析时返回 0。
+        解析后的整数值；无法解析时返回 0。
     """
     if not isinstance(order_str, str):
         return 0
@@ -34,7 +34,7 @@ def is_valid_main_episode(episode: dict[str, Any]) -> bool:
         episode: 单集信息字典。
 
     返回:
-        bool: 若为正片返回 True，否则返回 False。
+        若为正片返回 True，否则返回 False。
     """
     badge = episode.get("badge", "")
     if badge in ["预告", "PV", "CM", "特报", "花絮"]:
@@ -55,7 +55,7 @@ def get_quarter_month(month: int) -> int | None:
         month: 月份（1-12）。
 
     返回:
-        int | None: 所属季度首月；输入非法时返回 None。
+        所属季度首月；输入非法时返回 None。
     """
     if 1 <= month <= 3:
         return 1
@@ -75,8 +75,7 @@ def parse_release_date_from_order(order_str: Any) -> tuple[Any | None, int | Non
         order_str: B 站接口返回的开播相关文本。
 
     返回:
-        tuple[Any | None, int | None]:
-            返回 (year, quarter_month)。year 可能为整数或“敬请期待/更早”。
+        (year, quarter_month) 元组；year 可能为整数或“敬请期待/更早”。
     """
     if not isinstance(order_str, str) or not order_str.strip():
         return None, None
@@ -125,7 +124,7 @@ def read_proto_varint(buf: bytes, start: int) -> tuple[int | None, int]:
         start: 起始偏移量。
 
     返回:
-        tuple[int | None, int]: 返回 (value, next_offset)。
+        (value, next_offset) 元组。
     """
     value = 0
     shift = 0
