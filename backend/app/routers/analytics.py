@@ -1,6 +1,6 @@
-# routers/analytics.py
+# 分析路由实现文件
 """
-数据分析相关的 API 路由
+数据分析相关的接口路由
 """
 import hashlib
 import json
@@ -46,7 +46,7 @@ from ..schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analytics", tags=["数据分析"])
-# 图片代理路由（路径为 /api/image_proxy，与 analytics 路由独立）
+# 图片代理路由（与分析主路由独立挂载）
 proxy_router = APIRouter(prefix="/api", tags=["图片代理"])
 
 _STABLE_DATA_DAYS = 7
@@ -63,7 +63,7 @@ _COVER_CACHE_DIR = os.path.join(
     "cover_cache",
 )
 
-# B站图片 CDN 允许域名白名单（防止 SSRF）
+# 哔哩哔哩图片分发域名白名单（用于防止服务端请求伪造）
 _ALLOWED_IMAGE_HOSTS = {
     "i0.hdslb.com",
     "i1.hdslb.com",
@@ -72,11 +72,11 @@ _ALLOWED_IMAGE_HOSTS = {
     "s2.hdslb.com",
     "pic.bilibili.com",
     "static.hdslb.com",
-    # TMDB 图片服务器（背景图、Logo、海报均由此域名提供）
+    # 影视元数据图片服务器（背景图、标识图、海报均由此域名提供）
     "image.tmdb.org",
 }
 
-# 仅允许中文、ASCII 单词字符和少量常见分隔符，长度限制 1~30
+# 仅允许中文、字母数字与少量常见分隔符，长度限制为 1~30
 _VALID_CATEGORY_PATTERN = re.compile(r"^[\w\u4e00-\u9fff·、&+\-/]{1,30}$")
 
 
@@ -94,8 +94,16 @@ class SeasonEnum(str, Enum):
 
 
 def _validate_category_value(category: str | None) -> str | None:
-    """
-    校验 category 参数，防止前端参数被篡改后携带异常字符。
+    """校验分类参数合法性。
+
+    参数:
+        category: 原始分类参数。
+
+    返回:
+        str | None: 清洗后的分类值；空值返回 None。
+
+    异常:
+        HTTPException: 当分类参数包含非法字符或长度超限时抛出。
     """
     if category is None:
         return None
@@ -111,8 +119,16 @@ def _validate_category_value(category: str | None) -> str | None:
 
 
 def _parse_areas_param(areas: str | None) -> list[str] | None:
-    """
-    解析逗号分隔地区参数，并限制在 AreaEnum 白名单内。
+    """解析地区筛选参数。
+
+    参数:
+        areas: 逗号分隔的地区参数字符串。
+
+    返回:
+        list[str] | None: 解析后的地区列表；为空时返回 None。
+
+    异常:
+        HTTPException: 当地区值不在白名单中时抛出。
     """
     if not areas:
         return None
@@ -131,8 +147,15 @@ def _is_dataset_stable(
     season_id: int | None = None,
     cid: str | None = None,
 ) -> bool:
-    """
-    判断数据是否超过稳定窗口（默认 7 天），稳定后才启用聚合缓存。
+    """判断目标数据是否进入稳定期。
+
+    参数:
+        session: 数据库会话。
+        season_id: 可选 season_id。
+        cid: 可选分集 CID。
+
+    返回:
+        bool: 数据超过稳定窗口返回 True，否则返回 False。
     """
     if season_id is None and cid is None:
         return False
@@ -150,16 +173,38 @@ def _is_dataset_stable(
 
 
 def _read_cache(cache_key: str) -> dict[str, Any] | None:
+    """读取内存缓存。
+
+    参数:
+        cache_key: 缓存键。
+
+    返回:
+        dict[str, Any] | None: 命中时返回缓存值，否则返回 None。
+    """
     with _ANALYTICS_CACHE_LOCK:
         return _ANALYTICS_CACHE.get(cache_key)
 
 
 def _write_cache(cache_key: str, payload: dict) -> None:
+    """写入内存缓存。
+
+    参数:
+        cache_key: 缓存键。
+        payload: 需要缓存的响应数据。
+    """
     with _ANALYTICS_CACHE_LOCK:
         _ANALYTICS_CACHE[cache_key] = payload
 
 
 def _parse_release_date_to_datetime(value: str | None) -> datetime | None:
+    """将发布日期字符串解析为 datetime。
+
+    参数:
+        value: 发布日期字符串，支持 YYYY / YYYY-MM / YYYY-MM-DD。
+
+    返回:
+        datetime | None: 解析成功返回 datetime，失败返回 None。
+    """
     if not value:
         return None
     value = value.strip()
@@ -177,6 +222,17 @@ def _get_episode_publish_anchor(
     session: Session,
     target_ep: EpisodeStats,
 ) -> datetime:
+    """获取分集发布时间锚点。
+
+    优先使用番剧发布日期；缺失时回退到分集更新时间或当前时间。
+
+    参数:
+        session: 数据库会话。
+        target_ep: 目标分集记录。
+
+    返回:
+        datetime: 计算后的发布时间锚点。
+    """
     anime = session.exec(sql_select(Anime).where(Anime.season_id == target_ep.season_id)).first()
     release_dt = _parse_release_date_to_datetime(anime.release_date if anime else None)
     if release_dt:
@@ -185,6 +241,16 @@ def _get_episode_publish_anchor(
 
 
 def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool:
+    """判断分集是否存在可用弹幕源数据。
+
+    参数:
+        session: 数据库会话。
+        cid: 分集 CID。
+        season_id: 番剧季 ID。
+
+    返回:
+        bool: Mongo 或 SQLite 任一来源存在弹幕数据即返回 True。
+    """
     mongo_doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(cid)
     if mongo_doc and isinstance(mongo_doc.get("danmaku_items"), list) and mongo_doc.get("danmaku_items"):
         return True
@@ -198,11 +264,21 @@ def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool
 
 
 def _episode_needs_nlp_refresh(session: Session, target_ep: EpisodeStats, cid: str, season_id: int) -> bool:
-    """
-    判断单集是否需要补跑 NLP：
-    1) EpisodeStats 尚未成功处理或没有处理时间；
-    2) Mongo 弹幕存在但逐条无情感字段；
-    3) Mongo 不可用时，SQLite 也不存在可用情感字段。
+    """判断单集是否需要补跑 NLP。
+
+    触发条件包括：
+    1) 分集状态未成功或缺少处理时间；
+    2) Mongo 弹幕存在但无可用情感字段；
+    3) Mongo 不可用且 SQLite 也无可用情感字段。
+
+    参数:
+        session: 数据库会话。
+        target_ep: 目标分集记录。
+        cid: 分集 CID。
+        season_id: 番剧季 ID。
+
+    返回:
+        bool: 需要补跑返回 True，否则返回 False。
     """
     if target_ep.nlp_status != "success" or target_ep.nlp_processed_at is None:
         return True
@@ -364,8 +440,19 @@ def get_episode_timeline(
     keyword_topk: int = Query(5, ge=1, le=20, description="每个切片返回关键词数量"),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """
-    获取单集按时间窗切片后的弹幕聚合数据。
+    """获取单集时间窗弹幕聚合数据。
+
+    参数:
+        cid: 分集 CID。
+        bin_size: 时间窗大小（秒）。
+        keyword_topk: 每个切片返回关键词数量。
+        session: 数据库会话。
+
+    返回:
+        dict[str, Any]: 时间线聚合响应。
+
+    异常:
+        HTTPException: 未找到对应分集数据时抛出 404。
     """
     cache_key = f"episode_timeline:{cid}:bin={bin_size}:topk={keyword_topk}"
     cache_enabled = _is_dataset_stable(session=session, cid=cid)
@@ -401,8 +488,25 @@ def get_episode_analysis_with_cache(
     top_n: int = Query(120, ge=10, le=500, description="词云词条数量上限"),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """
-    单集分析统一入口：优先返回 SQLite 缓存，必要时刷新缓存；无源数据时触发抓取。
+    """获取单集分析结果并管理缓存刷新。
+
+    策略为优先返回 SQLite 缓存，并根据分集状态决定是否调度 NLP 刷新
+    或触发弹幕抓取任务。
+
+    参数:
+        season_id: 番剧季 ID。
+        cid: 分集 CID。
+        background_tasks: 后台任务调度器。
+        bin_size: 时间窗大小（秒）。
+        keyword_topk: 每个切片返回关键词数量。
+        top_n: 词云词条数量上限。
+        session: 数据库会话。
+
+    返回:
+        dict[str, Any]: 单集分析响应，可能为缓存结果、待处理状态或实时计算结果。
+
+    异常:
+        HTTPException: 当分集不存在时抛出 404。
     """
     target_ep = session.exec(
         sql_select(EpisodeStats).where(
@@ -526,8 +630,19 @@ def get_season_wordcloud_api(
     top_n: int = Query(120, ge=10, le=500, description="返回词条数量上限"),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """
-    获取整季（或单集）词云权重数据。
+    """获取整季或单集词云数据。
+
+    参数:
+        season_id: 番剧季 ID。
+        cid: 可选分集 CID。
+        top_n: 返回词条数量上限。
+        session: 数据库会话。
+
+    返回:
+        dict[str, Any]: 词云聚合响应。
+
+    异常:
+        HTTPException: 当目标分集不存在可聚合数据时抛出 404。
     """
     cache_key = f"season_wordcloud:{season_id}:cid={cid or ''}:top={top_n}"
     cache_enabled = _is_dataset_stable(session=session, season_id=season_id, cid=cid)
@@ -559,8 +674,18 @@ def get_season_characters_api(
     top_n: int = Query(8, ge=1, le=30, description="返回角色数量上限"),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """
-    获取整季核心角色讨论度趋势。
+    """获取整季核心角色讨论趋势。
+
+    参数:
+        season_id: 番剧季 ID。
+        top_n: 返回角色数量上限。
+        session: 数据库会话。
+
+    返回:
+        dict[str, Any]: 角色趋势分析响应。
+
+    异常:
+        HTTPException: 当 season_id 无对应数据时抛出 404。
     """
     cache_key = f"season_characters:{season_id}:top={top_n}"
     cache_enabled = _is_dataset_stable(session=session, season_id=season_id)
@@ -592,8 +717,16 @@ def get_season_insight_cards_api(
     top_n: int = Query(6, ge=1, le=20, description="返回观点卡片数量"),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """
-    获取整季热门评论观点提取卡片数据。
+    """获取整季评论观点卡片。
+
+    参数:
+        season_id: 番剧季 ID。
+        limit: 聚类前的评论采样数。
+        top_n: 返回观点卡片数量。
+        session: 数据库会话。
+
+    返回:
+        dict[str, Any]: 评论观点卡片响应。
     """
     cache_key = f"season_insight_cards:{season_id}:limit={limit}:top={top_n}"
     cache_enabled = _is_dataset_stable(session=session, season_id=season_id)
@@ -631,17 +764,17 @@ def image_proxy(
        - TMDB 域名：使用标准 User-Agent，无需 Referer
     4. 将图片二进制写入本地缓存后返回
 
-    Args:
+    参数:
         url: 原始图片链接（支持 B站 CDN 和 image.tmdb.org）
         title: 番剧名（用于生成缓存文件名）
         season_id: 番剧 season_id（用于生成缓存文件名）
 
-    Returns:
+    返回:
         图片文件响应（FileResponse）
     """
     os.makedirs(_COVER_CACHE_DIR, exist_ok=True)
 
-    # 校验 URL 只能指向白名单域名（防止 SSRF）
+    # 校验图片地址仅指向白名单域名（防止服务端请求伪造）
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or parsed.hostname not in _ALLOWED_IMAGE_HOSTS:
         raise HTTPException(status_code=400, detail="不支持的图片域名，仅允许 B站图片 CDN 及 TMDB 图片域名")
@@ -649,7 +782,7 @@ def image_proxy(
     # 生成安全的文件名：清理特殊字符，保留字母、数字、中文、连字符
     safe_title = re.sub(r"[^\w\u4e00-\u9fff\-]", "_", title)
     safe_season_id = re.sub(r"[^\w]", "_", str(season_id))
-    # 尝试从 URL 中推断扩展名，默认使用 .jpg
+    # 尝试从图片地址推断扩展名，默认使用常见图片后缀
     url_path = url.split("?")[0]
     ext = os.path.splitext(url_path)[-1].lower()
     if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
@@ -662,7 +795,7 @@ def image_proxy(
     if os.path.exists(filepath):
         return FileResponse(filepath)
 
-    # 按域名区分请求头策略：B站需要伪造 Referer，TMDB 无需
+    # 按域名区分请求头策略：哔哩哔哩需要伪造来源页，影视元数据源无需
     is_bilibili = parsed.hostname != "image.tmdb.org"
     headers = {"User-Agent": "Mozilla/5.0"}
     if is_bilibili:
@@ -691,12 +824,12 @@ def get_animes(
     """
     获取番剧列表
     
-    Args:
+    参数:
         limit: 返回数量
         offset: 偏移量
         session: 数据库会话
         
-    Returns:
+    返回:
         番剧列表
     """
     analytics_service = AnalyticsService(session)
@@ -714,11 +847,11 @@ async def get_anime_detail(season_id: int, session: Session = Depends(get_sessio
     """
     获取番剧详情，若尚未绑定 TMDB 数据则自动触发富集（超时或失败时降级返回基础数据）。
 
-    Args:
+    参数:
         season_id: 番剧 ID
         session: 数据库会话
 
-    Returns:
+    返回:
         番剧详情（含可选的 tmdb_info 嵌套字段）
     """
     from ..tmdb_service import TmdbService
@@ -731,7 +864,7 @@ async def get_anime_detail(season_id: int, session: Session = Depends(get_sessio
     if not anime:
         raise HTTPException(status_code=404, detail="番剧不存在")
 
-    # 若尚未绑定 TMDB 数据，自动触发富集（失败时降级，不阻断主流程）
+    # 若尚未绑定影视元数据，则自动触发富集（失败时降级，不阻断主流程）
     if anime.get("tmdb_info") is None:
         try:
             from ..tmdb_service import TmdbService  # 延迟导入，避免模块加载期语法错误影响路由注册
@@ -785,11 +918,11 @@ async def trigger_tmdb_enrich(season_id: int, session: Session = Depends(get_ses
     若该番剧已有 TMDB 记录，则更新现有记录；否则新建记录。
     适用于首次导入或需要强制刷新 TMDB 数据的场景。
 
-    Args:
+    参数:
         season_id: 需要富集的番剧 season_id
         session:   数据库会话
 
-    Returns:
+    返回:
         富集结果，包含 tmdb_id 等关键字段
     """
     # 校验番剧是否存在
@@ -861,13 +994,13 @@ def search_animes(
     session: Session = Depends(get_session)
 ):
     """
-    搜索番剧。若本地数据库中无匹配结果，则实时调用 B站 API 抓取并写入数据库。
+    搜索番剧。若本地数据库中无匹配结果，则实时调用 B 站开放接口抓取并写入数据库。
 
-    Args:
+    参数:
         keyword: 搜索关键词
         session: 数据库会话
 
-    Returns:
+    返回:
         搜索结果列表
     """
     from ..scraper import BilibiliBangumiCrawler
@@ -902,7 +1035,7 @@ def get_rankings(
     """
     获取排行榜
 
-    Args:
+    参数:
         sort_by: 排序字段
         limit: 返回数量
         area: 地区筛选
@@ -910,7 +1043,7 @@ def get_rankings(
         season: 季节筛选（spring/summer/autumn/winter）
         session: 数据库会话
 
-    Returns:
+    返回:
         排行榜数据
     """
     analytics_service = AnalyticsService(session)
@@ -940,10 +1073,10 @@ def get_overview(session: Session = Depends(get_session)):
     """
     获取数据总览统计
     
-    Args:
+    参数:
         session: 数据库会话
         
-    Returns:
+    返回:
         统计数据
     """
     analytics_service = AnalyticsService(session)
@@ -964,12 +1097,12 @@ def get_anime_history(
     """
     获取番剧历史数据
     
-    Args:
+    参数:
         season_id: 番剧 ID
         days: 查询天数
         session: 数据库会话
         
-    Returns:
+    返回:
         历史数据
     """
     analytics_service = AnalyticsService(session)
@@ -989,11 +1122,11 @@ def get_style_distribution(
     """
     获取风格分布统计
 
-    Args:
+    参数:
         area: 地区筛选，None 表示全部
         session: 数据库会话
 
-    Returns:
+    返回:
         风格分布数据
     """
     analytics_service = AnalyticsService(session)
@@ -1013,11 +1146,11 @@ def get_release_trend(
     """
     获取发布趋势统计
 
-    Args:
+    参数:
         area: 地区筛选，None 表示全部
         session: 数据库会话
 
-    Returns:
+    返回:
         发布趋势数据
     """
     analytics_service = AnalyticsService(session)
@@ -1036,11 +1169,11 @@ def get_anime_episodes(season_id: int, session: Session = Depends(get_session)):
 
     优先返回 EpisodeStats 表中的真实数据；若无数据，则以每日统计记录作为代理。
 
-    Args:
+    参数:
         season_id: 番剧 ID
         session: 数据库会话
 
-    Returns:
+    返回:
         剧集列表，每项包含 title、views、peakTime、peakOnline 字段
     """
     analytics_service = AnalyticsService(session)
@@ -1061,11 +1194,11 @@ def get_watch_time(season_id: int, session: Session = Depends(get_session)):
     从 EpisodeStats.hourly_online_history 列读取每小时在线人数快照，
     格式化为长度 24 的整数数组供前端 ECharts 渲染。
 
-    Args:
+    参数:
         season_id: 番剧 ID
         session: 数据库会话
 
-    Returns:
+    返回:
         各集 24 小时分布数据，episodes_data 为空时返回 404
     """
     analytics_service = AnalyticsService(session)
@@ -1088,11 +1221,11 @@ def get_reputation_popularity_chart(
     """
     获取口碑与热度散点图数据
 
-    Args:
+    参数:
         areas: 地区列表，逗号分隔，None 表示全部
         session: 数据库会话
 
-    Returns:
+    返回:
         散点图数据列表，每项包含 title、rating、favorites、views、area 字段
     """
     analytics_service = AnalyticsService(session)
@@ -1114,11 +1247,11 @@ def get_preference_difference_chart(
     """
     获取地区偏好差异图数据
 
-    Args:
+    参数:
         region: 地区名称，默认 "国内"
         session: 数据库会话
 
-    Returns:
+    返回:
         偏好指数列表，每项包含 style、preferenceIndex、regionCount、globalCount 字段
     """
     analytics_service = AnalyticsService(session)
@@ -1140,12 +1273,12 @@ def get_reputation_heat_index_chart(
     """
     获取口碑热度指数图数据
 
-    Args:
+    参数:
         season: 季节筛选（spring/summer/autumn/winter）
         category: 风格/类型筛选
         session: 数据库会话
 
-    Returns:
+    返回:
         前 15 名番剧列表，每项包含 title、qualityScore、rating、favorites、views 字段
     """
     analytics_service = AnalyticsService(session)
@@ -1166,10 +1299,10 @@ def get_popular_style_combination_chart(session: Session = Depends(get_session))
     """
     获取热门风格组合图数据
 
-    Args:
+    参数:
         session: 数据库会话
 
-    Returns:
+    返回:
         前 20 个风格组合列表，每项包含 combination、totalFavorites、animeCount、
         avgFavorites、representativeAnimes 字段
     """
@@ -1205,11 +1338,11 @@ def get_episode_behavior_analysis(
     - **共鸣密度**：逐集计算弹幕率（danmaku/views）和评论率（reply/views），
       反映观众互动活跃程度。
 
-    Args:
+    参数:
         season_id: 番剧 season_id
         session: 数据库会话
 
-    Returns:
+    返回:
         留存率、各集互动指标及全剧平均指标
     """
     analytics_service = AnalyticsService(session)
@@ -1246,12 +1379,12 @@ def get_lifecycle_growth_analysis(
     - **长尾效应**：统计首播后 30 天和 90 天的日均播放量，
       评估番剧的持续影响力与生命周期。
 
-    Args:
+    参数:
         season_id: 番剧 season_id
         window_days: 滑动窗口天数（预留参数）
         session: 数据库会话
 
-    Returns:
+    返回:
         逐日增长数据、长尾效应及峰值增长信息
     """
     analytics_service = AnalyticsService(session)
@@ -1288,13 +1421,13 @@ def get_competitive_landscape_analysis(
       反映该番剧在竞争环境中的统治力。
     - **排名波动率**：计算排名位置的标准差，数值越小说明排名越稳定。
 
-    Args:
+    参数:
         season_id: 番剧 season_id
         start_date: 统计开始日期（可选）
         end_date: 统计结束日期（可选）
         session: 数据库会话
 
-    Returns:
+    返回:
         上榜天数、霸榜比例、平均排名及波动率
     """
     parsed_start = None
@@ -1335,10 +1468,10 @@ def get_seasonal_genre_trends(session: Session = Depends(get_session)):
     autumn=10月, winter=01月），结合 styles 和最新播放量，计算各季节
     每种题材的平均播放量，识别不同季节表现最佳的题材类型。
 
-    Args:
+    参数:
         session: 数据库会话
 
-    Returns:
+    返回:
         各季节题材数据列表及每季最佳题材映射
     """
     analytics_service = AnalyticsService(session)
@@ -1373,11 +1506,11 @@ def get_personalized_recommendations(
     - **无偏好**：按播放量和追番数的归一化热度排序。
     返回匹配度最高的前50部番剧。
 
-    Args:
+    参数:
         username: 用户名
         session: 数据库会话
 
-    Returns:
+    返回:
         用户偏好风格及排序后的推荐番剧列表（含匹配度分数）
     """
     analytics_service = AnalyticsService(session)

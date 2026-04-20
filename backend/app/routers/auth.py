@@ -1,4 +1,4 @@
-"""User authentication related API routes."""
+"""用户认证相关接口路由。"""
 
 import json
 import logging
@@ -21,11 +21,11 @@ def register(user_create: UserCreate, session: Session = Depends(get_session)) -
     """
     用户注册
     
-    Args:
+    参数:
         user_create: 用户注册信息
         session: 数据库会话
         
-    Returns:
+    返回:
         注册成功信息
     """
     auth_service = AuthService(session)
@@ -43,11 +43,11 @@ def login(user_login: UserLogin, session: Session = Depends(get_session)) -> dic
     """
     用户登录
     
-    Args:
+    参数:
         user_login: 登录凭证
         session: 数据库会话
         
-    Returns:
+    返回:
         登录结果，包含 token 和用户信息
     """
     auth_service = AuthService(session)
@@ -59,11 +59,11 @@ def get_user_info(username: str, session: Session = Depends(get_session)) -> dic
     """
     获取用户信息
     
-    Args:
+    参数:
         username: 用户名
         session: 数据库会话
         
-    Returns:
+    返回:
         用户信息
     """
     auth_service = AuthService(session)
@@ -102,11 +102,11 @@ def update_preferences(
     """
     更新用户偏好设置
     
-    Args:
+    参数:
         preference_update: 偏好更新数据
         session: 数据库会话
         
-    Returns:
+    返回:
         更新结果
     """
     auth_service = AuthService(session)

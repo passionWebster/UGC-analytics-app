@@ -1,4 +1,4 @@
-"""Helper utilities for scraper package."""
+"""爬虫包通用辅助工具。"""
 
 import re
 from datetime import datetime, timedelta
@@ -6,7 +6,14 @@ from typing import Any
 
 
 def convert_order_to_int(order_str: Any) -> int:
-    """Convert unit-suffixed order string (万/亿) to integer count."""
+    """将带单位的热度字符串转换为整数。
+
+    参数:
+        order_str: 原始热度文本，可能包含“万”“亿”等单位。
+
+    返回:
+        int: 解析后的整数值；无法解析时返回 0。
+    """
     if not isinstance(order_str, str):
         return 0
     num_match = re.search(r"(\d+(\.\d+)?)", order_str)
@@ -21,7 +28,14 @@ def convert_order_to_int(order_str: Any) -> int:
 
 
 def is_valid_main_episode(episode: dict[str, Any]) -> bool:
-    """Check whether an episode payload should be treated as a main episode."""
+    """判断分集是否属于正片。
+
+    参数:
+        episode: 单集信息字典。
+
+    返回:
+        bool: 若为正片返回 True，否则返回 False。
+    """
     badge = episode.get("badge", "")
     if badge in ["预告", "PV", "CM", "特报", "花絮"]:
         return False
@@ -35,7 +49,14 @@ def is_valid_main_episode(episode: dict[str, Any]) -> bool:
 
 
 def get_quarter_month(month: int) -> int | None:
-    """Map month to first month of its quarter."""
+    """根据月份返回季度首月。
+
+    参数:
+        month: 月份（1-12）。
+
+    返回:
+        int | None: 所属季度首月；输入非法时返回 None。
+    """
     if 1 <= month <= 3:
         return 1
     if 4 <= month <= 6:
@@ -48,7 +69,15 @@ def get_quarter_month(month: int) -> int | None:
 
 
 def parse_release_date_from_order(order_str: Any) -> tuple[Any | None, int | None]:
-    """Parse release date hints from order text into (year, quarter_month)."""
+    """从开播文案中提取年份与季度首月。
+
+    参数:
+        order_str: B 站接口返回的开播相关文本。
+
+    返回:
+        tuple[Any | None, int | None]:
+            返回 (year, quarter_month)。year 可能为整数或“敬请期待/更早”。
+    """
     if not isinstance(order_str, str) or not order_str.strip():
         return None, None
 
@@ -89,7 +118,15 @@ def parse_release_date_from_order(order_str: Any) -> tuple[Any | None, int | Non
 
 
 def read_proto_varint(buf: bytes, start: int) -> tuple[int | None, int]:
-    """Read protobuf varint and return (value, next_offset)."""
+    """读取 protobuf varint。
+
+    参数:
+        buf: 原始二进制缓冲区。
+        start: 起始偏移量。
+
+    返回:
+        tuple[int | None, int]: 返回 (value, next_offset)。
+    """
     value = 0
     shift = 0
     offset = start

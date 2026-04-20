@@ -1,4 +1,4 @@
-"""AI assistant related API routes."""
+"""智能助手相关接口路由。"""
 
 import re
 from typing import Any
@@ -14,12 +14,12 @@ from ..analytics import get_sentiment_timeline, get_top_comments
 
 router = APIRouter(prefix="/api", tags=["AI助手"])
 
-# 实例化 AI 服务
+# 实例化智能服务
 ai_service = AIService()
 
-# SQL 语句安全白名单：只允许 SELECT，禁止 DDL / DML
+# 查询语句安全白名单：仅允许只读查询
 _SAFE_SQL_RE = re.compile(r"^\s*SELECT\b", re.IGNORECASE)
-# 检测多语句注入（分号分隔的多条 SQL）
+# 检测多语句注入风险（分号分隔的多条语句）
 _MULTI_STMT_RE = re.compile(r";(?!\s*$)", re.IGNORECASE)
 
 
@@ -30,17 +30,17 @@ class ChatMessage(BaseModel):
 
 
 class InsightRequest(BaseModel):
-    """Auto-EDA 洞察请求模型。"""
+    """自动探索洞察请求模型。"""
 
-    data: Any  # 图表数据（JSON 可序列化）
+    data: Any  # 图表数据（可序列化）
     context_hint: str | None = ""  # 可选番剧名称等上下文
 
 
 class TextToSQLRequest(BaseModel):
-    """Text-to-SQL 请求模型。"""
+    """自然语言转查询语句请求模型。"""
 
     query: str  # 用户自然语言
-    schema_hint: str | None = ""  # 可选自定义 schema
+    schema_hint: str | None = ""  # 可选自定义数据结构提示
 
 
 class SentimentTimelineRequest(BaseModel):
@@ -54,7 +54,7 @@ def get_ai_service_status() -> dict[str, Any]:
     """
     获取 AI 服务状态
 
-    Returns:
+    返回:
         服务状态信息
     """
     return ai_service.check_service_status()
@@ -65,10 +65,10 @@ def chat_with_ai(chat_message: ChatMessage) -> dict[str, Any]:
     """
     与 AI 助手对话
 
-    Args:
+    参数:
         chat_message: 聊天消息
 
-    Returns:
+    返回:
         AI 回复
     """
     try:
@@ -83,13 +83,13 @@ def chat_with_ai(chat_message: ChatMessage) -> dict[str, Any]:
 @router.post("/ai/generate-insight", response_model=dict)
 def generate_insight(req: InsightRequest) -> dict[str, Any]:
     """
-    Auto-EDA 智能洞察：接收图表 JSON，返回 300 字以内的结构化分析报告。
+    自动探索洞察：接收图表数据，返回 300 字以内的结构化分析报告。
 
-    Args:
-        req: 包含 data（图表 JSON）和 context_hint（番剧名等上下文）
+    参数:
+        req: 包含图表数据与上下文提示
 
-    Returns:
-        {"success": True, "insight": "...报告文字..."}
+    返回:
+        结构化洞察结果
     """
     try:
         insight = ai_service.generate_insight(
@@ -106,15 +106,15 @@ def generate_insight(req: InsightRequest) -> dict[str, Any]:
 @router.post("/ai/text-to-sql", response_model=dict)
 def text_to_sql(req: TextToSQLRequest, session: Session = Depends(get_session)) -> dict[str, Any]:
     """
-    Text-to-SQL：将自然语言转为 SQL，在只读权限下执行并返回结果。
+    自然语言转查询语句：将自然语言转为只读查询并执行返回结果。
 
-    为安全起见，只允许 SELECT 语句；任何 DDL/DML 均会被拒绝。
+    为安全起见，仅允许只读查询语句；任何写入或结构变更语句都会被拒绝。
 
-    Args:
-        req: 包含 query（自然语言）和可选 schema_hint
+    参数:
+        req: 包含自然语言查询与可选数据结构提示
 
-    Returns:
-        {"success": True, "sql": "...", "rows": [...], "columns": [...]}
+    返回:
+        查询执行结果
     """
     try:
         sql_raw = ai_service.text_to_sql(
@@ -126,24 +126,24 @@ def text_to_sql(req: TextToSQLRequest, session: Session = Depends(get_session)) 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SQL 生成失败: {str(e)}")
 
-    # 从 AI 回复中提取 SQL（兼容带 markdown code block 的情况）
+    # 从智能回复中提取查询语句（兼容代码块包裹场景）
     sql = sql_raw.strip()
-    # 去除 ```sql ... ``` 包裹
+    # 去除代码块包裹
     sql = re.sub(r"^```(?:sql)?\s*", "", sql, flags=re.IGNORECASE)
     sql = re.sub(r"\s*```$", "", sql)
     sql = sql.strip()
 
-    # 安全检查：只允许 SELECT
+    # 安全检查：仅允许只读查询
     if not _SAFE_SQL_RE.match(sql):
         raise HTTPException(
             status_code=400,
-            detail="AI 生成了非 SELECT 语句，已被安全策略拒绝。请重新描述您的查询需求。",
+            detail="生成了非只读查询语句，已被安全策略拒绝。请重新描述查询需求。",
         )
-    # 安全检查：拒绝多语句（防止 SELECT ...; DROP TABLE 之类的注入）
+    # 安全检查：拒绝多语句，避免拼接注入风险
     if _MULTI_STMT_RE.search(sql):
         raise HTTPException(
             status_code=400,
-            detail="检测到多语句 SQL，已被安全策略拒绝。请描述单次查询需求。",
+            detail="检测到多语句查询，已被安全策略拒绝。请描述单次查询需求。",
         )
 
     try:
@@ -155,7 +155,7 @@ def text_to_sql(req: TextToSQLRequest, session: Session = Depends(get_session)) 
     except Exception as exc:
         raise HTTPException(
             status_code=422,
-            detail=f"SQL 执行失败（{type(exc).__name__}）: {exc}",
+            detail=f"查询执行失败（{type(exc).__name__}）: {exc}",
         )
 
 
@@ -165,13 +165,13 @@ def get_sentiment_timeline_api(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """
-    获取指定番剧按集数聚合的弹幕情感均分，用于前端折线图。
+    获取指定番剧按集数聚合的弹幕情感均分，用于折线图展示。
 
-    Args:
+    参数:
         season_id: 番剧 season_id
 
-    Returns:
-        {"success": True, "timeline": [{"episode_number": 1, "avg_sentiment": 0.72, "danmu_count": 500}, ...]}
+    返回:
+        情感时间线结果
     """
     timeline = get_sentiment_timeline(session, season_id)
     return {"success": True, "timeline": timeline}
@@ -184,14 +184,14 @@ def get_top_comments_api(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """
-    返回指定番剧高赞评论列表（含情感得分），供 AI 分析或前端展示。
+    返回指定番剧高赞评论列表（含情感得分），供智能分析或前端展示。
 
-    Args:
+    参数:
         season_id: 番剧 season_id
         limit:     最多返回条数（默认 50）
 
-    Returns:
-        {"success": True, "comments": [...]}
+    返回:
+        评论列表结果
     """
     comments = get_top_comments(session, season_id, limit=limit)
     return {"success": True, "comments": comments}

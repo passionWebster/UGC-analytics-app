@@ -1,4 +1,4 @@
-"""Crawler control related API routes."""
+"""爬虫控制相关接口路由。"""
 
 from typing import Any, Literal
 
@@ -20,12 +20,12 @@ def trigger_update(
     """
     触发数据更新
     
-    Args:
+    参数:
         background_tasks: 后台任务
-    Returns:
+    返回:
         触发结果
     """
-    # 在后台执行爬虫任务（任务内自行创建独立 Session）
+    # 在后台执行爬虫任务（任务内自行创建独立会话）
     background_tasks.add_task(_run_update_task)
     
     return {
@@ -39,10 +39,10 @@ def get_crawler_status(session: Session = Depends(get_session)) -> dict[str, Any
     """
     获取爬虫状态
     
-    Args:
+    参数:
         session: 数据库会话
         
-    Returns:
+    返回:
         爬虫状态信息
     """
     from ..models import CrawlLog
@@ -76,11 +76,11 @@ def search_anime_id(title: str, session: Session = Depends(get_session)) -> dict
     """
     根据标题搜索番剧 ID
     
-    Args:
+    参数:
         title: 番剧标题
         session: 数据库会话
         
-    Returns:
+    返回:
         番剧 ID
     """
     crawler = BilibiliBangumiCrawler(session)
@@ -104,7 +104,7 @@ class ScrapeDanmakuRequest(BaseModel):
 
     season_id: int
     mode: Literal["incremental", "full"] = "incremental"
-    max_episodes: int | None = 3  # 最多抓取前 N 集，默认 3
+    max_episodes: int | None = 3  # 最多抓取前若干集，默认 3
     comment_limit: int | None = 50  # 每集最多评论条数，默认 50
     include_comment_replies: bool | None = True
     nested_reply_limit: int | None = 20
@@ -122,7 +122,7 @@ def _scrape_and_score(
     retry_attempts: int | None,
     run_sentiment: bool,
 ) -> None:
-    """后台任务：抓取弹幕/评论，并触发异步 NLP 处理"""
+    """后台任务：抓取弹幕与评论，并触发异步情感分析处理。"""
 
     with Session(engine) as session:
         crawler = BilibiliBangumiCrawler(session)
@@ -140,7 +140,7 @@ def _scrape_and_score(
 
 
 def _run_update_task() -> None:
-    """后台任务：更新番剧基础数据（使用独立 Session）"""
+    """后台任务：更新番剧基础数据（使用独立会话）。"""
     with Session(engine) as session:
         crawler = BilibiliBangumiCrawler(session)
         crawler.anime_sync.update_anime_database()
@@ -154,10 +154,10 @@ def trigger_danmaku_scrape(
     """
     触发指定番剧的弹幕与评论抓取（后台异步执行）。
 
-    Args:
+    参数:
         req: 包含 season_id、max_episodes、comment_limit、run_sentiment
 
-    Returns:
+    返回:
         {"success": True, "message": "..."}
     """
     background_tasks.add_task(
