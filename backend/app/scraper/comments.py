@@ -318,7 +318,12 @@ class CommentsService:
                         if key in existing_keys:
                             continue
                         existing_keys.add(key)
-                        score = sentiment_fn(d["content"]) if sentiment_fn else None
+                        score = None
+                        if callable(sentiment_fn):
+                            try:
+                                score = sentiment_fn(d["content"])
+                            except Exception as exc:
+                                logger.warning("⚠️ 弹幕情感函数执行失败 content_len={} error={}", len(d["content"]), exc)
                         records.append(
                             DanmuRecord(
                                 season_id=season_id,
@@ -333,8 +338,7 @@ class CommentsService:
                         )
 
                     with sqlite_write_lock:
-                        for danmu_record in records:
-                            self.session.add(danmu_record)
+                        self.session.add_all(records)
                         self.session.commit()
                     danmu_saved += len(records)
                     if raw_danmaku and self.mongo_repo.upsert_episode_danmaku(
@@ -401,7 +405,12 @@ class CommentsService:
                     if comment_key in existing_comment_keys:
                         continue
                     existing_comment_keys.add(comment_key)
-                    score = sentiment_fn(c["content"]) if sentiment_fn else None
+                    score = None
+                    if callable(sentiment_fn):
+                        try:
+                            score = sentiment_fn(c["content"])
+                        except Exception as exc:
+                            logger.warning("⚠️ 评论情感函数执行失败 content_len={} error={}", len(c["content"]), exc)
                     c_records.append(
                         CommentRecord(
                             season_id=season_id,
@@ -417,8 +426,7 @@ class CommentsService:
                         )
                     )
                 with sqlite_write_lock:
-                    for comment_record in c_records:
-                        self.session.add(comment_record)
+                    self.session.add_all(c_records)
                     self.session.commit()
                 comment_saved += len(c_records)
                 logger.info(
@@ -494,3 +502,12 @@ class CommentsService:
             "retry_count": self.request_counters["retries"],
             "failed_requests": self.request_counters["failed"],
         }
+
+    @staticmethod
+    def _make_comment_dedup_key(comment: dict[str, Any]) -> tuple[str, str, str]:
+        """构造评论去重键：(root_rpid, parent_rpid, content)。"""
+        return (
+            str(comment.get("root_rpid") or ""),
+            str(comment.get("parent_rpid") or ""),
+            str(comment.get("content") or ""),
+        )

@@ -168,3 +168,79 @@ class EpisodeSyncService:
 
         self.session.commit()
         logger.info(f"  ✅ 在线人数刷新完成，共更新 {updated}/{len(episodes)} 条记录")
+
+    def get_episode_stat_details(self, bvid: str) -> dict:
+        """
+        通过 B站 视频详情 API 获取单集完整数据（含统计和时长）。
+
+        Args:
+            bvid: 视频 BV 号
+
+        Returns:
+            包含 stat（播放量等）和 duration（时长，秒）等字段的完整 data 字典；
+            请求失败或数据结构异常时返回空字典
+        """
+        url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
+        try:
+            response = self._request_get(url, timeout=settings.bilibili_request_timeout)
+            if response is None:
+                return {}
+            data = response.json()
+            if data.get("code") == 0:
+                # 返回完整 data 字典，以便调用方同时获取 stat 和 duration
+                payload = data.get("data")
+                if isinstance(payload, dict):
+                    return payload
+                # 若 data 字段为空或不是字典，则按照约定返回空字典
+                return {}
+        except Exception as e:
+            logger.exception("❌ 获取单集统计详情失败 bvid={}: {}", bvid, e)
+        return {}
+
+    @staticmethod
+    def _apply_stat_to_episode(ep: "EpisodeStats", stat: dict, ep_title: str) -> None:
+        """
+        将 stat 字典中的互动指标写入 EpisodeStats 对象
+
+        Args:
+            ep: 目标 EpisodeStats 实例
+            stat: get_episode_stat_details 返回的统计字典
+            ep_title: 集标题
+        """
+        ep.episode_title = ep_title
+        ep.views = stat.get("view")
+        ep.danmaku = stat.get("danmaku")
+        ep.reply = stat.get("reply")
+        ep.favorite = stat.get("favorite")
+        ep.coin = stat.get("coin")
+        ep.share = stat.get("share")
+        ep.like = stat.get("like")
+        ep.updated_at = datetime.now()
+
+    def get_online_viewers(self, bvid: str, cid: str) -> int | None:
+        """
+        获取指定单集的当前在线观看人数
+
+        Args:
+            bvid: 视频 BV 号
+            cid: 弹幕 CID
+
+        Returns:
+            当前在线人数，失败时返回 None
+        """
+        if not bvid or not cid:
+            return None
+        url = "https://api.bilibili.com/x/player/online/total"
+        params = {"bvid": bvid, "cid": str(cid)}
+        try:
+            response = self._request_get(
+                url, params=params, timeout=settings.bilibili_request_timeout
+            )
+            if response is None:
+                return None
+            data = response.json()
+            if data.get("code") == 0 and "data" in data:
+                return self._convert_order_to_int(str(data["data"].get("total", 0)))
+        except Exception as e:
+            logger.exception("❌ 获取在线人数失败 bvid={}: {}", bvid, e)
+        return None
