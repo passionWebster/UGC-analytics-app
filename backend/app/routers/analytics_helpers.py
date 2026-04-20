@@ -30,7 +30,16 @@ _MONGO_SENTIMENT_KEYS = ("nlp_sentiment_score", "sentiment_score", "sentiment")
 _RECENT_EPISODE_DAYS = 30
 _FROZEN_EPISODE_DAYS = 180
 
-_COVER_CACHE_DIR = str(Path(__file__).resolve().parents[3] / "cover_cache")
+
+def _resolve_cover_cache_dir() -> str:
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / "backend").is_dir() and (parent / "README.md").exists():
+            return str(parent / "cover_cache")
+    return str(current.parents[3] / "cover_cache")
+
+
+_COVER_CACHE_DIR = _resolve_cover_cache_dir()
 
 _ALLOWED_IMAGE_HOSTS = {
     "i0.hdslb.com",

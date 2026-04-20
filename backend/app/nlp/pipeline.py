@@ -40,6 +40,7 @@ def _ensure_jieba_user_dict_loaded() -> None:
         if not candidate.exists():
             legacy_candidate = Path(__file__).resolve().parent.parent / "nlp_user_dict.txt"
             if legacy_candidate.exists():
+                # TODO: 兼容期结束后移除旧路径回退，仅保留 app/nlp/nlp_user_dict.txt
                 logger.warning(
                     "⚠️ 使用旧路径 NLP 词典：{}；建议迁移到 app/nlp/nlp_user_dict.txt",
                     legacy_candidate,
