@@ -2001,7 +2001,7 @@ class BilibiliBangumiCrawler:
                 )
                 if run_nlp_async:
                     try:
-                        from .tasks import enqueue_episode_nlp_task
+                        from .nlp.tasks import enqueue_episode_nlp_task
                         task_id = enqueue_episode_nlp_task(
                             season_id=season_id,
                             episode_number=ep_index,

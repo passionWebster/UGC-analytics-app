@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from .database import init_database
 from .config import settings
 from .logger import app_logger
-from .nlp_worker_pool import start_nlp_worker_pool, stop_nlp_worker_pool
+from .nlp.worker_pool import start_nlp_worker_pool, stop_nlp_worker_pool
 from .routers import auth, analytics, ai, crawler, admin, user_space
 from .scheduler import create_scheduler
 

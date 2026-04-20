@@ -164,11 +164,17 @@ bilibili-analytics-app/
 │   │   ├── scraper.py        # B站数据爬虫
 │   │   ├── scheduler.py      # APScheduler 定时任务
 │   │   ├── ai_service.py     # 豆包 AI 聊天服务
-│   │   └── routers/          # API 路由控制器
-│   │       ├── auth.py
-│   │       ├── analytics.py
-│   │       ├── crawler.py
-│   │       └── ai.py
+│   │   ├── nlp/              # NLP 软件包（文本处理/任务编排/进程池）
+│   │   │   ├── pipeline.py
+│   │   │   ├── tasks.py
+│   │   │   └── worker_pool.py
+│   │   ├── routers/          # API 路由控制器
+│   │   │   ├── auth.py
+│   │   │   ├── analytics.py
+│   │   │   ├── analytics_helpers.py
+│   │   │   ├── crawler.py
+│   │   │   └── ai.py
+│   │   └── tasks.py          # 兼容导出（迁移至 app/nlp/tasks.py）
 │   └── requirements.txt
 │
 ├── frontend/                 # Vue 3 前端
