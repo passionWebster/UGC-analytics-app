@@ -3,6 +3,7 @@
 B站数据爬虫服务 - 重构版
 将原 scraper.py 和 data_manager.py 的功能整合，数据直接写入 SQLite 数据库
 """
+
 import hashlib
 import json
 import random
@@ -12,22 +13,33 @@ import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from functools import reduce
-from typing import Tuple, List, Dict, Any, Optional, Set
+from typing import Any
+
 import requests
 from requests import Response
 from sqlmodel import Session, select
 from tqdm import tqdm
 
-from ..models import Anime, DailyStats, EpisodeStats, CrawlLog, DanmuRecord, CommentRecord
 from ..config import settings
-from ..mongodb import DanmakuMongoRepository
 from ..logger import scraper_logger as logger
+from ..models import Anime, CommentRecord, CrawlLog, DailyStats, DanmuRecord, EpisodeStats
+from ..mongodb import DanmakuMongoRepository
 from .constants import (
     AREA_ID_TO_ENUM as SCRAPER_AREA_ID_TO_ENUM,
+)
+from .constants import (
     DM_HISTORY_STOP_CODES as SCRAPER_DM_HISTORY_STOP_CODES,
+)
+from .constants import (
     DOMESTIC_API_STYLE_IDS as SCRAPER_DOMESTIC_API_STYLE_IDS,
+)
+from .constants import (
     MIXIN_KEY_ENC_TAB as SCRAPER_MIXIN_KEY_ENC_TAB,
+)
+from .constants import (
     REGULAR_API_STYLE_IDS as SCRAPER_REGULAR_API_STYLE_IDS,
+)
+from .constants import (
     STYLE_MAP as SCRAPER_STYLE_MAP,
 )
 from .helpers import (
@@ -48,52 +60,54 @@ class BilibiliBangumiCrawler:
     B站番剧爬虫类
     负责从 B站 API 抓取数据并存储到 SQLite 数据库
     """
-    
+
     # B站番剧索引API的URL
     BASE_API_URL = "https://api.bilibili.com/pgc/season/index/result"
-    
+
     # 风格映射
     STYLE_MAP = SCRAPER_STYLE_MAP
-    
+
     # 常规番剧API支持的风格ID
     REGULAR_API_STYLE_IDS = SCRAPER_REGULAR_API_STYLE_IDS
-    
+
     # 国产番剧API支持的风格ID
     DOMESTIC_API_STYLE_IDS = SCRAPER_DOMESTIC_API_STYLE_IDS
-    
+
     # B站地区 id → AreaEnum 映射表（来自 /pgc/view/web/season areas 数组）
     # id=1  中国大陆 / id=6 中国香港 / id=7 中国台湾 → 国内
     # id=2  日本                                    → 日本
     # id=3  美国                                    → 美国
     # 其余 id                                       → 其他（保持不变）
-    AREA_ID_TO_ENUM: Dict[int, str] = SCRAPER_AREA_ID_TO_ENUM
+    AREA_ID_TO_ENUM: dict[int, str] = SCRAPER_AREA_ID_TO_ENUM
     # 历史弹幕索引接口错误码（命中后无需继续请求更多月份）
     DM_HISTORY_STOP_CODES = SCRAPER_DM_HISTORY_STOP_CODES
 
     def __init__(self, session: Session) -> None:
         """
         初始化爬虫
-        
+
         Args:
             session: SQLModel 数据库会话
         """
         self.session = session
         self.http_session = requests.Session()
-        self.http_session.headers.update({
-            'User-Agent': settings.crawler_user_agent,
-            'Accept': 'application/json, text/plain, */*',
-            'Referer': 'https://www.bilibili.com/'
-        })
+        self.http_session.headers.update(
+            {
+                "User-Agent": settings.crawler_user_agent,
+                "Accept": "application/json, text/plain, */*",
+                "Referer": "https://www.bilibili.com/",
+            }
+        )
         sessdata = (settings.bilibili_sessdata or "").strip()
         if sessdata:
             self.http_session.cookies.set("SESSDATA", sessdata, domain=".bilibili.com")
             logger.info("🍪 已启用 SESSDATA Cookie（用于历史弹幕抓取）")
         self.mongo_repo = DanmakuMongoRepository()
-        self.override_retry_attempts: Optional[int] = None
-        self.request_counters: Dict[str, int] = {"requests": 0, "retries": 0, "failed": 0}
-        logger.info('✅ 爬虫已初始化')
+        self.override_retry_attempts: int | None = None
+        self.request_counters: dict[str, int] = {"requests": 0, "retries": 0, "failed": 0}
+        logger.info("✅ 爬虫已初始化")
 
-    def _build_proxy(self) -> Optional[Dict[str, str]]:
+    def _build_proxy(self) -> dict[str, str] | None:
         """根据配置构建单次请求代理。"""
         if not settings.crawler_proxy_enabled:
             return None
@@ -120,11 +134,11 @@ class BilibiliBangumiCrawler:
         self,
         url: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        timeout: Optional[int] = None,
-        retry_attempts: Optional[int] = None,
+        params: dict[str, Any] | None = None,
+        timeout: int | None = None,
+        retry_attempts: int | None = None,
         force_base_delay: bool = True,
-    ) -> Optional[Response]:
+    ) -> Response | None:
         """
         带重试、退避、代理、节流的统一 GET 请求入口。
         """
@@ -135,7 +149,7 @@ class BilibiliBangumiCrawler:
         )
         attempts = max(1, attempts)
         timeout = timeout or settings.bilibili_request_timeout
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         for attempt in range(1, attempts + 1):
             self._throttle(force_base_delay=force_base_delay)
             self.request_counters["requests"] += 1
@@ -168,7 +182,7 @@ class BilibiliBangumiCrawler:
                     self.request_counters["failed"] += 1
         logger.warning("❌ 请求最终失败 url={} error={}", url, last_exc)
         return None
-    
+
     @staticmethod
     def _convert_order_to_int(order_str: Any) -> int:
         """
@@ -176,9 +190,9 @@ class BilibiliBangumiCrawler:
         例如: "9.9亿" -> 990000000, "3.4万" -> 34000
         """
         return convert_order_to_int(order_str)
-    
+
     @staticmethod
-    def _is_valid_main_episode(episode: Dict[str, Any]) -> bool:
+    def _is_valid_main_episode(episode: dict[str, Any]) -> bool:
         """
         根据 API 返回的字段判断该集是否为正片。
         第二道防线：利用 badge（角标）和 title/long_title（标题）过滤预告、PV 等非正片内容。
@@ -186,33 +200,33 @@ class BilibiliBangumiCrawler:
         return is_valid_main_episode(episode)
 
     @staticmethod
-    def _get_quarter_month(month: int) -> Optional[int]:
+    def _get_quarter_month(month: int) -> int | None:
         """根据月份获取季度首月"""
         return get_quarter_month(month)
-    
+
     @staticmethod
-    def _parse_release_date_from_order(order_str: Any) -> Tuple[Optional[Any], Optional[int]]:
+    def _parse_release_date_from_order(order_str: Any) -> tuple[Any | None, int | None]:
         """
         从 order 字符串解析发布日期
         返回 (year, quarter_month)
         """
         return parse_release_date_from_order(order_str)
-    
-    def _fetch_api_data(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+
+    def _fetch_api_data(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         """
         执行单次 API 请求
-        
+
         Args:
             params: API 请求参数
-            
+
         Returns:
             返回数据列表
         """
         all_items = []
         for page in range(1, settings.crawler_pages_to_fetch + 1):
             current_params = params.copy()
-            current_params.update({'page': page, 'pagesize': settings.crawler_page_size})
-            
+            current_params.update({"page": page, "pagesize": settings.crawler_page_size})
+
             try:
                 response = self._request_get(
                     self.BASE_API_URL,
@@ -222,78 +236,74 @@ class BilibiliBangumiCrawler:
                 if response is None:
                     break
                 data = response.json()
-                
-                if data.get('code') == 0 and 'data' in data:
-                    api_data = data['data']
-                    page_list = api_data.get('list', [])
+
+                if data.get("code") == 0 and "data" in data:
+                    api_data = data["data"]
+                    page_list = api_data.get("list", [])
                     all_items.extend(page_list)
-                    
-                    if not api_data.get('has_next', 0):
+
+                    if not api_data.get("has_next", 0):
                         break
                 else:
-                    logger.warning('  ❌ API 返回错误: {}', data.get('message', '未知错误'))
+                    logger.warning("  ❌ API 返回错误: {}", data.get("message", "未知错误"))
                     break
             except Exception as e:
-                logger.exception('  ❌ 请求失败: {}', e)
+                logger.exception("  ❌ 请求失败: {}", e)
                 break
-        
+
         return all_items
-    
+
     def update_anime_database(self) -> bool:
         """
         更新番剧数据库
         从 B站 API 抓取数据并存储到数据库
-        
+
         Returns:
             成功返回 True，失败返回 False
         """
         logger.info("🚀 [任务开始] 更新番剧数据库")
-        
+
         # 创建爬虫日志
         start_time = datetime.now()
-        crawl_log = CrawlLog(
-            task_type="full_update",
-            status="running",
-            started_at=start_time
-        )
+        crawl_log = CrawlLog(task_type="full_update", status="running", started_at=start_time)
         self.session.add(crawl_log)
         self.session.commit()
-        
+
         try:
             # 1. 底库构建：获取国产番剧和常规番剧基础信息
             logger.info("📊 正在获取国产番剧数据...")
             domestic_animes = self._fetch_domestic_animes()
-            
+
             logger.info("📊 正在获取常规番剧数据...")
             regular_animes = self._fetch_regular_animes()
-            
+
             all_animes = {**domestic_animes, **regular_animes}
             logger.info(f"✅ 底库构建完成，共获取 {len(all_animes)} 部番剧")
             crawl_log.total_scraped = len(all_animes)
-            
+
             # 2. 补充风格信息：遍历风格ID，将匹配的风格追加到底库
             logger.info("🎨 正在补充风格信息（常规番剧）...")
             all_animes = self._enrich_regular_styles(all_animes)
-            
+
             logger.info("🎨 正在补充风格信息（国产番剧）...")
             all_animes = self._enrich_domestic_styles(all_animes)
             crawl_log.cleaned_filtered = len(all_animes)
-            
+
             # 3. 逐部请求番剧详情 API：补充播放量/追番量/地区/完结状态/版权/互动统计等
             logger.info("🔍 正在通过详情 API 补充完整数据（每 50 部自动落库）...")
             all_animes = self._enrich_details(all_animes)
             crawl_log.final_inserted = len(all_animes)
-            
+
             # 更新爬虫日志
             crawl_log.status = "success"
             crawl_log.items_count = len(all_animes)
             crawl_log.completed_at = datetime.now()
             crawl_log.duration = (crawl_log.completed_at - start_time).total_seconds()
             self.session.commit()
-            
+
             logger.info(f"🎉 数据库更新成功！共保存 {len(all_animes)} 部番剧")
             return True
-            
+
         except Exception as e:
             logger.exception("\n❌ 更新失败")
             crawl_log.status = "failed"
@@ -303,131 +313,171 @@ class BilibiliBangumiCrawler:
             crawl_log.duration = (crawl_log.completed_at - start_time).total_seconds()
             self.session.commit()
             return False
-    
-    def _fetch_domestic_animes(self) -> Dict[int, Dict]:
+
+    def _fetch_domestic_animes(self) -> dict[int, dict]:
         """获取国产番剧数据"""
         animes = {}
         years = list(range(datetime.now().year, 2015, -1))
-        
+
         for year in years:
             year_param = f"[{year},{year + 1})"
             params = {
-                'season_version': -1, 'is_finish': -1, 'copyright': -1,
-                'season_status': -1, 'year': year_param, 'style_id': -1,
-                'order': 5, 'st': 4, 'sort': 0, 'season_type': 4, 'type': 1
+                "season_version": -1,
+                "is_finish": -1,
+                "copyright": -1,
+                "season_status": -1,
+                "year": year_param,
+                "style_id": -1,
+                "order": 5,
+                "st": 4,
+                "sort": 0,
+                "season_type": 4,
+                "type": 1,
             }
-            
+
             items = self._fetch_api_data(params)
             logger.info(f"  获取 {year} 年国产番剧: {len(items)} 部")
-            
+
             for item in items:
-                season_id = item.get('season_id')
+                season_id = item.get("season_id")
                 if not season_id or season_id in animes:
                     continue
-                
-                parsed_year, parsed_month = self._parse_release_date_from_order(item.get('order', ''))
+
+                parsed_year, parsed_month = self._parse_release_date_from_order(
+                    item.get("order", "")
+                )
                 release_date = "更早"
                 if parsed_year in ["敬请期待", "更早"]:
                     release_date = parsed_year
                 elif parsed_year and parsed_month:
                     release_date = f"{parsed_year}-{parsed_month:02d}"
-                
-                score_raw = item.get('score') if item.get('score') is not None else item.get('rating')
+
+                score_raw = (
+                    item.get("score") if item.get("score") is not None else item.get("rating")
+                )
                 animes[season_id] = {
-                    'season_id': season_id,
-                    'title': item.get('title', ''),
-                    'cover': item.get('cover', ''),
-                    'area': '国内',
-                    'rating': float(score_raw) if score_raw else None,
-                    'styles': [],
-                    'release_date': release_date,
-                    'views': 0,
-                    'favorites': 0,
+                    "season_id": season_id,
+                    "title": item.get("title", ""),
+                    "cover": item.get("cover", ""),
+                    "area": "国内",
+                    "rating": float(score_raw) if score_raw else None,
+                    "styles": [],
+                    "release_date": release_date,
+                    "views": 0,
+                    "favorites": 0,
                     # 以下字段由 _enrich_details 阶段填充
-                    'total_coins': None,
-                    'total_danmakus': None,
-                    'total_likes': None,
-                    'total_reply': None,
-                    'total_share': None,
-                    'rating_count': None,
-                    'is_finish': None,
-                    'copyright': None,
-                    'areas_raw': [],
+                    "total_coins": None,
+                    "total_danmakus": None,
+                    "total_likes": None,
+                    "total_reply": None,
+                    "total_share": None,
+                    "rating_count": None,
+                    "is_finish": None,
+                    "copyright": None,
+                    "areas_raw": [],
                 }
-        
+
         return animes
-    
-    def _fetch_regular_animes(self) -> Dict[int, Dict]:
+
+    def _fetch_regular_animes(self) -> dict[int, dict]:
         """获取常规番剧数据"""
         animes = {}
         years = list(range(datetime.now().year, 2015, -1))
         months = [1, 4, 7, 10]
-        
+
         for year in years:
             for month in months:
                 year_param = f"[{year},{year + 1})"
                 params = {
-                    'st': 1, 'order': 2, 'season_version': -1,
-                    'spoken_language_type': -1, 'area': -1, 'is_finish': -1,
-                    'copyright': -1, 'season_status': -1, 'season_month': month,
-                    'year': year_param, 'style_id': -1, 'sort': 0,
-                    'season_type': 1, 'type': 1
+                    "st": 1,
+                    "order": 2,
+                    "season_version": -1,
+                    "spoken_language_type": -1,
+                    "area": -1,
+                    "is_finish": -1,
+                    "copyright": -1,
+                    "season_status": -1,
+                    "season_month": month,
+                    "year": year_param,
+                    "style_id": -1,
+                    "sort": 0,
+                    "season_type": 1,
+                    "type": 1,
                 }
-                
+
                 items = self._fetch_api_data(params)
                 logger.info(f"  获取 {year}-{month:02d} 常规番剧: {len(items)} 部")
-                
+
                 for item in items:
-                    season_id = item.get('season_id')
+                    season_id = item.get("season_id")
                     if not season_id or season_id in animes:
                         continue
-                    
-                    score_raw = item.get('score') if item.get('score') is not None else item.get('rating')
+
+                    score_raw = (
+                        item.get("score") if item.get("score") is not None else item.get("rating")
+                    )
                     animes[season_id] = {
-                        'season_id': season_id,
-                        'title': item.get('title', ''),
-                        'cover': item.get('cover', ''),
-                        'area': '其他',
-                        'rating': float(score_raw) if score_raw else None,
-                        'styles': [],
-                        'release_date': f"{year}-{month:02d}",
-                        'views': self._convert_order_to_int(item.get('order', '0')),
-                        'favorites': 0,
+                        "season_id": season_id,
+                        "title": item.get("title", ""),
+                        "cover": item.get("cover", ""),
+                        "area": "其他",
+                        "rating": float(score_raw) if score_raw else None,
+                        "styles": [],
+                        "release_date": f"{year}-{month:02d}",
+                        "views": self._convert_order_to_int(item.get("order", "0")),
+                        "favorites": 0,
                         # 以下字段由 _enrich_details 阶段填充
-                        'total_coins': None,
-                        'total_danmakus': None,
-                        'total_likes': None,
-                        'total_reply': None,
-                        'total_share': None,
-                        'rating_count': None,
-                        'is_finish': None,
-                        'copyright': None,
-                        'areas_raw': [],
+                        "total_coins": None,
+                        "total_danmakus": None,
+                        "total_likes": None,
+                        "total_reply": None,
+                        "total_share": None,
+                        "rating_count": None,
+                        "is_finish": None,
+                        "copyright": None,
+                        "areas_raw": [],
                     }
-        
+
         return animes
 
-    def _fetch_regular_by_style(self, style_id: int) -> List[Dict[str, Any]]:
+    def _fetch_regular_by_style(self, style_id: int) -> list[dict[str, Any]]:
         """获取指定风格的常规番剧列表"""
         params = {
-            'st': 1, 'order': 2, 'season_version': -1,
-            'spoken_language_type': -1, 'area': -1, 'is_finish': -1,
-            'copyright': -1, 'season_status': -1, 'season_month': -1,
-            'year': '-1', 'style_id': style_id, 'sort': 0,
-            'season_type': 1, 'type': 1
+            "st": 1,
+            "order": 2,
+            "season_version": -1,
+            "spoken_language_type": -1,
+            "area": -1,
+            "is_finish": -1,
+            "copyright": -1,
+            "season_status": -1,
+            "season_month": -1,
+            "year": "-1",
+            "style_id": style_id,
+            "sort": 0,
+            "season_type": 1,
+            "type": 1,
         }
         return self._fetch_api_data(params)
 
-    def _fetch_domestic_by_style(self, style_id: int) -> List[Dict[str, Any]]:
+    def _fetch_domestic_by_style(self, style_id: int) -> list[dict[str, Any]]:
         """获取指定风格的国产番剧列表"""
         params = {
-            'season_version': -1, 'is_finish': -1, 'copyright': -1, 'season_status': -1,
-            'year': '-1', 'style_id': style_id, 'order': 2, 'st': 4, 'sort': 0,
-            'season_type': 4, 'type': 1
+            "season_version": -1,
+            "is_finish": -1,
+            "copyright": -1,
+            "season_status": -1,
+            "year": "-1",
+            "style_id": style_id,
+            "order": 2,
+            "st": 4,
+            "sort": 0,
+            "season_type": 4,
+            "type": 1,
         }
         return self._fetch_api_data(params)
 
-    def _enrich_regular_styles(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
+    def _enrich_regular_styles(self, all_animes: dict[int, dict]) -> dict[int, dict]:
         """
         补充常规番剧风格信息：遍历 REGULAR_API_STYLE_IDS，将返回的番剧追加对应风格
         """
@@ -437,13 +487,13 @@ class BilibiliBangumiCrawler:
                 continue
             style_items = self._fetch_regular_by_style(style_id)
             for item in style_items:
-                season_id = item.get('season_id')
-                if season_id in all_animes and style_name not in all_animes[season_id]['styles']:
-                    all_animes[season_id]['styles'].append(style_name)
+                season_id = item.get("season_id")
+                if season_id in all_animes and style_name not in all_animes[season_id]["styles"]:
+                    all_animes[season_id]["styles"].append(style_name)
 
         return all_animes
 
-    def _enrich_domestic_styles(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
+    def _enrich_domestic_styles(self, all_animes: dict[int, dict]) -> dict[int, dict]:
         """
         补充国产番剧风格信息：遍历 DOMESTIC_API_STYLE_IDS，将返回的番剧追加对应风格
         """
@@ -453,13 +503,13 @@ class BilibiliBangumiCrawler:
                 continue
             style_items = self._fetch_domestic_by_style(style_id)
             for item in style_items:
-                season_id = item.get('season_id')
-                if season_id in all_animes and style_name not in all_animes[season_id]['styles']:
-                    all_animes[season_id]['styles'].append(style_name)
+                season_id = item.get("season_id")
+                if season_id in all_animes and style_name not in all_animes[season_id]["styles"]:
+                    all_animes[season_id]["styles"].append(style_name)
 
         return all_animes
 
-    def _enrich_details(self, all_animes: Dict[int, Dict]) -> Dict[int, Dict]:
+    def _enrich_details(self, all_animes: dict[int, dict]) -> dict[int, dict]:
         """
         逐部请求番剧详情 API（/pgc/view/web/season），填充以下字段：
           - 播放量 / 追番量（覆盖底库中的估算值）
@@ -472,12 +522,11 @@ class BilibiliBangumiCrawler:
         地区映射规则见类常量 AREA_ID_TO_ENUM。
         """
         total = len(all_animes)
-        logger.info(
-            f"  正在逐部请求番剧详情 API，共 {total} 部...")
+        logger.info(f"  正在逐部请求番剧详情 API，共 {total} 部...")
         success_count = 0
         # 用于每 50 部批量落库的计数器与临时字典
         FLUSH_BATCH = 50
-        batch: Dict[int, Dict] = {}
+        batch: dict[int, dict] = {}
 
         for season_id, anime_data in tqdm(all_animes.items(), desc="详情补充", unit="部"):
             try:
@@ -487,50 +536,50 @@ class BilibiliBangumiCrawler:
                     continue
 
                 # ── 播放量 / 追番量（精确值，覆盖估算）──────────────────────────
-                if details.get('views'):
-                    anime_data['views'] = details['views']
-                if details.get('favorites'):
-                    anime_data['favorites'] = details['favorites']
+                if details.get("views"):
+                    anime_data["views"] = details["views"]
+                if details.get("favorites"):
+                    anime_data["favorites"] = details["favorites"]
 
                 # ── 评分（detail API 精度更高）──────────────────────────────────
-                if details.get('rating_score') is not None:
-                    anime_data['rating'] = float(details['rating_score'])
+                if details.get("rating_score") is not None:
+                    anime_data["rating"] = float(details["rating_score"])
 
                 # ── 互动统计 ────────────────────────────────────────────────────
-                anime_data['total_coins'] = details.get('total_coins')
-                anime_data['total_danmakus'] = details.get('total_danmakus')
-                anime_data['total_likes'] = details.get('total_likes')
-                anime_data['total_reply'] = details.get('total_reply')
-                anime_data['total_share'] = details.get('total_share')
-                anime_data['rating_count'] = details.get('rating_count')
+                anime_data["total_coins"] = details.get("total_coins")
+                anime_data["total_danmakus"] = details.get("total_danmakus")
+                anime_data["total_likes"] = details.get("total_likes")
+                anime_data["total_reply"] = details.get("total_reply")
+                anime_data["total_share"] = details.get("total_share")
+                anime_data["rating_count"] = details.get("rating_count")
 
                 # ── 完结状态 / 版权 ─────────────────────────────────────────────
-                if details.get('is_finish') is not None:
-                    anime_data['is_finish'] = details['is_finish']
-                if details.get('copyright'):
-                    anime_data['copyright'] = details['copyright']
+                if details.get("is_finish") is not None:
+                    anime_data["is_finish"] = details["is_finish"]
+                if details.get("copyright"):
+                    anime_data["copyright"] = details["copyright"]
 
                 # ── 地区（areas 数组，替代旧的批量接口）────────────────────────
-                areas = details.get('areas', [])
+                areas = details.get("areas", [])
                 if areas:
-                    anime_data['areas_raw'] = areas
-                    first_id = areas[0].get('id')
+                    anime_data["areas_raw"] = areas
+                    first_id = areas[0].get("id")
                     mapped = self.AREA_ID_TO_ENUM.get(first_id)
                     if mapped:
-                        anime_data['area'] = mapped
+                        anime_data["area"] = mapped
                     # 若不在映射表内且当前仍是 '其他'，保持不变
 
                 # ── 发布日期（使用 publish.pub_time 修正）──────────────────────
-                pub_time: str = details.get('pub_time', '') or ''
+                pub_time: str = details.get("pub_time", "") or ""
                 if pub_time:
                     try:
-                        pub_dt = datetime.strptime(pub_time[:10], '%Y-%m-%d')
+                        pub_dt = datetime.strptime(pub_time[:10], "%Y-%m-%d")
                         pub_year = pub_dt.year
                         quarter_month = self._get_quarter_month(pub_dt.month)
                         if pub_year >= 2015 and quarter_month:
-                            anime_data['release_date'] = f"{pub_year}-{quarter_month:02d}"
+                            anime_data["release_date"] = f"{pub_year}-{quarter_month:02d}"
                         elif pub_year < 2015:
-                            anime_data['release_date'] = '更早'
+                            anime_data["release_date"] = "更早"
                     except ValueError:
                         pass  # 日期格式异常时保留原值
                 batch[season_id] = anime_data
@@ -553,82 +602,84 @@ class BilibiliBangumiCrawler:
         logger.info(f"  ✅ 番剧详情补充完成：成功 {success_count} / {total} 部")
         return all_animes
 
-    def _save_animes_to_db(self, animes: Dict[int, Dict]) -> None:
+    def _save_animes_to_db(self, animes: dict[int, dict]) -> None:
         """
         将番剧数据保存到数据库
         """
         today = datetime.now().date()
-        
+
         for season_id, anime_data in animes.items():
             # 检查番剧是否已存在
             existing_anime = self.session.exec(
                 select(Anime).where(Anime.season_id == season_id)
             ).first()
-            
+
             if existing_anime:
                 # 更新现有记录
-                existing_anime.title = anime_data['title']
-                existing_anime.cover = anime_data['cover']
-                existing_anime.area = anime_data['area']
-                existing_anime.rating = anime_data['rating']
-                existing_anime.styles = json.dumps(anime_data['styles'], ensure_ascii=False)
-                existing_anime.release_date = anime_data['release_date']
+                existing_anime.title = anime_data["title"]
+                existing_anime.cover = anime_data["cover"]
+                existing_anime.area = anime_data["area"]
+                existing_anime.rating = anime_data["rating"]
+                existing_anime.styles = json.dumps(anime_data["styles"], ensure_ascii=False)
+                existing_anime.release_date = anime_data["release_date"]
                 # 新增互动统计字段
-                existing_anime.total_coins = anime_data.get('total_coins')
-                existing_anime.total_danmakus = anime_data.get('total_danmakus')
-                existing_anime.total_likes = anime_data.get('total_likes')
-                existing_anime.total_reply = anime_data.get('total_reply')
-                existing_anime.total_share = anime_data.get('total_share')
-                existing_anime.rating_count = anime_data.get('rating_count')
-                existing_anime.is_finish = anime_data.get('is_finish')
-                existing_anime.copyright = anime_data.get('copyright')
-                areas_raw = anime_data.get('areas_raw', [])
-                existing_anime.areas_raw = json.dumps(areas_raw, ensure_ascii=False) if areas_raw else None
+                existing_anime.total_coins = anime_data.get("total_coins")
+                existing_anime.total_danmakus = anime_data.get("total_danmakus")
+                existing_anime.total_likes = anime_data.get("total_likes")
+                existing_anime.total_reply = anime_data.get("total_reply")
+                existing_anime.total_share = anime_data.get("total_share")
+                existing_anime.rating_count = anime_data.get("rating_count")
+                existing_anime.is_finish = anime_data.get("is_finish")
+                existing_anime.copyright = anime_data.get("copyright")
+                areas_raw = anime_data.get("areas_raw", [])
+                existing_anime.areas_raw = (
+                    json.dumps(areas_raw, ensure_ascii=False) if areas_raw else None
+                )
                 existing_anime.updated_at = datetime.now()
             else:
                 # 创建新记录
-                areas_raw = anime_data.get('areas_raw', [])
+                areas_raw = anime_data.get("areas_raw", [])
                 new_anime = Anime(
                     season_id=season_id,
-                    title=anime_data['title'],
-                    cover=anime_data['cover'],
-                    area=anime_data['area'],
-                    rating=anime_data['rating'],
-                    styles=json.dumps(anime_data['styles'], ensure_ascii=False),
-                    release_date=anime_data['release_date'],
-                    total_coins=anime_data.get('total_coins'),
-                    total_danmakus=anime_data.get('total_danmakus'),
-                    total_likes=anime_data.get('total_likes'),
-                    total_reply=anime_data.get('total_reply'),
-                    total_share=anime_data.get('total_share'),
-                    rating_count=anime_data.get('rating_count'),
-                    is_finish=anime_data.get('is_finish'),
-                    copyright=anime_data.get('copyright'),
+                    title=anime_data["title"],
+                    cover=anime_data["cover"],
+                    area=anime_data["area"],
+                    rating=anime_data["rating"],
+                    styles=json.dumps(anime_data["styles"], ensure_ascii=False),
+                    release_date=anime_data["release_date"],
+                    total_coins=anime_data.get("total_coins"),
+                    total_danmakus=anime_data.get("total_danmakus"),
+                    total_likes=anime_data.get("total_likes"),
+                    total_reply=anime_data.get("total_reply"),
+                    total_share=anime_data.get("total_share"),
+                    rating_count=anime_data.get("rating_count"),
+                    is_finish=anime_data.get("is_finish"),
+                    copyright=anime_data.get("copyright"),
                     areas_raw=json.dumps(areas_raw, ensure_ascii=False) if areas_raw else None,
                 )
                 self.session.add(new_anime)
-            
+
             # 添加每日统计数据
             existing_stats = self.session.exec(
                 select(DailyStats).where(
                     DailyStats.season_id == season_id,
-                    DailyStats.date >= datetime.combine(today, datetime.min.time())
+                    DailyStats.date >= datetime.combine(today, datetime.min.time()),
                 )
             ).first()
-            
+
             if not existing_stats:
                 daily_stat = DailyStats(
                     season_id=season_id,
                     date=datetime.now(),
-                    views=anime_data['views'],
-                    favorites=anime_data['favorites']
+                    views=anime_data["views"],
+                    favorites=anime_data["favorites"],
                 )
                 self.session.add(daily_stat)
-        
+
         self.session.commit()
         logger.info(f"✅ 已保存 {len(animes)} 部番剧到数据库")
-    
-    def get_anime_details(self, season_id: int) -> Optional[Dict]:
+
+    def get_anime_details(self, season_id: int) -> dict | None:
         """
         获取番剧详细信息（/pgc/view/web/season），返回包含完整元数据的字典。
 
@@ -648,10 +699,10 @@ class BilibiliBangumiCrawler:
           is_finish                 — 完结状态：0 连载 / 1 完结（来自 publish.is_finish）
           pub_time                  — 首播日期字符串（来自 publish.pub_time）
           copyright                 — 版权类型：bilibili / dujia（来自 rights.copyright）
-        
+
         Args:
             season_id: 番剧 season_id
-            
+
         Returns:
             番剧详细信息字典，请求失败时返回 None
         """
@@ -661,43 +712,43 @@ class BilibiliBangumiCrawler:
             if response is None:
                 return None
             data = response.json()
-            
-            if data.get('code') == 0 and 'result' in data:
-                result = data['result']
-                stat = result.get('stat', {})
-                rating = result.get('rating', {})
-                publish = result.get('publish', {})
-                rights = result.get('rights', {})
-                areas = result.get('areas', [])
+
+            if data.get("code") == 0 and "result" in data:
+                result = data["result"]
+                stat = result.get("stat", {})
+                rating = result.get("rating", {})
+                publish = result.get("publish", {})
+                rights = result.get("rights", {})
+                areas = result.get("areas", [])
 
                 return {
                     # ── 向后兼容字段（fetch_and_save_episodes 等调用方使用）──
-                    'title': result.get('title'),
-                    'cover': result.get('cover'),
-                    'stat': stat,
-                    'episodes': result.get('episodes', []),
+                    "title": result.get("title"),
+                    "cover": result.get("cover"),
+                    "stat": stat,
+                    "episodes": result.get("episodes", []),
                     # ── 地区 ──────────────────────────────────────────────────
-                    'areas': areas,
+                    "areas": areas,
                     # ── stat 对象展开 ─────────────────────────────────────────
-                    'views': stat.get('views'),
-                    'favorites': stat.get('favorites'),
-                    'total_coins': stat.get('coins'),
-                    'total_danmakus': stat.get('danmakus'),
-                    'total_likes': stat.get('likes'),
-                    'total_reply': stat.get('reply'),
-                    'total_share': stat.get('share'),
+                    "views": stat.get("views"),
+                    "favorites": stat.get("favorites"),
+                    "total_coins": stat.get("coins"),
+                    "total_danmakus": stat.get("danmakus"),
+                    "total_likes": stat.get("likes"),
+                    "total_reply": stat.get("reply"),
+                    "total_share": stat.get("share"),
                     # ── rating 对象 ───────────────────────────────────────────
-                    'rating_score': rating.get('score'),
-                    'rating_count': rating.get('count'),
+                    "rating_score": rating.get("score"),
+                    "rating_count": rating.get("count"),
                     # ── publish 对象 ──────────────────────────────────────────
-                    'is_finish': publish.get('is_finish'),
-                    'pub_time': publish.get('pub_time'),
+                    "is_finish": publish.get("is_finish"),
+                    "pub_time": publish.get("pub_time"),
                     # ── rights 对象 ───────────────────────────────────────────
-                    'copyright': rights.get('copyright'),
+                    "copyright": rights.get("copyright"),
                 }
         except Exception:
             logger.exception("❌ 获取番剧详情失败 season_id={}", season_id)
-        
+
         return None
 
     def fetch_and_save_episodes(self, season_id: int) -> bool:
@@ -712,21 +763,21 @@ class BilibiliBangumiCrawler:
         """
         logger.info(f"🔍 正在从 B站 抓取 season_id={season_id} 的分集数据...")
         details = self.get_anime_details(season_id)
-        if not details or not details.get('episodes'):
+        if not details or not details.get("episodes"):
             logger.info(f"❌ 未能获取 season_id={season_id} 的分集数据")
             return False
 
-        episodes = details['episodes']
+        episodes = details["episodes"]
         logger.info(f"  -> 找到 {len(episodes)} 集，正在写入数据库...")
         saved_count = 0
         has_error = False
         for episode in episodes:
-            bvid = episode.get('bvid', '')
-            cid = str(episode.get('cid', ''))
+            bvid = episode.get("bvid", "")
+            cid = str(episode.get("cid", ""))
 
             # 【防线 2】利用 API 的 badge / title 字段进行初步过滤
             if not self._is_valid_main_episode(episode):
-                ep_title = episode.get('long_title') or episode.get('title')
+                ep_title = episode.get("long_title") or episode.get("title")
                 logger.info(f"  ⏭️ API字段过滤，跳过非正片: {ep_title}")
                 continue
 
@@ -734,15 +785,15 @@ class BilibiliBangumiCrawler:
                 continue
 
             ep_title = (
-                episode.get('long_title')
-                or episode.get('title')
-                or f'第{episode.get("index", "")}集'
+                episode.get("long_title")
+                or episode.get("title")
+                or f"第{episode.get('index', '')}集"
             )
 
             # 【网络 I/O 阶段】：无锁，避免长事务持有写入锁
             full_data = self.get_episode_stat_details(bvid)
-            stat = full_data.get('stat', {})
-            duration = full_data.get('duration', 0)
+            stat = full_data.get("stat", {})
+            duration = full_data.get("duration", 0)
             time.sleep(settings.bilibili_request_delay)
 
             # 【防线 3】时长兜底，过滤掉短于 3 分钟（180 秒）的视频
@@ -802,15 +853,15 @@ class BilibiliBangumiCrawler:
             if response is None:
                 return {}
             data = response.json()
-            if data.get('code') == 0:
+            if data.get("code") == 0:
                 # 返回完整 data 字典，以便调用方同时获取 stat 和 duration
-                payload = data.get('data')
+                payload = data.get("data")
                 if isinstance(payload, dict):
                     return payload
                 # 若 data 字段为空或不是字典，则按照约定返回空字典
                 return {}
         except Exception as e:
-            logger.exception('❌ 获取单集统计详情失败 bvid={}: {}', bvid, e)
+            logger.exception("❌ 获取单集统计详情失败 bvid={}: {}", bvid, e)
         return {}
 
     @staticmethod
@@ -824,16 +875,16 @@ class BilibiliBangumiCrawler:
             ep_title: 集标题
         """
         ep.episode_title = ep_title
-        ep.views = stat.get('view')
-        ep.danmaku = stat.get('danmaku')
-        ep.reply = stat.get('reply')
-        ep.favorite = stat.get('favorite')
-        ep.coin = stat.get('coin')
-        ep.share = stat.get('share')
-        ep.like = stat.get('like')
+        ep.views = stat.get("view")
+        ep.danmaku = stat.get("danmaku")
+        ep.reply = stat.get("reply")
+        ep.favorite = stat.get("favorite")
+        ep.coin = stat.get("coin")
+        ep.share = stat.get("share")
+        ep.like = stat.get("like")
         ep.updated_at = datetime.now()
 
-    def get_online_viewers(self, bvid: str, cid: str) -> Optional[int]:
+    def get_online_viewers(self, bvid: str, cid: str) -> int | None:
         """
         获取指定单集的当前在线观看人数
 
@@ -847,16 +898,18 @@ class BilibiliBangumiCrawler:
         if not bvid or not cid:
             return None
         url = "https://api.bilibili.com/x/player/online/total"
-        params = {'bvid': bvid, 'cid': str(cid)}
+        params = {"bvid": bvid, "cid": str(cid)}
         try:
-            response = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+            response = self._request_get(
+                url, params=params, timeout=settings.bilibili_request_timeout
+            )
             if response is None:
                 return None
             data = response.json()
-            if data.get('code') == 0 and 'data' in data:
-                return self._convert_order_to_int(str(data['data'].get('total', 0)))
+            if data.get("code") == 0 and "data" in data:
+                return self._convert_order_to_int(str(data["data"].get("total", 0)))
         except Exception as e:
-            logger.exception('❌ 获取在线人数失败 bvid={}: {}', bvid, e)
+            logger.exception("❌ 获取在线人数失败 bvid={}: {}", bvid, e)
         return None
 
     def record_hourly_online_viewers(self) -> None:
@@ -874,7 +927,9 @@ class BilibiliBangumiCrawler:
             if online_count is not None:
                 # 解析现有历史记录（兼容 None 和空字符串）
                 try:
-                    history: Dict[str, int] = json.loads(ep.hourly_online_history) if ep.hourly_online_history else {}
+                    history: dict[str, int] = (
+                        json.loads(ep.hourly_online_history) if ep.hourly_online_history else {}
+                    )
                 except (json.JSONDecodeError, TypeError):
                     history = {}
                 history[current_hour] = online_count
@@ -886,7 +941,7 @@ class BilibiliBangumiCrawler:
         self.session.commit()
         logger.info(f"✅ 在线人数记录完成，成功更新 {updated}/{len(episodes)} 个剧集")
 
-    def search_bangumi_on_bilibili(self, keyword: str) -> Optional[int]:
+    def search_bangumi_on_bilibili(self, keyword: str) -> int | None:
         """
         通过关键词在 B站 搜索番剧，返回最匹配的 season_id
 
@@ -897,24 +952,26 @@ class BilibiliBangumiCrawler:
             season_id 或 None
         """
         url = "https://api.bilibili.com/x/web-interface/search/type"
-        params = {'keyword': keyword, 'search_type': 'media_bangumi'}
+        params = {"keyword": keyword, "search_type": "media_bangumi"}
         try:
-            response = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
+            response = self._request_get(
+                url, params=params, timeout=settings.bilibili_request_timeout
+            )
             if response is None:
                 return None
             data = response.json()
-            if data.get('code') == 0 and 'data' in data:
-                results = data['data'].get('result', [])
+            if data.get("code") == 0 and "data" in data:
+                results = data["data"].get("result", [])
                 if results:
                     # 取第一个结果的 season_id
-                    season_id = results[0].get('season_id')
+                    season_id = results[0].get("season_id")
                     if season_id:
                         return int(season_id)
         except Exception as e:
-            logger.exception('❌ B站搜索失败 keyword={}: {}', keyword, e)
+            logger.exception("❌ B站搜索失败 keyword={}: {}", keyword, e)
         return None
 
-    def fetch_and_save_anime_with_episodes(self, keyword: str) -> Optional[int]:
+    def fetch_and_save_anime_with_episodes(self, keyword: str) -> int | None:
         """
         通过关键词搜索番剧，抓取详情后将 Anime 信息和所有分集（含完整统计）写入数据库
 
@@ -952,9 +1009,9 @@ class BilibiliBangumiCrawler:
                 if not existing_anime:
                     new_anime = Anime(
                         season_id=season_id,
-                        title=details.get('title', keyword),
-                        cover=details.get('cover'),
-                        area='其他',
+                        title=details.get("title", keyword),
+                        cover=details.get("cover"),
+                        area="其他",
                         rating=None,
                         styles=json.dumps([], ensure_ascii=False),
                         release_date=None,
@@ -963,9 +1020,9 @@ class BilibiliBangumiCrawler:
                     self.session.commit()  # 立即提交，释放写入锁
 
             # 添加每日统计快照（使用番剧级别的整体统计）
-            anime_stat = details.get('stat', {})
-            views = anime_stat.get('views', 0) or 0
-            favorites = anime_stat.get('favorites', 0) or 0
+            anime_stat = details.get("stat", {})
+            views = anime_stat.get("views", 0) or 0
+            favorites = anime_stat.get("favorites", 0) or 0
             with sqlite_write_lock:
                 daily_stat = DailyStats(
                     season_id=season_id,
@@ -982,12 +1039,13 @@ class BilibiliBangumiCrawler:
         # ==========================================
         # 2. 【自愈校验】剧集差集比对与增量修补
         # ==========================================
-        episodes = details.get('episodes', [])
+        episodes = details.get("episodes", [])
 
         # 步骤 A：提纯 API 权威数据，过滤非正片
         api_valid_episodes = [
-            ep for ep in episodes
-            if self._is_valid_main_episode(ep) and ep.get('bvid') and ep.get('cid')
+            ep
+            for ep in episodes
+            if self._is_valid_main_episode(ep) and ep.get("bvid") and ep.get("cid")
         ]
 
         # 步骤 B：获取本地数据库中该番剧已保存的 bvid 集合
@@ -999,26 +1057,32 @@ class BilibiliBangumiCrawler:
 
         # 步骤 C：计算差集，找出本地缺失的剧集
         missing_episodes = [
-            ep for ep in api_valid_episodes if ep.get('bvid') not in db_existing_bvids
+            ep for ep in api_valid_episodes if ep.get("bvid") not in db_existing_bvids
         ]
 
         # 步骤 D：无缺失则跳过，有缺失则补抓
         if not missing_episodes:
-            logger.info(f"  ✅ 数据校验通过：本地已完整包含 {len(api_valid_episodes)} 集正片数据，无需修补。")
+            logger.info(
+                f"  ✅ 数据校验通过：本地已完整包含 {len(api_valid_episodes)} 集正片数据，无需修补。"
+            )
             return season_id
 
         logger.info(f"  ⚠️ 触发自动修复：发现本地缺失 {len(missing_episodes)} 集，正在补充抓取...")
         saved_count = 0
 
         for episode in missing_episodes:
-            bvid = episode.get('bvid', '')
-            cid = str(episode.get('cid', ''))
-            ep_title = episode.get('long_title') or episode.get('title') or f'第{episode.get("index", "")}集'
+            bvid = episode.get("bvid", "")
+            cid = str(episode.get("cid", ""))
+            ep_title = (
+                episode.get("long_title")
+                or episode.get("title")
+                or f"第{episode.get('index', '')}集"
+            )
 
             # 【网络 I/O 阶段】：无锁，避免长事务持有写入锁
             full_data = self.get_episode_stat_details(bvid)
-            stat = full_data.get('stat', {})
-            duration = full_data.get('duration', 0)
+            stat = full_data.get("stat", {})
+            duration = full_data.get("duration", 0)
             time.sleep(settings.bilibili_request_delay)
 
             # 【防线 3】时长兜底，过滤掉短于 3 分钟（180 秒）的视频
@@ -1076,22 +1140,19 @@ class BilibiliBangumiCrawler:
         self.session.commit()
         logger.info(f"  ✅ 在线人数刷新完成，共更新 {updated}/{len(episodes)} 条记录")
 
-    def search_anime_by_title(self, title: str) -> Optional[int]:
+    def search_anime_by_title(self, title: str) -> int | None:
         """
         通过标题搜索番剧，返回 season_id
-        
+
         Args:
             title: 番剧标题
-            
+
         Returns:
             season_id 或 None
         """
-        anime = self.session.exec(
-            select(Anime).where(Anime.title == title)
-        ).first()
-        
-        return anime.season_id if anime else None
+        anime = self.session.exec(select(Anime).where(Anime.title == title)).first()
 
+        return anime.season_id if anime else None
 
     # ──────────────────────────────────────────────────────────────────────────
     # Wbi 签名 (B站新版 API 防爬机制)
@@ -1101,16 +1162,16 @@ class BilibiliBangumiCrawler:
     # Mixin 密钥混淆表（固定顺序）
     _MIXIN_KEY_ENC_TAB = SCRAPER_MIXIN_KEY_ENC_TAB
     # Wbi 密钥缓存 (img_key, sub_key)
-    _wbi_keys_cache: Optional[Tuple[str, str]] = None
-    _wbi_keys_fetched_at: Optional[float] = None
+    _wbi_keys_cache: tuple[str, str] | None = None
+    _wbi_keys_fetched_at: float | None = None
     _WBI_CACHE_TTL = 3600  # 缓存 1 小时
 
     def _get_mixin_key(self, img_key: str, sub_key: str) -> str:
         """根据 img_key 和 sub_key 生成混淆后的 mixin key（取前 32 位）"""
         raw = img_key + sub_key
-        return reduce(lambda s, i: s + raw[i], self._MIXIN_KEY_ENC_TAB, '')[:32]
+        return reduce(lambda s, i: s + raw[i], self._MIXIN_KEY_ENC_TAB, "")[:32]
 
-    def _get_wbi_keys(self) -> Tuple[str, str]:
+    def _get_wbi_keys(self) -> tuple[str, str]:
         """
         获取 Wbi 签名所需的 img_key 和 sub_key。
         每小时刷新一次，减少重复请求。
@@ -1127,23 +1188,24 @@ class BilibiliBangumiCrawler:
         try:
             resp = self._request_get(url, timeout=settings.bilibili_request_timeout)
             if resp is None:
-                return '', ''
-            nav = resp.json().get('data', {})
-            img_url: str = nav.get('wbi_img', {}).get('img_url', '')
-            sub_url: str = nav.get('wbi_img', {}).get('sub_url', '')
-            img_key = img_url.rsplit('/', 1)[-1].split('.')[0]
-            sub_key = sub_url.rsplit('/', 1)[-1].split('.')[0]
+                return "", ""
+            nav = resp.json().get("data", {})
+            img_url: str = nav.get("wbi_img", {}).get("img_url", "")
+            sub_url: str = nav.get("wbi_img", {}).get("sub_url", "")
+            img_key = img_url.rsplit("/", 1)[-1].split(".")[0]
+            sub_key = sub_url.rsplit("/", 1)[-1].split(".")[0]
             self.__class__._wbi_keys_cache = (img_key, sub_key)
             self.__class__._wbi_keys_fetched_at = now
             return img_key, sub_key
         except Exception as exc:
             logger.error(
-                "❌ 获取 Wbi 密钥失败（后续 API 请求的签名将无效，建议检查网络连接与 Cookie）: {}", exc
+                "❌ 获取 Wbi 密钥失败（后续 API 请求的签名将无效，建议检查网络连接与 Cookie）: {}",
+                exc,
             )
             # 降级：返回空字符串，后续签名会失败但不会崩溃
-            return '', ''
+            return "", ""
 
-    def _sign_wbi_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _sign_wbi_params(self, params: dict[str, Any]) -> dict[str, Any]:
         """
         对请求参数进行 Wbi 签名，自动附加 wts 和 w_rid 字段。
 
@@ -1156,24 +1218,19 @@ class BilibiliBangumiCrawler:
         img_key, sub_key = self._get_wbi_keys()
         # 如果获取 Wbi 密钥失败（降级返回空字符串），则跳过签名，避免后续崩溃
         if not img_key or not sub_key:
-            logger.warning(
-                "⚠️ Wbi 密钥为空，本次请求将不进行 Wbi 签名，直接使用原始参数。"
-            )
+            logger.warning("⚠️ Wbi 密钥为空，本次请求将不进行 Wbi 签名，直接使用原始参数。")
             return dict(params)
         mixin_key = self._get_mixin_key(img_key, sub_key)
         wts = int(time.time())
         signed = dict(params)
-        signed['wts'] = wts
-        
-        pattern = r'[!#$&+,/:;=?@\\[\\]]'
-        
-        query = '&'.join(
-            f"{k}={re.sub(pattern, '', str(v))}"
-            for k, v in sorted(signed.items())
-        )
-        
+        signed["wts"] = wts
+
+        pattern = r"[!#$&+,/:;=?@\\[\\]]"
+
+        query = "&".join(f"{k}={re.sub(pattern, '', str(v))}" for k, v in sorted(signed.items()))
+
         w_rid = hashlib.md5((query + mixin_key).encode()).hexdigest()
-        signed['w_rid'] = w_rid
+        signed["w_rid"] = w_rid
         return signed
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -1186,18 +1243,18 @@ class BilibiliBangumiCrawler:
         cid: str,
         xml_text: str,
         source: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """解析弹幕 XML 文本，统一返回标准字段。"""
-        danmaku_list: List[Dict[str, Any]] = []
+        danmaku_list: list[dict[str, Any]] = []
         try:
             root = ET.fromstring(xml_text)
-            for d in root.findall('d'):
-                attrs = d.get('p', '')
-                text = (d.text or '').strip()
+            for d in root.findall("d"):
+                attrs = d.get("p", "")
+                text = (d.text or "").strip()
                 if not text:
                     continue
                 # p 属性格式: 时间,类型,大小,颜色,时间戳,弹幕池,用户ID,弹幕ID
-                parts = attrs.split(',')
+                parts = attrs.split(",")
                 try:
                     video_time = float(parts[0]) if parts and parts[0] else 0.0
                     ts_unix = int(parts[4]) if len(parts) > 4 and parts[4] else 0
@@ -1206,32 +1263,34 @@ class BilibiliBangumiCrawler:
                     logger.debug("跳过异常弹幕元数据 cid={} source={} attrs={}", cid, source, attrs)
                     continue
                 ctime = datetime.fromtimestamp(ts_unix) if ts_unix else None
-                danmaku_list.append({
-                    'content': text,
-                    'video_time': video_time,  # 保持兼容旧字段
-                    'progress': video_time,
-                    'timestamp': ctime,      # 保持兼容旧字段
-                    'ctime': ctime,
-                    'sender_hash': sender_hash,  # B站匿名用户哈希
-                })
+                danmaku_list.append(
+                    {
+                        "content": text,
+                        "video_time": video_time,  # 保持兼容旧字段
+                        "progress": video_time,
+                        "timestamp": ctime,  # 保持兼容旧字段
+                        "ctime": ctime,
+                        "sender_hash": sender_hash,  # B站匿名用户哈希
+                    }
+                )
         except ET.ParseError as exc:
             logger.warning("⚠️ 解析弹幕 XML 失败 cid={} source={}: {}", cid, source, exc)
         except Exception as exc:
             logger.exception("❌ 解析弹幕 XML 异常 cid={} source={}: {}", cid, source, exc)
         return danmaku_list
 
-    def _iter_history_months(self, publish_ts: Optional[int]) -> List[str]:
+    def _iter_history_months(self, publish_ts: int | None) -> list[str]:
         """根据发布时间推导历史弹幕索引查询月份（倒序，YYYY-MM）。"""
         now = datetime.now()
         max_months = max(1, settings.crawler_history_months)
         cursor = datetime(now.year, now.month, 1)
-        start_month: Optional[datetime] = None
+        start_month: datetime | None = None
         if publish_ts:
             try:
                 start_month = datetime.fromtimestamp(int(publish_ts)).replace(day=1)
             except (ValueError, OSError, OverflowError, TypeError):
                 logger.warning("⚠️ 非法发布时间戳，改用固定回溯窗口 publish_ts={}", publish_ts)
-        months: List[str] = []
+        months: list[str] = []
         while len(months) < max_months:
             if start_month and cursor < start_month:
                 break
@@ -1243,16 +1302,16 @@ class BilibiliBangumiCrawler:
         return months
 
     @staticmethod
-    def _make_danmaku_dedup_key(item: Dict[str, Any]) -> Tuple[str, Any, Any, str]:
+    def _make_danmaku_dedup_key(item: dict[str, Any]) -> tuple[str, Any, Any, str]:
         """构造弹幕去重键：(content, video_time, timestamp, sender_hash)。"""
         return (
-            str(item.get('content') or ''),
-            item.get('video_time'),
-            item.get('timestamp'),
-            str(item.get('sender_hash') or ''),
+            str(item.get("content") or ""),
+            item.get("video_time"),
+            item.get("timestamp"),
+            str(item.get("sender_hash") or ""),
         )
 
-    def fetch_danmaku_xml(self, cid: str) -> List[Dict[str, Any]]:
+    def fetch_danmaku_xml(self, cid: str) -> list[dict[str, Any]]:
         """
         通过 B站弹幕 XML 接口获取当前弹幕池。
 
@@ -1268,7 +1327,7 @@ class BilibiliBangumiCrawler:
             resp = self._request_get(url, timeout=settings.bilibili_request_timeout)
             if resp is None:
                 return []
-            resp.encoding = 'utf-8'
+            resp.encoding = "utf-8"
             return self._parse_danmaku_xml_payload(
                 cid=cid,
                 xml_text=resp.text,
@@ -1279,7 +1338,7 @@ class BilibiliBangumiCrawler:
         return []
 
     @staticmethod
-    def _read_proto_varint(buf: bytes, start: int) -> Tuple[Optional[int], int]:
+    def _read_proto_varint(buf: bytes, start: int) -> tuple[int | None, int]:
         """读取 protobuf varint，返回 (value, next_offset)。"""
         return read_proto_varint(buf, start)
 
@@ -1289,7 +1348,7 @@ class BilibiliBangumiCrawler:
         cid: str,
         payload: bytes,
         source: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         解析 DmSegMobileReply protobuf（二进制）为统一弹幕字段。
         仅提取当前入库所需字段，忽略未知字段，保证向后兼容。
@@ -1298,7 +1357,7 @@ class BilibiliBangumiCrawler:
         FIELD_FONT_SIZE = 4
         FIELD_COLOR = 5
         FIELD_POOL = 11
-        items: List[Dict[str, Any]] = []
+        items: list[dict[str, Any]] = []
         offset = 0
         while offset < len(payload):
             tag, offset = self._read_proto_varint(payload, offset)
@@ -1311,12 +1370,12 @@ class BilibiliBangumiCrawler:
                 size, offset = self._read_proto_varint(payload, offset)
                 if size is None or offset + size > len(payload):
                     break
-                chunk = payload[offset: offset + size]
+                chunk = payload[offset : offset + size]
                 offset += size
                 # DmSegMobileReply.elem -> field_no=1, length-delimited message
                 if field_no != 1:
                     continue
-                elem_values: Dict[int, Any] = {}
+                elem_values: dict[int, Any] = {}
                 elem_offset = 0
                 while elem_offset < len(chunk):
                     elem_tag, elem_offset = self._read_proto_varint(chunk, elem_offset)
@@ -1333,7 +1392,7 @@ class BilibiliBangumiCrawler:
                         l, elem_offset = self._read_proto_varint(chunk, elem_offset)
                         if l is None or elem_offset + l > len(chunk):
                             break
-                        raw_bytes = chunk[elem_offset: elem_offset + l]
+                        raw_bytes = chunk[elem_offset : elem_offset + l]
                         elem_offset += l
                         elem_values[elem_field_no] = raw_bytes
                     elif elem_wire_type == 5:
@@ -1396,7 +1455,9 @@ class BilibiliBangumiCrawler:
                 break
         return items
 
-    def _fetch_danmaku_history_proto_for_date(self, cid: str, date_str: str) -> List[Dict[str, Any]]:
+    def _fetch_danmaku_history_proto_for_date(
+        self, cid: str, date_str: str
+    ) -> list[dict[str, Any]]:
         """抓取并解析单日历史弹幕 protobuf。"""
         url = "https://api.bilibili.com/x/v2/dm/web/history/seg.so"
         resp = self._request_get(
@@ -1422,7 +1483,9 @@ class BilibiliBangumiCrawler:
                     err.get("message"),
                 )
             except Exception:
-                logger.warning("⚠️ 历史弹幕 protobuf 接口返回非二进制内容 cid={} date={}", cid, date_str)
+                logger.warning(
+                    "⚠️ 历史弹幕 protobuf 接口返回非二进制内容 cid={} date={}", cid, date_str
+                )
             return []
         return self._parse_danmaku_seg_protobuf(
             cid=cid,
@@ -1430,7 +1493,9 @@ class BilibiliBangumiCrawler:
             source=f"history-proto:{date_str}",
         )
 
-    def fetch_danmaku_history(self, cid: str, *, publish_ts: Optional[int] = None) -> List[Dict[str, Any]]:
+    def fetch_danmaku_history(
+        self, cid: str, *, publish_ts: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         抓取历史弹幕（需要 SESSDATA）。
 
@@ -1440,7 +1505,7 @@ class BilibiliBangumiCrawler:
             return []
 
         index_url = "https://api.bilibili.com/x/v2/dm/history/index"
-        all_dates: List[str] = []
+        all_dates: list[str] = []
         months = self._iter_history_months(publish_ts)
         logger.info("🗓️ 开始抓取历史弹幕日期索引 cid={} months={}", cid, len(months))
 
@@ -1486,12 +1551,14 @@ class BilibiliBangumiCrawler:
             logger.info("🕰️ 历史弹幕索引为空 cid={}", cid)
             return []
 
-        history_items: List[Dict[str, Any]] = []
+        history_items: list[dict[str, Any]] = []
         # 保序去重：history/index 可能返回重复日期，按首次出现顺序去重后逐日抓取。
         dedup_dates = list(dict.fromkeys(all_dates))
         logger.info("🕰️ 开始抓取历史弹幕数据 cid={} dates={}", cid, len(dedup_dates))
         for idx, date_str in enumerate(dedup_dates, start=1):
-            logger.info("  📥 历史弹幕进度 cid={} date={}/{} ({})", cid, idx, len(dedup_dates), date_str)
+            logger.info(
+                "  📥 历史弹幕进度 cid={} date={}/{} ({})", cid, idx, len(dedup_dates), date_str
+            )
             day_items = self._fetch_danmaku_history_proto_for_date(cid, date_str)
             history_items.extend(day_items)
             logger.info(
@@ -1501,10 +1568,14 @@ class BilibiliBangumiCrawler:
                 len(day_items),
                 len(history_items),
             )
-        logger.info("🕰️ 历史弹幕抓取完成 cid={} dates={} items={}", cid, len(dedup_dates), len(history_items))
+        logger.info(
+            "🕰️ 历史弹幕抓取完成 cid={} dates={} items={}", cid, len(dedup_dates), len(history_items)
+        )
         return history_items
 
-    def fetch_danmaku_history_xml(self, cid: str, *, publish_ts: Optional[int] = None) -> List[Dict[str, Any]]:
+    def fetch_danmaku_history_xml(
+        self, cid: str, *, publish_ts: int | None = None
+    ) -> list[dict[str, Any]]:
         """兼容旧调用：历史弹幕抓取已迁移为 protobuf 接口实现。"""
         return self.fetch_danmaku_history(cid, publish_ts=publish_ts)
 
@@ -1515,7 +1586,7 @@ class BilibiliBangumiCrawler:
         *,
         limit: int,
         page_size: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         抓取指定主楼下的楼中楼评论。
 
@@ -1529,19 +1600,21 @@ class BilibiliBangumiCrawler:
             楼中楼评论列表（含层级和父子关系字段）
         """
         url = "https://api.bilibili.com/x/v2/reply/reply"
-        nested: List[Dict[str, Any]] = []
+        nested: list[dict[str, Any]] = []
         max_pages = max(1, settings.crawler_nested_reply_pages)
         root_rpid_str = str(root_rpid)
         for page in range(1, max_pages + 1):
             if len(nested) >= limit:
                 break
-            params = self._sign_wbi_params({
-                "type": 1,
-                "oid": avid,
-                "root": root_rpid_str,
-                "ps": page_size,
-                "pn": page,
-            })
+            params = self._sign_wbi_params(
+                {
+                    "type": 1,
+                    "oid": avid,
+                    "root": root_rpid_str,
+                    "ps": page_size,
+                    "pn": page,
+                }
+            )
             resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
             if resp is None:
                 break
@@ -1558,16 +1631,18 @@ class BilibiliBangumiCrawler:
                 current_rpid = str(r.get("rpid") or "")
                 parent_info = r.get("parent_info") or {}
                 parent_rpid = str(parent_info.get("rpid") or "")
-                nested.append({
-                    "content": content,
-                    "likes": r.get("like", 0),
-                    "replies": r.get("rcount", 0),
-                    "root_rpid": root_rpid_str,
-                    "parent_rpid": parent_rpid or root_rpid_str,
-                    "level": 1,
-                    "is_top_level": False,
-                    "rpid": current_rpid,
-                })
+                nested.append(
+                    {
+                        "content": content,
+                        "likes": r.get("like", 0),
+                        "replies": r.get("rcount", 0),
+                        "root_rpid": root_rpid_str,
+                        "parent_rpid": parent_rpid or root_rpid_str,
+                        "level": 1,
+                        "is_top_level": False,
+                        "rpid": current_rpid,
+                    }
+                )
                 if len(nested) >= limit:
                     break
         return nested
@@ -1579,8 +1654,8 @@ class BilibiliBangumiCrawler:
         limit: int = 50,
         include_replies: bool = True,
         nested_reply_limit: int = 20,
-        bvid: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        bvid: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         通过 B站评论接口抓取主楼评论，并可选抓取楼中楼回复。
 
@@ -1593,39 +1668,43 @@ class BilibiliBangumiCrawler:
         """
         url = "https://api.bilibili.com/x/v2/reply/main"
         page_size = min(max(1, settings.crawler_comment_page_size), 20)
-        comment_list: List[Dict[str, Any]] = []
+        comment_list: list[dict[str, Any]] = []
         page = 1
         while len(comment_list) < limit:
-            params = self._sign_wbi_params({
-                'type': 1,
-                'oid': avid,
-                'mode': 3,  # 3 = 热门模式（按点赞数排序）
-                'ps': page_size,
-                'pn': page,
-            })
+            params = self._sign_wbi_params(
+                {
+                    "type": 1,
+                    "oid": avid,
+                    "mode": 3,  # 3 = 热门模式（按点赞数排序）
+                    "ps": page_size,
+                    "pn": page,
+                }
+            )
             resp = self._request_get(url, params=params, timeout=settings.bilibili_request_timeout)
             if resp is None:
                 logger.warning("⚠️ 评论接口请求失败 bvid={} avid={} page={}", bvid, avid, page)
                 break
             data = resp.json()
-            if data.get('code') == 0:
-                replies = (data.get('data') or {}).get('replies') or []
+            if data.get("code") == 0:
+                replies = (data.get("data") or {}).get("replies") or []
                 if not replies:
                     break
                 for r in replies:
-                    content = r.get('content', {}).get('message', '').strip()
+                    content = r.get("content", {}).get("message", "").strip()
                     if not content:
                         continue
                     root_rpid = str(r.get("rpid") or "")
-                    comment_list.append({
-                        'content': content,
-                        'likes': r.get('like', 0),
-                        'replies': r.get('rcount', 0),
-                        'root_rpid': root_rpid,
-                        'parent_rpid': None,
-                        'level': 0,
-                        'is_top_level': True,
-                    })
+                    comment_list.append(
+                        {
+                            "content": content,
+                            "likes": r.get("like", 0),
+                            "replies": r.get("rcount", 0),
+                            "root_rpid": root_rpid,
+                            "parent_rpid": None,
+                            "level": 0,
+                            "is_top_level": True,
+                        }
+                    )
                     if include_replies and root_rpid and nested_reply_limit > 0:
                         comment_list.extend(
                             self.fetch_comment_replies(
@@ -1645,14 +1724,14 @@ class BilibiliBangumiCrawler:
                     "⚠️ 评论 API 返回错误 bvid={} avid={} code={} message={}",
                     bvid,
                     avid,
-                    data.get('code'),
-                    data.get('message'),
+                    data.get("code"),
+                    data.get("message"),
                 )
                 break
         return comment_list[:limit]
 
     @staticmethod
-    def _make_comment_dedup_key(comment: Dict[str, Any]) -> Tuple[str, str, str]:
+    def _make_comment_dedup_key(comment: dict[str, Any]) -> tuple[str, str, str]:
         """构造评论去重键：(root_rpid, parent_rpid, content)。"""
         return (
             str(comment.get("root_rpid") or ""),
@@ -1668,10 +1747,10 @@ class BilibiliBangumiCrawler:
         include_comment_replies: bool = True,
         nested_reply_limit: int = 20,
         mode: str = "incremental",
-        retry_attempts: Optional[int] = None,
-        sentiment_fn: Optional[Any] = None,
+        retry_attempts: int | None = None,
+        sentiment_fn: Any | None = None,
         run_nlp_async: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         对指定番剧抓取弹幕和评论，进行初步清洗后写入数据库。
 
@@ -1712,7 +1791,9 @@ class BilibiliBangumiCrawler:
             episodes = episodes[:max_episodes]
 
         if not episodes:
-            logger.warning(f"  ⚠️ season_id={season_id} 尚无剧集数据，请先执行 fetch_and_save_episodes")
+            logger.warning(
+                f"  ⚠️ season_id={season_id} 尚无剧集数据，请先执行 fetch_and_save_episodes"
+            )
             crawl_log.status = "failed"
             crawl_log.failed_reason = "EpisodeStats records not found"
             crawl_log.completed_at = datetime.now()
@@ -1741,13 +1822,13 @@ class BilibiliBangumiCrawler:
         for ep_index, ep in enumerate(episodes, start=1):
             logger.info("▶️ 开始处理剧集 episode={} bvid={} cid={}", ep_index, ep.bvid, ep.cid)
             try:
-                view_data: Dict[str, Any] = {}
-                avid: Optional[int] = None
-                pubdate_ts: Optional[int] = None
+                view_data: dict[str, Any] = {}
+                avid: int | None = None
+                pubdate_ts: int | None = None
                 if ep.bvid:
                     view_data = self.get_episode_stat_details(ep.bvid) or {}
-                    avid = view_data.get('aid')
-                    pubdate_ts = view_data.get('pubdate')
+                    avid = view_data.get("aid")
+                    pubdate_ts = view_data.get("pubdate")
 
                 # ── 弹幕 ───────────────────────────────────────────────────
                 if ep.cid:
@@ -1757,8 +1838,8 @@ class BilibiliBangumiCrawler:
                     danmaku_for_sqlite = current_danmaku
 
                     # 去重：同一集中仅移除完全重复的弹幕（文本+时间+发送者）
-                    seen_keys: Set[Tuple[str, Any, Any, str]] = set()
-                    dedup: List[Dict] = []
+                    seen_keys: set[tuple[str, Any, Any, str]] = set()
+                    dedup: list[dict] = []
                     for d in danmaku_for_sqlite:
                         # video_time 表示视频内时间点；timestamp 表示发送时间，两者共同用于精确去重。
                         key = self._make_danmaku_dedup_key(d)
@@ -1768,14 +1849,14 @@ class BilibiliBangumiCrawler:
                         dedup.append(d)
 
                     records = []
-                    existing_keys: Set[Tuple[str, Any, Any, str]] = set()
+                    existing_keys: set[tuple[str, Any, Any, str]] = set()
                     if mode != "full":
                         existing_keys = {
                             (
-                                str(row[0] or ''),
+                                str(row[0] or ""),
                                 row[1],
                                 row[2],
-                                str(row[3] or ''),
+                                str(row[3] or ""),
                             )
                             for row in self.session.exec(
                                 select(
@@ -1794,21 +1875,23 @@ class BilibiliBangumiCrawler:
                         if key in existing_keys:
                             continue
                         existing_keys.add(key)
-                        score = sentiment_fn(d['content']) if sentiment_fn else None
-                        records.append(DanmuRecord(
-                            season_id=season_id,
-                            episode_number=ep_index,
-                            cid=ep.cid,
-                            content=d['content'],
-                            video_time=d.get('video_time'),
-                            timestamp=d.get('timestamp'),
-                            sender_hash=d.get('sender_hash'),
-                            sentiment_score=score,
-                        ))
+                        score = sentiment_fn(d["content"]) if sentiment_fn else None
+                        records.append(
+                            DanmuRecord(
+                                season_id=season_id,
+                                episode_number=ep_index,
+                                cid=ep.cid,
+                                content=d["content"],
+                                video_time=d.get("video_time"),
+                                timestamp=d.get("timestamp"),
+                                sender_hash=d.get("sender_hash"),
+                                sentiment_score=score,
+                            )
+                        )
 
                     with sqlite_write_lock:
-                        for r in records:
-                            self.session.add(r)
+                        for danmu_record in records:
+                            self.session.add(danmu_record)
                         self.session.commit()
                     danmu_saved += len(records)
                     if raw_danmaku and self.mongo_repo.upsert_episode_danmaku(
@@ -1829,7 +1912,9 @@ class BilibiliBangumiCrawler:
                     )
                     self._throttle()
                 else:
-                    logger.warning("  ⚠️ 跳过弹幕抓取：缺少 cid episode={} bvid={}", ep_index, ep.bvid)
+                    logger.warning(
+                        "  ⚠️ 跳过弹幕抓取：缺少 cid episode={} bvid={}", ep_index, ep.bvid
+                    )
 
                 # ── 评论 ───────────────────────────────────────────────────
                 if not ep.bvid:
@@ -1869,25 +1954,28 @@ class BilibiliBangumiCrawler:
                         ).all()
                     }
                 for c in raw_comments:
-                    key = self._make_comment_dedup_key(c)
-                    if key in existing_comment_keys:
+                    comment_key = self._make_comment_dedup_key(c)
+                    if comment_key in existing_comment_keys:
                         continue
-                    score = sentiment_fn(c['content']) if sentiment_fn else None
-                    c_records.append(CommentRecord(
-                        season_id=season_id,
-                        avid=avid,
-                        root_rpid=c.get('root_rpid'),
-                        parent_rpid=c.get('parent_rpid'),
-                        level=c.get('level', 0),
-                        is_top_level=c.get('is_top_level', True),
-                        content=c['content'],
-                        likes=c.get('likes', 0),
-                        replies=c.get('replies', 0),
-                        sentiment_score=score,
-                    ))
+                    existing_comment_keys.add(comment_key)
+                    score = sentiment_fn(c["content"]) if sentiment_fn else None
+                    c_records.append(
+                        CommentRecord(
+                            season_id=season_id,
+                            avid=avid,
+                            root_rpid=c.get("root_rpid"),
+                            parent_rpid=c.get("parent_rpid"),
+                            level=c.get("level", 0),
+                            is_top_level=c.get("is_top_level", True),
+                            content=c["content"],
+                            likes=c.get("likes", 0),
+                            replies=c.get("replies", 0),
+                            sentiment_score=score,
+                        )
+                    )
                 with sqlite_write_lock:
-                    for r in c_records:
-                        self.session.add(r)
+                    for comment_record in c_records:
+                        self.session.add(comment_record)
                     self.session.commit()
                 comment_saved += len(c_records)
                 logger.info(
@@ -1901,6 +1989,7 @@ class BilibiliBangumiCrawler:
                 if run_nlp_async:
                     try:
                         from ..tasks import enqueue_episode_nlp_task
+
                         task_id = enqueue_episode_nlp_task(
                             season_id=season_id,
                             episode_number=ep_index,
@@ -1914,7 +2003,9 @@ class BilibiliBangumiCrawler:
                                 task_id,
                             )
                         else:
-                            logger.info("  🧠 NLP 本地执行完成 episode={} season_id={}", ep_index, season_id)
+                            logger.info(
+                                "  🧠 NLP 本地执行完成 episode={} season_id={}", ep_index, season_id
+                            )
                     except Exception as exc:
                         logger.warning(
                             "⚠️ NLP 任务触发失败 episode={} season_id={} error={}",
@@ -1935,6 +2026,7 @@ class BilibiliBangumiCrawler:
 
         try:
             from ..analytics import update_episode_sentiment_aggregates
+
             update_episode_sentiment_aggregates(self.session, season_id)
         except Exception as exc:
             logger.warning("⚠️ 回填 EpisodeStats 聚合字段失败 season_id={}: {}", season_id, exc)
@@ -1961,12 +2053,13 @@ class BilibiliBangumiCrawler:
         }
 
 
-def create_crawler(session: Optional[Session] = None) -> BilibiliBangumiCrawler:
+def create_crawler(session: Session | None = None) -> BilibiliBangumiCrawler:
     """
     创建爬虫实例的工厂函数
     """
     if session is None:
         from ..database import engine
+
         session = Session(engine)
-    
+
     return BilibiliBangumiCrawler(session)

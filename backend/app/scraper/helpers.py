@@ -2,7 +2,7 @@
 
 import re
 from datetime import datetime, timedelta
-from typing import Any, Optional, Tuple
+from typing import Any
 
 
 def convert_order_to_int(order_str: Any) -> int:
@@ -34,7 +34,7 @@ def is_valid_main_episode(episode: dict[str, Any]) -> bool:
     return all(keyword not in combined_title for keyword in invalid_keywords)
 
 
-def get_quarter_month(month: int) -> Optional[int]:
+def get_quarter_month(month: int) -> int | None:
     """根据月份获取季度首月。"""
     if 1 <= month <= 3:
         return 1
@@ -47,7 +47,7 @@ def get_quarter_month(month: int) -> Optional[int]:
     return None
 
 
-def parse_release_date_from_order(order_str: Any) -> Tuple[Optional[Any], Optional[int]]:
+def parse_release_date_from_order(order_str: Any) -> tuple[Any | None, int | None]:
     """从 order 字符串解析发布日期，返回 (year, quarter_month)。"""
     if not isinstance(order_str, str) or not order_str.strip():
         return None, None
@@ -61,8 +61,8 @@ def parse_release_date_from_order(order_str: Any) -> Tuple[Optional[Any], Option
 
     year_only_match = re.search(r"(\d{4})开播", order_str)
     if year_only_match:
-        year = int(year_only_match.group(1))
-        if year < 2015:
+        year_only = int(year_only_match.group(1))
+        if year_only < 2015:
             return "更早", None
         return None, None
 
@@ -76,7 +76,7 @@ def parse_release_date_from_order(order_str: Any) -> Tuple[Optional[Any], Option
     if quarter_month is None:
         return None, None
 
-    year = None
+    year: int | None = None
     if year_str:
         year = int(year_str)
         if year < 100:
@@ -88,7 +88,7 @@ def parse_release_date_from_order(order_str: Any) -> Tuple[Optional[Any], Option
     return year, quarter_month
 
 
-def read_proto_varint(buf: bytes, start: int) -> Tuple[Optional[int], int]:
+def read_proto_varint(buf: bytes, start: int) -> tuple[int | None, int]:
     """读取 protobuf varint，返回 (value, next_offset)。"""
     value = 0
     shift = 0

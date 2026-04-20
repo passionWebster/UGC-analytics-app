@@ -1,0 +1,26 @@
+[tool.ruff]
+src = ["app"]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501", "E741"]
+
+[tool.mypy]
+python_version = "3.10"
+files = "app/scraper"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+follow_imports = "skip"
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_untyped_defs = false
+disable_error_code = ["import-untyped"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+warn_untyped_fields = true
