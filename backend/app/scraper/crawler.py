@@ -8,7 +8,6 @@ import hashlib
 import json
 import random
 import re
-import threading
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -24,6 +23,8 @@ from ..config import settings
 from ..logger import scraper_logger as logger
 from ..models import Anime, CommentRecord, CrawlLog, DailyStats, DanmuRecord, EpisodeStats
 from ..mongodb import DanmakuMongoRepository
+from .anime_sync import AnimeSyncService
+from .comments import CommentsService
 from .constants import (
     AREA_ID_TO_ENUM as SCRAPER_AREA_ID_TO_ENUM,
 )
@@ -42,6 +43,8 @@ from .constants import (
 from .constants import (
     STYLE_MAP as SCRAPER_STYLE_MAP,
 )
+from .danmaku import DanmakuService
+from .episode_sync import EpisodeSyncService
 from .helpers import (
     convert_order_to_int,
     get_quarter_month,
@@ -49,10 +52,8 @@ from .helpers import (
     parse_release_date_from_order,
     read_proto_varint,
 )
+from .runtime import sqlite_write_lock
 
-# SQLite 写入互斥锁：用于本模块内的爬虫写入操作，防止多线程并发写入时产生数据库锁冲突。
-# 注意：此锁仅在当前进程内、且仅对实际获取它的代码路径生效，并不能保证全项目的所有写入都已串行化。
-sqlite_write_lock = threading.Lock()
 AnimePayload = dict[str, Any]
 
 
@@ -106,6 +107,33 @@ class BilibiliBangumiCrawler:
         self.mongo_repo = DanmakuMongoRepository()
         self.override_retry_attempts: int | None = None
         self.request_counters: dict[str, int] = {"requests": 0, "retries": 0, "failed": 0}
+        self.anime_sync = AnimeSyncService(self)
+        self.episode_sync = EpisodeSyncService(self)
+        self.danmaku = DanmakuService(self)
+        self.comments = CommentsService(self)
+
+        # 组合式 façade：将跨域能力委托给子服务实现，保持旧调用签名兼容。
+        self.update_anime_database = self.anime_sync.update_anime_database  # type: ignore[method-assign]
+        self.fetch_and_save_anime_with_episodes = (  # type: ignore[method-assign]
+            self.anime_sync.fetch_and_save_anime_with_episodes
+        )
+        self.search_anime_by_title = self.anime_sync.search_anime_by_title  # type: ignore[method-assign]
+
+        self.fetch_and_save_episodes = self.episode_sync.fetch_and_save_episodes  # type: ignore[method-assign]
+        self.record_hourly_online_viewers = (  # type: ignore[method-assign]
+            self.episode_sync.record_hourly_online_viewers
+        )
+        self.update_online_viewers_for_all_episodes = (  # type: ignore[method-assign]
+            self.episode_sync.update_online_viewers_for_all_episodes
+        )
+
+        self.fetch_danmaku_xml = self.danmaku.fetch_danmaku_xml  # type: ignore[method-assign]
+        self.fetch_danmaku_history = self.danmaku.fetch_danmaku_history  # type: ignore[method-assign]
+        self.fetch_danmaku_history_xml = self.danmaku.fetch_danmaku_history_xml  # type: ignore[method-assign]
+
+        self.fetch_comment_replies = self.comments.fetch_comment_replies  # type: ignore[method-assign]
+        self.fetch_comments = self.comments.fetch_comments  # type: ignore[method-assign]
+        self.scrape_danmaku_and_comments = self.comments.scrape_danmaku_and_comments  # type: ignore[method-assign]
         logger.info("✅ 爬虫已初始化")
 
     def _build_proxy(self) -> dict[str, str] | None:
