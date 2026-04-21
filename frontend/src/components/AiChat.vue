@@ -175,7 +175,7 @@ const escapeTableCell = (value: unknown): string => {
     : typeof value === 'object'
       ? JSON.stringify(value)
       : String(value)
-  return text.replaceAll('|', '\\|').replaceAll('\n', ' ')
+  return text.replace(/\|/g, '\\|').replace(/\n/g, ' ')
 }
 
 const formatSqlResultMessage = (res: TextToSQLResponse): string => {
