@@ -230,6 +230,7 @@ let radarInstance: ECharts | null = null
 let playTrendResizeObserver: ResizeObserver | null = null
 let watchTimeResizeObserver: ResizeObserver | null = null
 let radarResizeObserver: ResizeObserver | null = null
+const DEFAULT_FAVORITE_STATUS = 'watching' as const
 const isFavorite = ref(false)
 const favoriteLoading = ref(false)
 
@@ -238,7 +239,8 @@ const syncFavoriteState = async (seasonId: number) => {
     const response = await getUserFavorites()
     const favorites = Array.isArray(response.data) ? response.data : []
     isFavorite.value = favorites.some((item) => item.season_id === seasonId)
-  } catch {
+  } catch (error) {
+    console.error('同步追番状态失败:', error)
     isFavorite.value = false
   }
 }
@@ -248,10 +250,11 @@ const handleFavoriteToggle = async () => {
   if (!seasonId) return
   favoriteLoading.value = true
   try {
-    const response = await toggleFavorite(seasonId, 'watching')
+    const response = await toggleFavorite(seasonId, DEFAULT_FAVORITE_STATUS)
     isFavorite.value = response.action === 'added'
     ElMessage.success(response.message || (isFavorite.value ? '已加入追番列表' : '已取消收藏'))
-  } catch {
+  } catch (error) {
+    console.error('追番操作失败:', error)
     ElMessage.error('追番操作失败，请稍后重试')
   } finally {
     favoriteLoading.value = false

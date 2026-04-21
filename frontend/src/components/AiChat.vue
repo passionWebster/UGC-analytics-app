@@ -84,7 +84,7 @@
             'error-message': msg.role === 'error'
           }"
         >
-          <div v-if="msg.role === 'bot'" class="markdown-content" v-html="renderMarkdown(msg.content)"></div>
+          <div v-if="msg.role === 'bot'" class="markdown-content" v-html="msg.htmlContent"></div>
           <template v-else>{{ msg.content }}</template>
         </div>
 
@@ -156,7 +156,7 @@ const serviceAvailable = ref(false)               // 后端 AI 服务是否在�
 const serviceStatusChecked = ref(false)           // 是否已完成首次状态检查
 const isTyping = ref(false)                       // AI 打字指示器（三个跳动点）
 const userInput = ref('')
-const messages = ref<Array<{ role: string; content: string }>>([])
+const messages = ref<Array<{ role: string; content: string; htmlContent?: string }>>([])
 const messagesContainer = ref<HTMLElement | null>(null)
 const sampleQuestionsVisible = ref(false)         // 服务在线后是否显示示例问题
 const mode = ref<'chat' | 'sql'>('chat')          // 当前交互模式
@@ -167,7 +167,12 @@ const markdown = new MarkdownIt({
   breaks: true,
 })
 
-const renderMarkdown = (content: string) => DOMPurify.sanitize(markdown.render(content))
+const renderMarkdown = (content: string): string => DOMPurify.sanitize(markdown.render(content))
+const createBotMessage = (content: string): { role: string; content: string; htmlContent: string } => ({
+  role: 'bot',
+  content,
+  htmlContent: renderMarkdown(content),
+})
 
 const escapeTableCell = (value: unknown): string => {
   const text = value === null || value === undefined
@@ -175,7 +180,7 @@ const escapeTableCell = (value: unknown): string => {
     : typeof value === 'object'
       ? JSON.stringify(value)
       : String(value)
-  return text.replace(/\|/g, '\\|').replace(/\n/g, ' ')
+  return text.replace(/\|/g, '&#124;').replace(/\n/g, ' ')
 }
 
 const formatSqlResultMessage = (res: TextToSQLResponse): string => {
@@ -264,10 +269,7 @@ const sendMessage = async () => {
         throw new Error('后端未返回成功状态')
       }
       sqlResult.value = res
-      messages.value.push({
-        role: 'bot',
-        content: formatSqlResultMessage(res),
-      })
+      messages.value.push(createBotMessage(formatSqlResultMessage(res)))
     } catch (error: unknown) {
       sqlResult.value = null
       messages.value.push({
@@ -282,7 +284,7 @@ const sendMessage = async () => {
       if (!response?.success) {
         throw new Error('后端未返回成功状态')
       }
-      messages.value.push({ role: 'bot', content: response.reply })
+      messages.value.push(createBotMessage(response.reply))
     } catch (error: unknown) {
       // 将错误作为 error 角色消息显示，样式独立于普通 bot 消息
       messages.value.push({
