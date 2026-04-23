@@ -60,6 +60,16 @@
         <span v-if="animeData.release_date" class="meta-tag">{{ animeData.release_date }}</span>
         <span v-if="animeData.rating" class="meta-tag rating">⭐ {{ animeData.rating }}</span>
       </p>
+      <div class="anime-actions">
+        <button
+          class="status-favorite-btn"
+          :class="{ active: isFavorite }"
+          :disabled="favoriteLoading"
+          @click="handleFavoriteToggle"
+        >
+          <i class="fas fa-heart me-1"></i>{{ isFavorite ? '已追番（点击取消）' : '追番' }}
+        </button>
+      </div>
     </div>
 
     <!-- 统计卡片（metric-card 风格，与 Home.vue 统一） -->
@@ -155,6 +165,7 @@ import { ref, computed, onUnmounted, onActivated, onDeactivated, nextTick } from
 import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import type { ECharts } from 'echarts'
+import { ElMessage } from 'element-plus'
 import {
   searchAnimes,
   getAnimeDetail,
@@ -164,6 +175,7 @@ import {
   getCompetitiveAnalysis,
   getWatchTimeDistribution,
 } from '@/api/analytics'
+import { getUserFavorites, toggleFavorite } from '@/api/userSpace'
 import type {
   EpisodeBehaviorAnalysis,
   LifecycleGrowthData,
@@ -218,6 +230,36 @@ let radarInstance: ECharts | null = null
 let playTrendResizeObserver: ResizeObserver | null = null
 let watchTimeResizeObserver: ResizeObserver | null = null
 let radarResizeObserver: ResizeObserver | null = null
+const DEFAULT_FAVORITE_STATUS = 'watching' as const
+const isFavorite = ref(false)
+const favoriteLoading = ref(false)
+
+const syncFavoriteState = async (seasonId: number) => {
+  try {
+    const response = await getUserFavorites()
+    const favorites = Array.isArray(response.data) ? response.data : []
+    isFavorite.value = favorites.some((item) => item.season_id === seasonId)
+  } catch (error) {
+    console.error('同步追番状态失败:', error)
+    isFavorite.value = false
+  }
+}
+
+const handleFavoriteToggle = async () => {
+  const seasonId = animeData.value?.season_id
+  if (!seasonId) return
+  favoriteLoading.value = true
+  try {
+    const response = await toggleFavorite(seasonId, DEFAULT_FAVORITE_STATUS)
+    isFavorite.value = response.action === 'added'
+    ElMessage.success(response.message || (isFavorite.value ? '已加入追番列表' : '已取消收藏'))
+  } catch (error) {
+    console.error('追番操作失败:', error)
+    ElMessage.error('追番操作失败，请稍后重试')
+  } finally {
+    favoriteLoading.value = false
+  }
+}
 
 // ─── 计算属性 ────────────────────────────────────────────────────────────────
 /** 剧集平均播放量 */
@@ -423,6 +465,7 @@ const handleSearch = async () => {
       const detailResponse = await getAnimeDetail(anime.season_id)
       animeData.value = detailResponse.data || anime
       statusMessage.value = `找到番剧：${anime.title}`
+      await syncFavoriteState(anime.season_id)
 
       // 获取剧集数据
       try {
@@ -459,6 +502,7 @@ const handleSearch = async () => {
     } else {
       statusMessage.value = '未找到相关番剧'
       animeData.value = null
+      isFavorite.value = false
       episodes.value = []
       behaviorData.value = null
       lifecycleData.value = null
@@ -914,6 +958,37 @@ onDeactivated(() => {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.anime-actions {
+  margin-top: 0.75rem;
+}
+
+.status-favorite-btn {
+  border: 1px solid #fda4af;
+  background: #fff1f2;
+  color: #be123c;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.status-favorite-btn:hover:not(:disabled) {
+  background: #ffe4e6;
+}
+
+.status-favorite-btn.active {
+  background: linear-gradient(135deg, #fb7185 0%, #e11d48 100%);
+  border-color: #e11d48;
+  color: #fff;
+}
+
+.status-favorite-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .meta-tag {

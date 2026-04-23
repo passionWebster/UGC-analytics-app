@@ -83,7 +83,10 @@
             'bot-message': msg.role === 'bot',
             'error-message': msg.role === 'error'
           }"
-        >{{ msg.content }}</div>
+        >
+          <div v-if="msg.role === 'bot'" class="markdown-content" v-html="msg.htmlContent"></div>
+          <template v-else>{{ msg.content }}</template>
+        </div>
 
         <!-- AI 打字指示器：三个跳动圆点，取代简单的"思考中..."文字 -->
         <div v-if="isTyping" class="message bot-message bot-typing">
@@ -141,6 +144,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick, watch } from 'vue'
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 import { chatWithAI, checkAIServiceStatus, textToSQL } from '@/api/ai'
 import type { TextToSQLResponse } from '@/api/ai'
 import { getApiErrorMessage } from '@/utils/errorHandling'
@@ -151,11 +156,48 @@ const serviceAvailable = ref(false)               // 后端 AI 服务是否在�
 const serviceStatusChecked = ref(false)           // 是否已完成首次状态检查
 const isTyping = ref(false)                       // AI 打字指示器（三个跳动点）
 const userInput = ref('')
-const messages = ref<Array<{ role: string; content: string }>>([])
+const messages = ref<Array<{ role: string; content: string; htmlContent?: string }>>([])
 const messagesContainer = ref<HTMLElement | null>(null)
 const sampleQuestionsVisible = ref(false)         // 服务在线后是否显示示例问题
 const mode = ref<'chat' | 'sql'>('chat')          // 当前交互模式
 const sqlResult = ref<TextToSQLResponse | null>(null) // Text-to-SQL 查询结果
+const markdown = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+})
+
+const renderMarkdown = (content: string): string => DOMPurify.sanitize(markdown.render(content))
+const createBotMessage = (content: string): { role: string; content: string; htmlContent: string } => ({
+  role: 'bot',
+  content,
+  htmlContent: renderMarkdown(content),
+})
+
+const escapeTableCell = (value: unknown): string => {
+  const text = value === null || value === undefined
+    ? 'null'
+    : typeof value === 'object'
+      ? JSON.stringify(value)
+      : String(value)
+  return text.replace(/\|/g, '&#124;').replace(/\n/g, ' ')
+}
+
+const formatSqlResultMessage = (res: TextToSQLResponse): string => {
+  const total = res.rows.length
+  if (total === 0) return '✅ 已执行查询，结果为空。'
+
+  const previewRows = res.rows.slice(0, 5)
+  const columns = res.columns
+  const header = `| ${columns.join(' | ')} |`
+  const divider = `| ${columns.map(() => '---').join(' | ')} |`
+  const body = previewRows
+    .map((row) => `| ${columns.map((col) => escapeTableCell(row[col])).join(' | ')} |`)
+    .join('\n')
+  const tailNote = total > previewRows.length ? `\n\n仅预览前 ${previewRows.length} 条，共 ${total} 条。` : ''
+
+  return `✅ 已执行查询，共返回 ${total} 条记录。\n\n${header}\n${divider}\n${body}${tailNote}`
+}
 
 // 挂载后延迟检查服务的等待时间（给后端启动留出时间，单位毫秒）
 const SERVICE_CHECK_DELAY = 1000
@@ -227,10 +269,7 @@ const sendMessage = async () => {
         throw new Error('后端未返回成功状态')
       }
       sqlResult.value = res
-      messages.value.push({
-        role: 'bot',
-        content: `✅ 已执行查询，共返回 ${res.rows.length} 条记录。`,
-      })
+      messages.value.push(createBotMessage(formatSqlResultMessage(res)))
     } catch (error: unknown) {
       sqlResult.value = null
       messages.value.push({
@@ -245,7 +284,7 @@ const sendMessage = async () => {
       if (!response?.success) {
         throw new Error('后端未返回成功状态')
       }
-      messages.value.push({ role: 'bot', content: response.reply })
+      messages.value.push(createBotMessage(response.reply))
     } catch (error: unknown) {
       // 将错误作为 error 角色消息显示，样式独立于普通 bot 消息
       messages.value.push({
@@ -491,6 +530,53 @@ onMounted(() => {
   font-size: 14px;
   line-height: 1.5;
   animation: fadeIn 0.3s ease;
+}
+
+.markdown-content {
+  line-height: 1.55;
+}
+
+.markdown-content :deep(p) {
+  margin: 0 0 8px;
+}
+
+.markdown-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-content :deep(ul),
+.markdown-content :deep(ol) {
+  padding-left: 1.1rem;
+  margin: 0.25rem 0;
+}
+
+.markdown-content :deep(pre) {
+  margin: 0.3rem 0;
+  padding: 0.45rem 0.55rem;
+  background: #f3f4f6;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.markdown-content :deep(code) {
+  font-size: 12px;
+}
+
+.markdown-content :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.markdown-content :deep(th),
+.markdown-content :deep(td) {
+  border: 1px solid #e5e7eb;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.markdown-content :deep(th) {
+  background: #f3f4f6;
 }
 
 /* 用户消息：右对齐，蓝色背景 */
