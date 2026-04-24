@@ -5,7 +5,7 @@
         <!-- Logo 和标题 -->
         <div class="d-flex align-items-center">
           <img alt="数据分析平台Logo" class="logo" src="/favicon.svg" />
-          <h3 class="mb-0">泛二次元流媒体数据智能分析与可视化平台 · Intelligence Analytics Platform</h3>
+          <h3 class="mb-0">泛二次元流媒体数据智能分析与可视化平台</h3>
         </div>
 
         <!-- 导航菜单 -->

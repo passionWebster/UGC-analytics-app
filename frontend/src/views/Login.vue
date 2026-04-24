@@ -3,7 +3,8 @@
     <div class="login-box">
       <div class="logo-section">
         <img src="/favicon.svg" alt="数据分析平台" class="logo" />
-        <h2>泛二次元流媒体数据智能分析与可视化平台</h2>
+        <h2>泛二次元流媒体数据</h2>
+        <h2>智能分析与可视化平台</h2>
       </div>
 
       <el-tabs v-model="activeTab" class="login-tabs">
