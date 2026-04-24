@@ -13,7 +13,7 @@ from loguru import logger
 # 数据库文件路径
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATABASE_DIR = os.path.join(BASE_DIR, "data")
-DATABASE_PATH = os.path.join(DATABASE_DIR, "bilibili.db")
+DATABASE_PATH = os.path.join(DATABASE_DIR, "ugc_streaming_analytics.db")
 
 # 确保数据目录存在
 os.makedirs(DATABASE_DIR, exist_ok=True)
