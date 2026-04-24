@@ -1,7 +1,7 @@
 # 配置管理模块实现文件
 """
 应用配置中心
-统一管理所有配置项，包括数据库、API、爬虫等设置
+统一管理所有配置项，包括数据库、API、公开数据采集等设置
 """
 import os
 from pydantic_settings import BaseSettings
@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """应用配置类"""
     
     # 应用基础配置
-    app_name: str = "Bilibili Analytics Platform"
+    app_name: str = "泛二次元流媒体数据智能分析与可视化平台"
     app_version: str = "2.0.0"
     debug: bool = True
     
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     port: int = 8000
     
     # 数据库配置
-    database_url: str = "sqlite:///./data/bilibili.db"
+    database_url: str = "sqlite:///./data/ugc_streaming_analytics.db"
     
     # CORS 配置
     cors_origins: list = [
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 天
     
-    # B站 API 配置
+    # 某头部弹幕视频网站 API 配置
     bilibili_api_base_url: str = "https://api.bilibili.com"
     bilibili_request_timeout: int = 15
     bilibili_request_delay: float = 2.0  # 请求间隔（秒）
@@ -54,12 +54,12 @@ class Settings(BaseSettings):
 
     # MongoDB 配置（原始弹幕文档存储）
     mongodb_uri: Optional[str] = os.getenv("MONGODB_URI")
-    mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "bilibili_analytics")
+    mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "ugc_streaming_analytics")
     mongodb_danmaku_collection: str = os.getenv("MONGODB_DANMAKU_COLLECTION", "danmaku_raw")
     mongodb_connect_timeout_ms: int = 3000
     
-    # 爬虫配置
-    crawler_pages_to_fetch: int = 5  # 每个分类抓取的页数
+    # 公开数据采集配置
+    crawler_pages_to_fetch: int = 5  # 每个分类同步页数
     crawler_page_size: int = 820  # 每页数据条数
     crawler_user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     

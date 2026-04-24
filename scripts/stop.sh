@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Bilibili Analytics Platform - 停止脚本
+# UGC Streaming Analytics Platform - 停止脚本
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 

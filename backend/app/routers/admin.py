@@ -1,6 +1,6 @@
 """后台管理接口路由。
 
-提供用户管理、爬虫监控与运营看板能力，所有接口均需管理员权限。
+提供用户管理、数据同步监控与运营看板能力，所有接口均需管理员权限。
 """
 from datetime import datetime, timedelta
 from collections import Counter
@@ -15,7 +15,7 @@ from ..auth import AuthService, get_current_admin_user
 from ..database import get_session, engine
 from ..models import User, CrawlLog, Anime, RecommendationStrategyConfig, AITelemetry
 from ..schemas import UserStatusUpdate, ResetPasswordRequest, RecommendationStrategyUpdate
-from ..scraper import BilibiliBangumiCrawler
+from ..scraper import create_crawler
 from ..config import settings
 
 
@@ -130,7 +130,7 @@ def get_crawler_logs(
     session: Session = Depends(get_session),
     _admin=Depends(get_current_admin_user),
 ) -> dict[str, Any]:
-    """获取最近爬虫任务日志。
+    """获取最近数据同步任务日志。
 
     Args:
         limit: 返回日志条数上限。
@@ -138,7 +138,7 @@ def get_crawler_logs(
         _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
 
     Returns:
-        dict[str, Any]: 包含爬虫日志列表的响应字典。
+        dict[str, Any]: 包含数据同步日志列表的响应字典。
     """
     logs = session.exec(
         select(CrawlLog).order_by(desc(CrawlLog.started_at)).limit(limit)
@@ -172,7 +172,7 @@ def _run_update_task() -> None:
     使用独立数据库会话触发番剧基础数据更新，避免复用请求上下文会话。
     """
     with Session(engine) as background_session:
-        crawler = BilibiliBangumiCrawler(background_session)
+        crawler = create_crawler(background_session)
         crawler.anime_sync.update_anime_database()
 
 
@@ -181,7 +181,7 @@ def trigger_crawler_update(
     background_tasks: BackgroundTasks,
     _admin=Depends(get_current_admin_user),
 ) -> dict[str, Any]:
-    """手动触发爬虫更新任务。
+    """手动触发数据同步更新任务。
 
     Args:
         background_tasks: 后台任务调度器。
@@ -191,7 +191,7 @@ def trigger_crawler_update(
         dict[str, Any]: 任务触发结果响应。
     """
     background_tasks.add_task(_run_update_task)
-    return {"success": True, "message": "数据更新任务已启动"}
+    return {"success": True, "message": "数据节点同步任务已启动"}
 
 
 @router.get("/overview", response_model=dict)
@@ -206,7 +206,7 @@ def admin_overview(
         _admin: 当前管理员用户（依赖注入，仅用于鉴权）。
 
     Returns:
-        dict[str, Any]: 包含用户、爬虫与题材分布等指标的响应字典。
+        dict[str, Any]: 包含用户、数据同步与题材分布等指标的响应字典。
     """
     total_users = session.exec(select(func.count()).select_from(User)).one()
     active_users = session.exec(

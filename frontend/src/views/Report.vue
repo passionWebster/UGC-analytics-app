@@ -322,7 +322,7 @@ const handleAnalyze = async () => {
       { bin_size: 15, keyword_topk: 3, top_n: 100 },
     )
     if (!analysisRes.success || analysisRes.pending) {
-      statusMsg.value = analysisRes.message || '该集暂无可分析数据，已触发后台抓取'
+      statusMsg.value = analysisRes.message || '该集暂无可分析数据，已触发后台数据同步'
       microTimelineOption.value = buildMicroTimelineOption([])
       wordcloudOption.value = buildWordcloudOption([])
       return

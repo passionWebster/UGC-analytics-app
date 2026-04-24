@@ -62,7 +62,7 @@ _COVER_CACHE_DIR = os.path.join(
     "cover_cache",
 )
 
-# 哔哩哔哩图片分发域名白名单（用于防止服务端请求伪造）
+# 某头部弹幕视频网站图片分发域名白名单（用于防止服务端请求伪造）
 _ALLOWED_IMAGE_HOSTS = {
     "i0.hdslb.com",
     "i1.hdslb.com",
@@ -402,7 +402,7 @@ def _trigger_danmaku_scrape_for_episode(
     season_id: int,
     cid: str,
 ) -> None:
-    from ..scraper import BilibiliBangumiCrawler
+    from ..scraper import create_crawler
 
     with Session(engine) as bg_session:
         try:
@@ -417,7 +417,7 @@ def _trigger_danmaku_scrape_for_episode(
             if target_index is None:
                 logger.warning("⚠️ skip background scrape: cid not found season_id={} cid={}", season_id, cid)
                 return
-            crawler = BilibiliBangumiCrawler(bg_session)
+            crawler = create_crawler(bg_session)
             crawler.comments.scrape_danmaku_and_comments(
                 season_id=season_id,
                 max_episodes=target_index,
@@ -490,7 +490,7 @@ def get_episode_analysis_with_cache(
     """获取单集分析结果并管理缓存刷新。
 
     策略为优先返回 SQLite 缓存，并根据分集状态决定是否调度 NLP 刷新
-    或触发弹幕抓取任务。
+    或触发弹幕数据同步任务。
 
     Args:
         season_id: 番剧季 ID。
@@ -586,7 +586,7 @@ def get_episode_analysis_with_cache(
         return {
             "success": False,
             "pending": True,
-            "message": "暂无可用弹幕数据，已触发后台抓取，请稍后重试",
+            "message": "暂无可用弹幕数据，已触发后台数据同步，请稍后重试",
             "data": {"timeline": {}, "wordcloud": {}},
         }
 
@@ -753,18 +753,18 @@ def image_proxy(
     season_id: str = Query(..., description="番剧 season_id"),
 ):
     """
-    图片反向代理接口，同时支持 B站图片防盗链绕过和 TMDB 图片缓存。
+    图片反向代理接口，同时支持某头部弹幕视频网站图片防盗链绕过和 TMDB 图片缓存。
 
     处理流程：
     1. 校验 URL 域名是否在白名单内（防止 SSRF）
     2. 命中本地缓存则直接返回 FileResponse
     3. 未命中则向源站发起请求，按域名区分请求头策略：
-       - B站域名：附加 Referer 绕过防盗链
+       - 某头部弹幕视频网站域名：附加 Referer 绕过防盗链
        - TMDB 域名：使用标准 User-Agent，无需 Referer
     4. 将图片二进制写入本地缓存后返回
 
     Args:
-        url: 原始图片链接（支持 B站 CDN 和 image.tmdb.org）
+        url: 原始图片链接（支持某头部弹幕视频网站 CDN 和 image.tmdb.org）
         title: 番剧名（用于生成缓存文件名）
         season_id: 番剧 season_id（用于生成缓存文件名）
 
@@ -776,7 +776,7 @@ def image_proxy(
     # 校验图片地址仅指向白名单域名（防止服务端请求伪造）
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or parsed.hostname not in _ALLOWED_IMAGE_HOSTS:
-        raise HTTPException(status_code=400, detail="不支持的图片域名，仅允许 B站图片 CDN 及 TMDB 图片域名")
+        raise HTTPException(status_code=400, detail="不支持的图片域名，仅允许某头部弹幕视频网站图片 CDN 及 TMDB 图片域名")
 
     # 生成安全的文件名：清理特殊字符，保留字母、数字、中文、连字符
     safe_title = re.sub(r"[^\w\u4e00-\u9fff\-]", "_", title)
@@ -794,7 +794,7 @@ def image_proxy(
     if os.path.exists(filepath):
         return FileResponse(filepath)
 
-    # 按域名区分请求头策略：哔哩哔哩需要伪造来源页，TMDB 无需
+    # 按域名区分请求头策略：某头部弹幕视频网站需要伪造来源页，TMDB 无需
     is_bilibili = parsed.hostname != "image.tmdb.org"
     headers = {"User-Agent": "Mozilla/5.0"}
     if is_bilibili:
@@ -993,7 +993,7 @@ def search_animes(
     session: Session = Depends(get_session)
 ):
     """
-    搜索番剧。若本地数据库中无匹配结果，则实时调用 B 站开放接口抓取并写入数据库。
+    搜索番剧。若本地数据库中无匹配结果，则实时调用某头部弹幕视频网站公开接口进行数据同步并写入数据库。
 
     Args:
         keyword: 搜索关键词
@@ -1002,17 +1002,17 @@ def search_animes(
     Returns:
         搜索结果列表
     """
-    from ..scraper import BilibiliBangumiCrawler
+    from ..scraper import create_crawler
 
     analytics_service = AnalyticsService(session)
     results = analytics_service.search_anime_by_title(keyword)
 
     if not results:
-        # 本地未命中，触发实时抓取
-        crawler = BilibiliBangumiCrawler(session)
+        # 本地未命中，触发实时数据同步
+        crawler = create_crawler(session)
         season_id = crawler.anime_sync.fetch_and_save_anime_with_episodes(keyword)
         if season_id:
-            # 抓取成功后重新查询数据库
+            # 数据同步成功后重新查询数据库
             results = analytics_service.search_anime_by_title(keyword)
 
     return {

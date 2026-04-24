@@ -32,7 +32,7 @@
       <div class="messages" ref="messagesContainer">
         <!-- 挂载时显示欢迎消息 -->
         <div class="message bot-message">
-          您好！我是AI助手，专门为B站分析系统服务。
+          您好！我是AI助手，专门为UGC流媒体平台分析系统服务。
         </div>
         <div class="message bot-message">
           您可以问我关于番剧数据、用户行为分析、系统使用等问题。我会尽力为您提供帮助！

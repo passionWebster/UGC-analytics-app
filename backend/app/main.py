@@ -22,7 +22,7 @@ from .scheduler import create_scheduler
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="Bilibili 番剧数据分析平台 - 统一的 FastAPI 后端服务",
+    description="泛二次元流媒体数据智能分析与可视化平台 - 统一的 FastAPI 后端服务",
     docs_url="/api/docs",  # Swagger UI 文档地址
 )
 

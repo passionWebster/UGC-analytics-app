@@ -378,7 +378,7 @@ const yearlyCategories: Array<{ value: string; label: string }> = [
 const allAreas = ['国内', '日本', '美国']
 const selectedScatterAreas = ref<string[]>(['国内', '日本', '美国'])
 const areaColorMap: Record<string, string> = {
-  '国内': '#FB7299',
+  '国内': '#3B82F6',
   '日本': '#23ADE5',
   '美国': '#FFCE56',
 }
