@@ -1,4 +1,4 @@
-"""爬虫控制相关接口路由。"""
+"""数据同步控制相关接口路由。"""
 
 from typing import Any, Literal
 
@@ -7,10 +7,10 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from ..database import get_session, engine
-from ..scraper import BilibiliBangumiCrawler
+from ..scraper import create_crawler
 
 
-router = APIRouter(prefix="/api/crawler", tags=["爬虫"])
+router = APIRouter(prefix="/api/crawler", tags=["数据同步"])
 
 
 @router.post("/update", response_model=dict)
@@ -25,30 +25,30 @@ def trigger_update(
     Returns:
         触发结果
     """
-    # 在后台执行爬虫任务（任务内自行创建独立会话）
+    # 在后台执行数据同步任务（任务内自行创建独立会话）
     background_tasks.add_task(_run_update_task)
     
     return {
         "success": True,
-        "message": "数据更新任务已启动，请稍后查看结果"
+        "message": "数据节点同步任务已启动，请稍后查看结果"
     }
 
 
 @router.get("/status", response_model=dict)
 def get_crawler_status(session: Session = Depends(get_session)) -> dict[str, Any]:
     """
-    获取爬虫状态
+    获取数据同步状态
     
     Args:
         session: 数据库会话
         
     Returns:
-        爬虫状态信息
+        数据同步状态信息
     """
     from ..models import CrawlLog
     from sqlmodel import select, desc
     
-    # 获取最近的爬虫日志
+    # 获取最近的数据同步日志
     latest_log = session.exec(
         select(CrawlLog).order_by(desc(CrawlLog.started_at)).limit(1)
     ).first()
@@ -57,7 +57,7 @@ def get_crawler_status(session: Session = Depends(get_session)) -> dict[str, Any
         return {
             "success": True,
             "status": "never_run",
-            "message": "尚未执行过爬虫任务"
+            "message": "尚未执行过数据同步任务"
         }
     
     return {
@@ -83,7 +83,7 @@ def search_anime_id(title: str, session: Session = Depends(get_session)) -> dict
     Returns:
         番剧 ID
     """
-    crawler = BilibiliBangumiCrawler(session)
+    crawler = create_crawler(session)
     season_id = crawler.anime_sync.search_anime_by_title(title)
     
     if not season_id:
@@ -100,16 +100,16 @@ def search_anime_id(title: str, session: Session = Depends(get_session)) -> dict
 
 
 class ScrapeDanmakuRequest(BaseModel):
-    """弹幕/评论抓取请求模型。"""
+    """弹幕/评论公开数据采集请求模型。"""
 
     season_id: int
     mode: Literal["incremental", "full"] = "incremental"
-    max_episodes: int | None = 3  # 最多抓取前若干集，默认 3
+    max_episodes: int | None = 3  # 最多同步前若干集，默认 3
     comment_limit: int | None = 50  # 每集最多评论条数，默认 50
     include_comment_replies: bool | None = True
     nested_reply_limit: int | None = 20
     retry_attempts: int | None = None
-    run_sentiment: bool | None = True  # 是否在抓取后立即进行情感分析
+    run_sentiment: bool | None = True  # 是否在同步后立即进行情感分析
 
 
 def _scrape_and_score(
@@ -122,10 +122,10 @@ def _scrape_and_score(
     retry_attempts: int | None,
     run_sentiment: bool,
 ) -> None:
-    """后台任务：抓取弹幕与评论，并触发异步情感分析处理。"""
+    """后台任务：采集弹幕与评论，并触发异步情感分析处理。"""
 
     with Session(engine) as session:
-        crawler = BilibiliBangumiCrawler(session)
+        crawler = create_crawler(session)
         crawler.comments.scrape_danmaku_and_comments(
             season_id=season_id,
             max_episodes=max_episodes,
@@ -142,7 +142,7 @@ def _scrape_and_score(
 def _run_update_task() -> None:
     """后台任务：更新番剧基础数据（使用独立会话）。"""
     with Session(engine) as session:
-        crawler = BilibiliBangumiCrawler(session)
+        crawler = create_crawler(session)
         crawler.anime_sync.update_anime_database()
 
 
@@ -152,7 +152,7 @@ def trigger_danmaku_scrape(
     background_tasks: BackgroundTasks,
 ) -> dict[str, Any]:
     """
-    触发指定番剧的弹幕与评论抓取（后台异步执行）。
+    触发指定番剧的弹幕与评论公开数据采集（后台异步执行）。
 
     Args:
         req: 包含 season_id、max_episodes、comment_limit、run_sentiment
@@ -174,7 +174,7 @@ def trigger_danmaku_scrape(
     return {
         "success": True,
         "message": (
-            f"弹幕/评论抓取任务已启动 (season_id={req.season_id}, "
+            f"弹幕/评论数据节点同步任务已启动 (season_id={req.season_id}, "
             f"mode={req.mode}, 前 {req.max_episodes} 集, "
             f"楼中楼={'开启' if req.include_comment_replies else '关闭'}, "
             f"情感分析={'开启' if req.run_sentiment else '关闭'})"

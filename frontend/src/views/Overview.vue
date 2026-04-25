@@ -553,7 +553,7 @@ const renderPreferenceChart = async () => {
       regionCount: d.regionCount,
       globalCount: d.globalCount,
       itemStyle: {
-        color: userPreferences.includes(d.style) ? '#fb7299' : '#87CEFA',
+        color: userPreferences.includes(d.style) ? '#3b82f6' : '#87CEFA',
         borderRadius: 4,
         borderWidth: 2,
         borderColor: '#fff',

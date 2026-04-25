@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Bilibili Analytics Platform - 启动脚本
+# UGC Streaming Analytics Platform - 启动脚本
 # 一键启动前后端服务
 
-echo "🚀 正在启动 Bilibili Analytics Platform..."
+echo "🚀 正在启动 UGC Streaming Analytics Platform..."
 echo "======================================"
 
 # 检查 Python 环境

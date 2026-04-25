@@ -1,9 +1,9 @@
 {
-  "name": "bilibili-analytics-frontend",
+  "name": "ugc-streaming-analytics-frontend",
   "version": "2.0.0",
   "type": "module",
   "private": true,
-  "description": "Bilibili Analytics Platform - Vue 3 Frontend",
+  "description": "泛二次元流媒体数据智能分析与可视化平台 - Vue 3 Frontend",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",

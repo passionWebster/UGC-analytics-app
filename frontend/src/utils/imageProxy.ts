@@ -16,7 +16,7 @@ export const getProxiedImageUrl = (anime: AnimeData): string => {
  * 获取任意 URL 的代理图片地址（用于 TMDB 图片等非番剧封面的场景）。
  * 若 url 为空，则返回空字符串。
  *
- * @param url - 原始图片链接（支持 B站 CDN 和 image.tmdb.org）
+ * @param url - 原始图片链接（支持某头部弹幕视频网站 CDN 和 image.tmdb.org）
  * @param title - 番剧名（用于生成缓存文件名）
  * @param seasonId - 番剧 season_id（用于生成缓存文件名）
  * @returns 代理后的图片 URL，或空字符串

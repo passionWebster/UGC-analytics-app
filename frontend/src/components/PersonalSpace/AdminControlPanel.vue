@@ -28,7 +28,7 @@
         </div>
         <div class="section-actions" v-else-if="activeMenu === 'crawler'">
           <el-button type="primary" :loading="triggeringUpdate" @click="triggerUpdate">
-            手动更新热门番剧
+            手动同步热门番剧
           </el-button>
           <el-button :loading="loadingCrawler" @click="loadCrawler">刷新状态</el-button>
         </div>
@@ -92,7 +92,7 @@
                   <span>{{ latestCrawl.task_type || '--' }}</span>
                 </div>
                 <div class="stat-line">
-                  <span>抓取条数：</span>
+                  <span>同步条数：</span>
                   <span>{{ latestCrawl.items_count ?? 0 }}</span>
                 </div>
                 <div class="stat-line">
@@ -112,7 +112,7 @@
             <el-col :span="16">
               <el-card shadow="never" class="rounded-card">
                 <div class="card-header">
-                  <h4>最近爬虫日志</h4>
+                  <h4>最近数据同步日志</h4>
                   <el-button text type="primary" @click="loadCrawler">刷新</el-button>
                 </div>
                 <el-table v-loading="loadingCrawler" :data="crawlerLogs" border height="320">
@@ -231,7 +231,7 @@ type AdminTab = 'users' | 'crawler' | 'analytics'
 
 const tabs: Array<{ id: AdminTab; label: string }> = [
   { id: 'users', label: '用户管理' },
-  { id: 'crawler', label: '数据与爬虫监控' },
+  { id: 'crawler', label: '数据与同步监控' },
   { id: 'analytics', label: '推荐与 AI 监控' },
 ]
 const activeMenu = ref<AdminTab>('users')
@@ -284,7 +284,7 @@ const resetPassword = async (row: AdminUser) => {
   }
 }
 
-// 爬虫监控
+// 数据同步监控
 const crawlerLogs = ref<any[]>([])
 const latestCrawl = reactive<any>({})
 const loadingCrawler = ref(false)
@@ -301,7 +301,7 @@ const loadCrawler = async () => {
       }
     }
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || '加载爬虫日志失败')
+    ElMessage.error(err?.response?.data?.detail || '加载数据同步日志失败')
   } finally {
     loadingCrawler.value = false
   }

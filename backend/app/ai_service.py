@@ -5,7 +5,7 @@ AI 助手服务
 
 架构说明：
   - _request_api(message, system_prompt)  ← 核心私有方法：鉴权、组包、HTTP 请求、错误处理、TTLCache
-  - chat(message, context)                ← 通用问答，system_prompt = B站数据分析助手人设
+  - chat(message, context)                ← 通用问答，system_prompt = UGC流媒体平台数据分析助手人设
   - generate_insight(data, context_hint)  ← Auto-EDA，system_prompt = 资深二次元数据分析师人设
   - text_to_sql(natural_language)         ← Text-to-SQL，system_prompt = SQLite 专家 + Schema
 
@@ -60,7 +60,7 @@ class AIService:
 
     def chat(self, message: str, context: Optional[str] = None) -> str:
         """
-        通用问答：B站数据分析助手人设。
+        通用问答：UGC流媒体平台数据分析助手人设。
 
         Args:
             message: 用户消息
@@ -73,7 +73,7 @@ class AIService:
             HTTPException: 服务不可用或请求失败
         """
         system_prompt = (
-            "你是一个B站数据分析助手，帮助用户理解B站番剧数据、用户行为分析报告和系统使用。"
+            "你是一个UGC流媒体平台数据分析助手，帮助用户理解平台番剧数据、用户行为分析报告和系统使用。"
         )
         if context:
             system_prompt += f"\n\n当前上下文：{context}"

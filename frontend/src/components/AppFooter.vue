@@ -4,7 +4,8 @@
       <div class="row">
         <div class="col-md-4">
           <h5>关于平台</h5>
-          <p>Bilibili 智能分析平台提供专业的番剧数据分析和可视化服务</p>
+          <p>泛二次元流媒体数据智能分析与可视化平台</p>
+          <p>提供专业的番剧数据分析和可视化服务</p>
         </div>
         <div class="col-md-4">
           <h5>快速链接</h5>
@@ -18,14 +19,14 @@
         <div class="col-md-4">
           <h5>联系我们</h5>
           <p>
-            <i class="fas fa-envelope me-2"></i>support@bilibili-analytics.com<br>
+            <i class="fas fa-envelope me-2"></i>support@ugc-streaming-analytics.com<br>
             <i class="fas fa-github me-2"></i>GitHub Repository
           </p>
         </div>
       </div>
       <div class="row mt-3">
         <div class="col text-center">
-          <p class="mb-0">&copy; 2026 Bilibili Analytics Platform. All rights reserved.</p>
+          <p class="mb-0">&copy; 2026 UGC Streaming Analytics Platform. All rights reserved.</p>
         </div>
       </div>
     </div>

@@ -331,7 +331,7 @@ const selectedAnime = ref<AnimeData | null>(null)
 const selectedDetail = ref<AnimeDetailData | null>(null)
 // Logo 图片加载失败标记
 const logoError = ref(false)
-// 海报降级标记（TMDB 海报失败时回退到 B站封面）
+// 海报降级标记（TMDB 海报失败时回退到某头部弹幕视频网站封面）
 const posterFallback = ref(false)
 const selectedExplanation = ref<RecommendationExplanationResponse['data'] | null>(null)
 const isStrategyWeightsExpanded = ref(true)
@@ -365,7 +365,7 @@ const preferencesText = computed<string>(() => {
     : '根据您的观看历史和偏好，为您推荐相似的番剧'
 })
 
-/** 当前海报 URL：优先使用 TMDB poster，降级使用 B站封面 */
+/** 当前海报 URL：优先使用 TMDB poster，降级使用某头部弹幕视频网站封面 */
 const currentPosterUrl = computed<string>(() => {
   const detail = selectedDetail.value
   if (!detail) return '/placeholder.jpg'
@@ -386,7 +386,7 @@ const proxyTmdb = (url: string): string => {
   return getProxiedUrl(url, selectedDetail.value.title, selectedDetail.value.season_id)
 }
 
-/** 海报图片加载失败时降级到 B站封面 */
+/** 海报图片加载失败时降级到某头部弹幕视频网站封面 */
 const useFallbackPoster = () => {
   posterFallback.value = true
 }

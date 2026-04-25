@@ -1,4 +1,4 @@
-# Bilibili 智能分析平台
+# 泛二次元流媒体数据智能分析与可视化平台
 
 <div align="center">
 
@@ -19,9 +19,9 @@
 
 ## 📖 项目简介
 
-**Bilibili 智能分析平台**通过爬取 B 站公开番剧数据，提供多维度的数据可视化分析。用户可以在精美的仪表盘中探索番剧排行、播放趋势、风格分布，并通过内置的 AI 助手获得个性化推荐与解读。
+**泛二次元流媒体数据智能分析与可视化平台**通过公开数据采集某头部弹幕视频网站番剧数据，提供多维度的数据可视化分析。用户可以在精美的仪表盘中探索番剧排行、播放趋势、风格分布，并通过内置的 AI 助手获得个性化推荐与解读。
 
-> 解决痛点：B 站官方页面信息分散、无法跨维度对比，本平台将所有数据汇聚一处，通过图表与 AI 一站式呈现洞察。
+> 解决痛点：某头部弹幕视频网站官方页面信息分散、无法跨维度对比，本平台将所有数据汇聚一处，通过图表与 AI 一站式呈现洞察。
 
 ## ✨ 核心特性
 
@@ -30,7 +30,7 @@
 - 🔍 **番剧状态检测** — 实时查看任意番剧的播放量趋势、剧集详情与观看时间分布
 - 🎯 **个性化推荐** — 基于用户偏好标签，多维度排序筛选番剧
 - 🔐 **JWT 用户系统** — 注册、登录、个人偏好管理
-- 📡 **定时数据同步** — APScheduler 后台自动爬取最新番剧数据
+- 📡 **定时数据同步** — APScheduler 后台自动执行公开数据采集与数据同步
 - 🗂️ **数据大屏** — 全屏数据可视化展示模式
 
 ## 🛠️ 技术栈
@@ -78,7 +78,7 @@ SECRET_KEY="your-strong-random-secret"   # 用于 JWT 签名，必须修改
 DOUBAO_API_KEY="your-doubao-api-key"      # AI 助手功能所需（可选）
 DOUBAO_MODEL="your-model-endpoint-id"    # AI 模型端点 ID（可选）
 MONGODB_URI="mongodb+srv://<user>:<password>@<cluster>/<db>?retryWrites=true&w=majority"  # 原始弹幕文档（推荐）
-MONGODB_DB_NAME="bilibili_analytics"
+MONGODB_DB_NAME="ugc_streaming_analytics"
 MONGODB_DANMAKU_COLLECTION="danmaku_raw"
 ```
 
@@ -150,7 +150,7 @@ npm run build        # 生产构建
 | 个人空间 | `/personal-space` | 收藏管理、密码修改、个人统计 |
 | 管理入口 | `/admin` | 重定向到个人空间管理 Tab（管理员权限） |
 
-**触发数据爬取**（需要登录）：在首页或通过 API `POST /api/crawler/update` 手动触发。
+**触发数据同步**（需要登录）：在首页或通过 API `POST /api/crawler/update` 手动触发。
 
 ## 📁 项目结构
 
@@ -173,7 +173,7 @@ bilibili-analytics-app/
 │   │   ├── nlp_pipeline.py   # NLP 文本处理与聚合
 │   │   ├── tasks.py          # NLP 任务编排
 │   │   ├── nlp_worker_pool.py# 多进程 NLP Worker 池
-│   │   ├── scraper/          # 爬虫模块包（组合式 façade）
+│   │   ├── scraper/          # 公开数据采集模块包（组合式 façade）
 │   │   │   ├── crawler.py
 │   │   │   ├── anime_sync.py
 │   │   │   ├── episode_sync.py
