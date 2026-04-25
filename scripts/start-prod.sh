@@ -20,6 +20,8 @@ fi
 
 # 项目根目录
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BACKEND_PORT="${PORT:-8000}"
+FRONTEND_PORT="${FRONTEND_PORT:-4173}"
 
 # 启动后端服务 (FastAPI)
 echo ""
@@ -37,10 +39,10 @@ pip install -q -r requirements.txt
 
 # 后台启动 FastAPI
 mkdir -p "$ROOT_DIR/logs"
-nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > "$ROOT_DIR/logs/backend.log" 2>&1 &
+nohup python -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" > "$ROOT_DIR/logs/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo "  ✅ 后端服务已启动 (PID: $BACKEND_PID)"
-echo "  📖 API 文档: http://localhost:8000/api/docs"
+echo "  📖 API 文档: http://localhost:${BACKEND_PORT}/api/docs"
 
 # 启动前端服务 (Vue 3 + Vite Preview)
 echo ""
@@ -57,10 +59,10 @@ echo "  正在执行前端生产构建..."
 npm run build
 
 # 后台启动 Vite Preview（生产构建产物）
-nohup npm run preview -- --host 0.0.0.0 --port 4173 > "$ROOT_DIR/logs/frontend.log" 2>&1 &
+nohup npm run preview -- --host 0.0.0.0 --port "$FRONTEND_PORT" > "$ROOT_DIR/logs/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo "  ✅ 前端服务已启动 (PID: $FRONTEND_PID)"
-echo "  🌐 前端地址: http://localhost:4173"
+echo "  🌐 前端地址: http://localhost:${FRONTEND_PORT}"
 
 # 保存 PID
 echo $BACKEND_PID > "$ROOT_DIR/logs/backend.pid"
@@ -70,8 +72,8 @@ echo ""
 echo "======================================"
 echo "🎉 所有服务启动成功（生产模式）！"
 echo ""
-echo "📊 后端 API: http://localhost:8000"
-echo "🌐 前端应用: http://localhost:4173"
+echo "📊 后端 API: http://localhost:${BACKEND_PORT}"
+echo "🌐 前端应用: http://localhost:${FRONTEND_PORT}"
 echo ""
 echo "查看日志:"
 echo "  后端: tail -f logs/backend.log"
