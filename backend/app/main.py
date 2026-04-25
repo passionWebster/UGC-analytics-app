@@ -3,20 +3,19 @@
 FastAPI 应用主入口
 整合所有路由和中间件，启动应用服务
 """
-import time
 import logging
+import time
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .database import init_database
 from .config import settings
+from .database import init_database
 from .logger import app_logger
 from .nlp_worker_pool import start_nlp_worker_pool, stop_nlp_worker_pool
-from .routers import auth, analytics, ai, crawler, admin, user_space
+from .routers import admin, ai, analytics, auth, crawler, user_space
 from .scheduler import create_scheduler
-
 
 # 创建 FastAPI 应用实例
 app = FastAPI(

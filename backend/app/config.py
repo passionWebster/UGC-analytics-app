@@ -4,8 +4,8 @@
 统一管理所有配置项，包括数据库、API、爬虫等设置
 """
 import os
+
 from pydantic_settings import BaseSettings
-from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -45,16 +45,16 @@ class Settings(BaseSettings):
     bilibili_retry_backoff_base: float = 0.8
     bilibili_retry_backoff_max: float = 8.0
     bilibili_request_jitter: float = 0.4
-    bilibili_sessdata: Optional[str] = os.getenv("BILIBILI_SESSDATA")
+    bilibili_sessdata: str | None = os.getenv("BILIBILI_SESSDATA")
     crawler_proxy_enabled: bool = False
-    crawler_proxy_pool: Optional[str] = os.getenv("CRAWLER_PROXY_POOL")
+    crawler_proxy_pool: str | None = os.getenv("CRAWLER_PROXY_POOL")
     crawler_comment_page_size: int = 20
     crawler_nested_reply_limit: int = 20
     crawler_nested_reply_pages: int = 2
     crawler_history_months: int = 24
 
     # MongoDB 配置（原始弹幕文档存储）
-    mongodb_uri: Optional[str] = os.getenv("MONGODB_URI")
+    mongodb_uri: str | None = os.getenv("MONGODB_URI")
     mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "bilibili_analytics")
     mongodb_danmaku_collection: str = os.getenv("MONGODB_DANMAKU_COLLECTION", "danmaku_raw")
     mongodb_connect_timeout_ms: int = 3000
@@ -69,11 +69,11 @@ class Settings(BaseSettings):
     
     # AI 服务配置
     doubao_api_url: str = "https://ark.cn-beijing.volces.com/api/v3/responses"
-    doubao_api_key: Optional[str] = os.getenv("DOUBAO_API_KEY")
+    doubao_api_key: str | None = os.getenv("DOUBAO_API_KEY")
     doubao_model: str = "doubao-seed-1-6-250615"
 
     # TMDB API 配置
-    tmdb_api_key: Optional[str] = os.getenv("TMDB_API_KEY")  # 从环境变量读取，未配置时 TMDB 功能自动降级
+    tmdb_api_key: str | None = os.getenv("TMDB_API_KEY")  # 从环境变量读取，未配置时 TMDB 功能自动降级
     tmdb_api_base_url: str = "https://api.themoviedb.org/3"
     tmdb_image_base_original: str = "https://image.tmdb.org/t/p/original"  # 背景图使用原始分辨率
     tmdb_image_base_w500: str = "https://image.tmdb.org/t/p/w500"  # Logo/海报使用 w500
