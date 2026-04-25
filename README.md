@@ -9,9 +9,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-6.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 
-**一个现代化的 B 站番剧数据分析与可视化全栈 Web 应用。**
+**一个现代化的番剧数据分析与可视化全栈 Web 应用。**
 
-[快速开始](#-快速开始) · [核心特性](#-核心特性) · [技术栈](#-技术栈) · [提交 Issue](https://github.com/passionWebster/bilibili-analytics-app/issues)
+[快速开始](#-快速开始) · [核心特性](#-核心特性) · [技术栈](#-技术栈) · [提交 Issue](https://github.com/passionWebster/UGC-analytics-app/issues)
 
 </div>
 
@@ -61,8 +61,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/passionWebster/bilibili-analytics-app.git
-cd bilibili-analytics-app
+git clone https://github.com/passionWebster/UGC-analytics-app.git
+cd UGC-analytics-app
 ```
 
 ### 2. 配置环境变量
@@ -100,7 +100,6 @@ chmod +x scripts/start.sh scripts/stop.sh
 | 前端应用 | http://localhost:5173 |
 | 后端 API | http://localhost:8000 |
 | Swagger 文档 | http://localhost:8000/api/docs |
-| ReDoc 文档 | http://localhost:8000/redoc |
 
 ### 5. 停止服务
 
@@ -155,7 +154,7 @@ npm run build        # 生产构建
 ## 📁 项目结构
 
 ```text
-bilibili-analytics-app/
+UGC-analytics-app/
 ├── backend/                  # FastAPI 后端
 │   ├── app/
 │   │   ├── main.py           # 应用入口 & 中间件
@@ -250,5 +249,5 @@ bilibili-analytics-app/
 
 ## 📬 联系方式
 
-- **GitHub Issues**: [提交问题或建议](https://github.com/passionWebster/bilibili-analytics-app/issues)
+- **GitHub Issues**: [提交问题或建议](https://github.com/passionWebster/UGC-analytics-app/issues)
 - **GitHub**: [@passionWebster](https://github.com/passionWebster)
