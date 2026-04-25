@@ -126,11 +126,15 @@ async def startup_event():
     init_database()
 
     # 启动定时任务调度器（AsyncIOScheduler）
-    scheduler = create_scheduler()
-    scheduler.start()
-    # 将 scheduler 挂载到 app.state，以便 shutdown 时停止
-    app.state.scheduler = scheduler
-    app_logger.info("⏰ 定时任务已启动：每 1 小时刷新剧集在线人数；每月 1 日 2:00 生成月度快照")
+    if settings.scheduler_enabled:
+        scheduler = create_scheduler()
+        scheduler.start()
+        # 将 scheduler 挂载到 app.state，以便 shutdown 时停止
+        app.state.scheduler = scheduler
+        app_logger.info("⏰ 定时任务已启动：每 1 小时刷新剧集在线人数；每月 1 日 2:00 生成月度快照")
+    else:
+        app.state.scheduler = None
+        app_logger.info("⏸️ 定时任务已禁用（SCHEDULER_ENABLED=False）")
     start_nlp_worker_pool()
 
     app_logger.info("✅ 服务器启动成功")

@@ -84,25 +84,35 @@ MONGODB_DANMAKU_COLLECTION="danmaku_raw"
 
 > ⚠️ `backend/.env` 已加入 `.gitignore`，切勿提交到版本控制。
 
-### 3. 一键启动（推荐）
+### 3. 一键启动（开发模式）
 
 ```bash
 chmod +x scripts/start.sh scripts/stop.sh
 ./scripts/start.sh
 ```
 
-脚本将自动完成：创建 Python 虚拟环境 → 安装后端依赖 → 安装前端依赖 → 启动双服务。
+脚本将自动完成：创建 Python 虚拟环境 → 安装后端依赖 → 安装前端依赖 → 启动双服务（前端 dev server）。
 
-### 4. 访问应用
+### 4. 一键启动（生产模式，推荐部署 Linux 服务器使用）
+
+```bash
+chmod +x scripts/start-prod.sh scripts/stop.sh
+./scripts/start-prod.sh
+```
+
+生产模式脚本会先执行 `npm run build`，再以 `vite preview` 托管构建产物，避免在线上直接运行 `npm run dev`。
+
+### 5. 访问应用
 
 | 服务 | 地址 |
 |------|------|
-| 前端应用 | http://localhost:5173 |
+| 前端应用（开发模式） | http://localhost:5173 |
+| 前端应用（生产模式） | http://localhost:4173 |
 | 后端 API | http://localhost:8000 |
 | Swagger 文档 | http://localhost:8000/api/docs |
 | ReDoc 文档 | http://localhost:8000/redoc |
 
-### 5. 停止服务
+### 6. 停止服务
 
 ```bash
 ./scripts/stop.sh
@@ -128,13 +138,21 @@ cd frontend
 npm install
 npm run dev          # 开发模式
 npm run build        # 生产构建
+npm run preview -- --host 0.0.0.0 --port 4173  # 生产预览
 ```
+
+**低配服务器建议（可选）**
+```env
+SCHEDULER_ENABLED=False
+NLP_WORKER_PROCESSES=1
+```
+可减少后台定时任务和 NLP 多进程占用，优先保障主 API 可用性。
 
 </details>
 
 ## 📋 使用说明
 
-首次访问 http://localhost:5173，通过注册页面创建账号，登录后即可访问完整功能。
+首次访问（开发模式）http://localhost:5173 或（生产模式）http://localhost:4173，通过注册页面创建账号，登录后即可访问完整功能。
 
 **主要页面**
 
@@ -208,6 +226,7 @@ bilibili-analytics-app/
 │
 ├── scripts/
 │   ├── start.sh              # 一键启动脚本
+│   ├── start-prod.sh         # 生产模式启动脚本（build + preview）
 │   └── stop.sh               # 停止服务脚本
 │
 ├── .env.example              # 环境变量模板

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # 服务器配置
     host: str = "0.0.0.0"
     port: int = 8000
+    scheduler_enabled: bool = True
     
     # 数据库配置
     database_url: str = "sqlite:///./data/bilibili.db"
@@ -82,7 +83,7 @@ class Settings(BaseSettings):
     # Multiprocessing（异步 NLP 任务）
     nlp_worker_pool_enabled: bool = True
     nlp_worker_start_method: str = os.getenv("NLP_WORKER_START_METHOD", "spawn")
-    nlp_worker_processes: int = max(1, int(os.getenv("NLP_WORKER_PROCESSES", "2")))
+    nlp_worker_processes: int = max(1, int(os.getenv("NLP_WORKER_PROCESSES", "1")))
     nlp_worker_queue_maxsize: int = max(1, int(os.getenv("NLP_WORKER_QUEUE_MAXSIZE", "1000")))
     nlp_worker_shutdown_timeout: int = max(1, int(os.getenv("NLP_WORKER_SHUTDOWN_TIMEOUT", "5")))
     nlp_async_fallback_local: bool = True
