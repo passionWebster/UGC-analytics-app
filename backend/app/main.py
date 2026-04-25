@@ -125,6 +125,7 @@ async def startup_event():
     init_database()
 
     # 启动定时任务调度器（AsyncIOScheduler）
+    # 低配服务器可通过 SCHEDULER_ENABLED=False 关闭，降低后台资源占用
     if settings.scheduler_enabled:
         scheduler = create_scheduler()
         scheduler.start()

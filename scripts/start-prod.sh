@@ -59,7 +59,7 @@ echo "  正在执行前端生产构建..."
 npm run build
 
 # 后台启动 Vite Preview（生产构建产物）
-nohup npm run preview -- --host 0.0.0.0 --port "$FRONTEND_PORT" > "$ROOT_DIR/logs/frontend.log" 2>&1 &
+VITE_BACKEND_PORT="$BACKEND_PORT" nohup npm run preview -- --host 0.0.0.0 --port "$FRONTEND_PORT" > "$ROOT_DIR/logs/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo "  ✅ 前端服务已启动 (PID: $FRONTEND_PID)"
 echo "  🌐 前端地址: http://localhost:${FRONTEND_PORT}"
