@@ -215,20 +215,21 @@ UGC-analytics-app/
 └── README.md
 ```
 
-## 🗺️ 路线图
+// AI辅助生成：DeepSeek-R1, 2026-04-26
+## 🗺️ 后续规划
 
-- [x] FastAPI + SQLite 统一后端
-- [x] Vue 3 + TypeScript + Vite 前端重构
+- [x] 基于 FastAPI + SQLite 的统一后端
+- [x] 基于 Vue 3 + TypeScript + Vite 的前端重构
 - [x] JWT 用户认证系统
 - [x] ECharts 多维数据可视化
 - [x] APScheduler 定时数据同步
-- [x] 豆包 AI 聊天助手
+- [x] 豆包 AI 聊天助手集成
 - [ ] Docker Compose 一键容器化部署
-- [ ] 数据导出（Excel / CSV）
+- [ ] 数据导出功能（Excel / CSV）
 - [ ] WebSocket 实时推送
 - [ ] 移动端响应式适配
 - [ ] 单元测试覆盖
-- [ ] Redis 缓存层
+- [ ] Redis 缓存层引入
 - [ ] 国际化 (i18n)
 
 ## 🤝 贡献指南
