@@ -411,11 +411,10 @@ def _get_mongo_episode_items(cid: str | None) -> list[dict[str, Any]] | None:
     for item in items:
         if not isinstance(item, dict):
             continue
-        content = str(item.get("content") or item.get("text") or "").strip()
+        content = (item.get("content") or item.get("text") or "").strip()
         if not content:
             continue
-        merged = dict(item)
-        merged["content"] = content
+        merged = {**item, "content": content}
         normalized.append(merged)
     return normalized or None
 
