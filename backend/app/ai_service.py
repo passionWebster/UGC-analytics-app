@@ -63,12 +63,24 @@ _PROJECT_KNOWLEDGE_FILES = (
 
 # 语料分片上限：约等价于 6k~8k 中英混合 token，控制 prompt 体积与响应延迟。
 _MAX_KNOWLEDGE_CHARS_PER_FILE = 24000
+# RAG 返回的文档数量上限，避免提示词被检索片段挤满。
 _MAX_RAG_DOCS = 4
+# 每个文档最多保留的匹配行数，控制上下文可读性与 token 占用。
 _MAX_RAG_LINES_PER_DOC = 3
+# 单次检索最多使用的关键词数量，平衡召回与性能。
 _MAX_QUERY_TERMS = 12
+# 单行片段最大字符长度，避免把超长源码行直接拼入提示词。
 _MAX_SNIPPET_LINE_CHARS = 180
 _ASCII_IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 _CHINESE_TERM_PATTERN = re.compile(r"[\u4e00-\u9fff]{2,}")
+_PATH_MATCH_SCORE = 3
+_LINE_MATCH_SCORE = 2
+_PROJECT_CHAT_SYSTEM_INSTRUCTION = (
+    "你是 UGC-analytics-app 项目的技术助手。"
+    "你的回答必须优先依据提供的项目知识摘要与相关模块片段（RAG检索结果）。"
+    "回答项目问题时请尽量明确指出对应的模块、文件或接口路径。"
+    "如果上下文不足以确定答案，你必须先说明信息不足并提出澄清问题，严禁编造项目中不存在的实现。"
+)
 
 
 class AIService:
@@ -112,12 +124,7 @@ class AIService:
         """
         project_context = self._build_project_context(message=message, context=context or "")
         system_prompt = (
-            "你是 UGC-analytics-app 项目的技术助手。"
-            "你的回答必须优先依据提供的项目知识摘要与相关模块片段（RAG检索结果）。"
-            "回答项目问题时请尽量明确指出对应的模块、文件或接口路径。"
-            "如果上下文不足以确定答案，你必须先说明信息不足并提出澄清问题，严禁编造项目中不存在的实现。"
-            "\n\n"
-            f"{project_context}"
+            _PROJECT_CHAT_SYSTEM_INSTRUCTION + "\n\n" + project_context
         )
         return self._request_api(message=message, system_prompt=system_prompt)
 
@@ -224,19 +231,21 @@ class AIService:
             score = 0
 
             for term in terms:
-                term_hit_path = term.lower() in lower_path
+                term_hit_path = term in lower_path
                 if term_hit_path:
-                    score += 3
+                    score += _PATH_MATCH_SCORE
 
             for idx, line in enumerate(lines, start=1):
                 line_lower = line.lower()
+                line_term_hits = 0
                 for term in terms:
                     if term in line_lower:
-                        score += 2
-                        if len(matched_lines) < _MAX_RAG_LINES_PER_DOC:
-                            compressed = " ".join(line.strip().split())
-                            matched_lines.append((idx, compressed[:_MAX_SNIPPET_LINE_CHARS]))
-                        break
+                        line_term_hits += 1
+                if line_term_hits > 0:
+                    score += line_term_hits * _LINE_MATCH_SCORE
+                    if len(matched_lines) < _MAX_RAG_LINES_PER_DOC:
+                        compressed = " ".join(line.strip().split())
+                        matched_lines.append((idx, compressed[:_MAX_SNIPPET_LINE_CHARS]))
 
             if score > 0:
                 ranked_docs.append(
