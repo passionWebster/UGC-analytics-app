@@ -17,7 +17,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import requests
 from cachetools import TTLCache
@@ -78,7 +78,7 @@ class AIService:
 
     # ── 公开方法 ────────────────────────────────────────────────────────────
 
-    def check_service_status(self) -> Dict[str, Any]:
+    def check_service_status(self) -> dict[str, Any]:
         """
         检查 AI 服务状态
 
@@ -91,7 +91,7 @@ class AIService:
             "model": self.model
         }
 
-    def chat(self, message: str, context: Optional[str] = None) -> str:
+    def chat(self, message: str, context: str | None = None) -> str:
         """
         通用问答：UGC流媒体平台数据分析助手人设。
 
@@ -358,7 +358,7 @@ class AIService:
 
         # ── 缓存命中检查（键包含 system_prompt，不同人设下不冲突）────────────
         cache_key = hashlib.sha256(
-            f"{message}||{system_prompt}".encode("utf-8")
+            f"{message}||{system_prompt}".encode()
         ).hexdigest()
         with _ai_cache_lock:
             cached = _ai_cache.get(cache_key)
@@ -508,10 +508,10 @@ class AIService:
     def _record_telemetry(
         self,
         api_type: str,
-        latency_ms: Optional[int],
+        latency_ms: int | None,
         is_success: bool,
-        token_usage: Optional[int] = None,
-        error_code: Optional[str] = None,
+        token_usage: int | None = None,
+        error_code: str | None = None,
     ) -> None:
         """
         持久化 AI 调用遥测数据。
