@@ -289,7 +289,6 @@ class CommentsService:
                     history_danmaku = self._crawler.danmaku.fetch_danmaku_history(
                         ep.cid, publish_ts=pubdate_ts
                     )
-                    raw_danmaku = current_danmaku + history_danmaku
                     danmaku_for_sqlite = current_danmaku
 
                     # 去重：同一集中仅移除完全重复的弹幕（文本+时间+发送者）
@@ -353,14 +352,6 @@ class CommentsService:
                         self.session.add_all(records)
                         self.session.commit()
                     danmu_saved += len(records)
-                    if raw_danmaku and self.mongo_repo.upsert_episode_danmaku(
-                        cid=str(ep.cid),
-                        season_id=season_id,
-                        episode_number=ep_index,
-                        bvid=ep.bvid,
-                        danmaku_items=raw_danmaku,
-                    ):
-                        mongo_saved += 1
                     logger.info(
                         "  ✅ 弹幕已写入 episode={} cid={} current={} history={} sqlite_saved={}",
                         ep_index,

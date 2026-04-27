@@ -30,7 +30,6 @@ from ..auth import get_current_user
 from ..database import get_session, engine
 from ..crud import AnalyticsService
 from ..models import Anime, EpisodeStats, TmdbAnimeInfo, User, EpisodeAnalysisCache, DanmuRecord
-from ..mongodb import DanmakuMongoRepository
 from ..schemas import (
     EpisodeTimelineResponse,
     SeasonWordcloudResponse,
@@ -51,8 +50,6 @@ proxy_router = APIRouter(prefix="/api", tags=["图片代理"])
 _STABLE_DATA_DAYS = 7
 _ANALYTICS_CACHE: TTLCache = TTLCache(maxsize=512, ttl=3600)
 _ANALYTICS_CACHE_LOCK = threading.RLock()
-_MONGO_DANMAKU_REPO = DanmakuMongoRepository()
-_MONGO_SENTIMENT_KEYS = ("nlp_sentiment_score", "sentiment_score", "sentiment")
 _RECENT_EPISODE_DAYS = 30
 _FROZEN_EPISODE_DAYS = 180
 
@@ -248,17 +245,8 @@ def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool
         season_id: 番剧季 ID。
 
     Returns:
-        bool: Mongo 或 SQLite 任一来源存在弹幕数据即返回 True。
+        bool: SQLite 存在可用弹幕数据即返回 True。
     """
-    mongo_doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(cid)
-    if mongo_doc and isinstance(mongo_doc.get("danmaku_items"), list):
-        mongo_items = [item for item in mongo_doc.get("danmaku_items", []) if isinstance(item, dict)]
-        has_valid_mongo_text = any(
-            str(item.get("content") or item.get("text") or "").strip()
-            for item in mongo_items
-        )
-        if has_valid_mongo_text:
-            return True
     sqlite_count = session.exec(
         sql_select(sa_func.count(DanmuRecord.id)).where(
             DanmuRecord.season_id == season_id,
@@ -274,8 +262,7 @@ def _episode_needs_nlp_refresh(session: Session, target_ep: EpisodeStats, cid: s
 
     触发条件包括：
     1) 分集状态未成功或缺少处理时间；
-    2) Mongo 弹幕存在但无可用情感字段；
-    3) Mongo 不可用且 SQLite 也无可用情感字段。
+    2) SQLite 中不存在可用情感字段。
 
     Args:
         session: 数据库会话。
@@ -288,16 +275,6 @@ def _episode_needs_nlp_refresh(session: Session, target_ep: EpisodeStats, cid: s
     """
     if target_ep.nlp_status != "success" or target_ep.nlp_processed_at is None:
         return True
-    mongo_doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(cid)
-    if mongo_doc and isinstance(mongo_doc.get("danmaku_items"), list):
-        items = [item for item in mongo_doc.get("danmaku_items", []) if isinstance(item, dict)]
-        if not items:
-            return True
-        has_sentiment = any(
-            any(item.get(key) is not None for key in _MONGO_SENTIMENT_KEYS)
-            for item in items
-        )
-        return not has_sentiment
     sqlite_sentiment_count = session.exec(
         sql_select(sa_func.count(DanmuRecord.id)).where(
             DanmuRecord.season_id == season_id,
