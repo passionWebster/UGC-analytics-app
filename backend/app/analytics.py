@@ -407,7 +407,16 @@ def _get_mongo_episode_items(cid: str | None) -> list[dict[str, Any]] | None:
     items = doc.get("danmaku_items")
     if not isinstance(items, list):
         return None
-    normalized = [item for item in items if isinstance(item, dict)]
+    normalized = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or item.get("text") or "").strip()
+        if not content:
+            continue
+        merged = dict(item)
+        merged["content"] = content
+        normalized.append(merged)
     return normalized or None
 
 

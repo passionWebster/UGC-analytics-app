@@ -251,12 +251,19 @@ def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool
         bool: Mongo 或 SQLite 任一来源存在弹幕数据即返回 True。
     """
     mongo_doc = _MONGO_DANMAKU_REPO.get_danmaku_by_cid(cid)
-    if mongo_doc and isinstance(mongo_doc.get("danmaku_items"), list) and mongo_doc.get("danmaku_items"):
-        return True
+    if mongo_doc and isinstance(mongo_doc.get("danmaku_items"), list):
+        mongo_items = [item for item in mongo_doc.get("danmaku_items", []) if isinstance(item, dict)]
+        has_valid_mongo_text = any(
+            str(item.get("content") or item.get("text") or "").strip()
+            for item in mongo_items
+        )
+        if has_valid_mongo_text:
+            return True
     sqlite_count = session.exec(
         sql_select(sa_func.count(DanmuRecord.id)).where(
             DanmuRecord.season_id == season_id,
             DanmuRecord.cid == cid,
+            sa_func.length(sa_func.trim(DanmuRecord.content)) > 0,
         )
     ).one()
     return bool(sqlite_count and int(sqlite_count) > 0)
