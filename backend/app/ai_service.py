@@ -185,8 +185,9 @@ class AIService:
         Returns:
             去重后的关键词列表
         """
-        ascii_terms = _ASCII_IDENTIFIER_PATTERN.findall(message.lower())
-        han_terms = _CHINESE_TERM_PATTERN.findall(message)
+        lowered_message = message.lower()
+        ascii_terms = _ASCII_IDENTIFIER_PATTERN.findall(lowered_message)
+        han_terms = _CHINESE_TERM_PATTERN.findall(lowered_message)
         terms: list[str] = []
         for term in [*ascii_terms, *han_terms]:
             normalized = term.lower()
