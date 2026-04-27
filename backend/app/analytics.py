@@ -401,7 +401,6 @@ def get_episode_timeline_bins(
     )
     total_danmaku = 0
 
-    source = "sqlite"
     records = session.exec(
         select(DanmuRecord)
         .where(
@@ -456,7 +455,7 @@ def get_episode_timeline_bins(
         "total_danmaku": total_danmaku,
         "timeline": timeline,
     }
-    logger.info("📊 单集时间线聚合完成 cid={} source={} bins={}", cid, source, len(timeline))
+    logger.info("📊 单集时间线聚合完成 cid={} source=sqlite bins={}", cid, len(timeline))
     return payload
 
 

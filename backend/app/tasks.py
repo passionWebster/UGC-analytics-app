@@ -59,7 +59,6 @@ def run_episode_nlp_analysis(
                     DanmuRecord.episode_number == episode_number,
                 )
             ).all()
-            source = "sqlite"
 
             if sqlite_records:
                 processed = [process_text_record(r.content) for r in sqlite_records]
@@ -96,7 +95,7 @@ def run_episode_nlp_analysis(
                 "✅ NLP 分析完成 season_id={} episode={} source={} sample_size={}",
                 season_id,
                 episode_number,
-                source,
+                "sqlite",
                 aggregate.get("sample_size"),
             )
             return {
@@ -104,7 +103,7 @@ def run_episode_nlp_analysis(
                 "episode_number": episode_number,
                 "processed": aggregate.get("sample_size", 0),
                 "sample_size": aggregate.get("sample_size"),
-                "source": source,
+                "source": "sqlite",
             }
         except Exception:
             logger.exception("❌ NLP 分析失败 season_id={} episode={}", season_id, episode_number)
