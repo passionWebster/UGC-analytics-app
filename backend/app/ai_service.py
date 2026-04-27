@@ -61,9 +61,14 @@ _PROJECT_KNOWLEDGE_FILES = (
     "frontend/src/views/Status.vue",
 )
 
+# 语料分片上限：约等价于 6k~8k 中英混合 token，控制 prompt 体积与响应延迟。
 _MAX_KNOWLEDGE_CHARS_PER_FILE = 24000
 _MAX_RAG_DOCS = 4
 _MAX_RAG_LINES_PER_DOC = 3
+_MAX_QUERY_TERMS = 12
+_MAX_SNIPPET_LINE_CHARS = 180
+_ASCII_IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+_CHINESE_TERM_PATTERN = re.compile(r"[\u4e00-\u9fff]{2,}")
 
 
 class AIService:
@@ -179,13 +184,13 @@ class AIService:
         Returns:
             去重后的关键词列表
         """
-        ascii_terms = re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", message.lower())
-        han_terms = re.findall(r"[\u4e00-\u9fff]{2,}", message)
+        ascii_terms = _ASCII_IDENTIFIER_PATTERN.findall(message.lower())
+        han_terms = _CHINESE_TERM_PATTERN.findall(message)
         terms: list[str] = []
         for term in [*ascii_terms, *han_terms]:
             if term not in terms:
                 terms.append(term)
-            if len(terms) >= 12:
+            if len(terms) >= _MAX_QUERY_TERMS:
                 break
         return terms
 
@@ -227,7 +232,7 @@ class AIService:
                         score += 2
                         if len(matched_lines) < _MAX_RAG_LINES_PER_DOC:
                             compressed = " ".join(line.strip().split())
-                            matched_lines.append((idx, compressed[:180]))
+                            matched_lines.append((idx, compressed[:_MAX_SNIPPET_LINE_CHARS]))
                         break
 
             if score > 0:
