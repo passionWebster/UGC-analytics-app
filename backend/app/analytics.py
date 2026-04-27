@@ -418,9 +418,11 @@ def get_episode_timeline_bins(
         bin_start = int(record.video_time // bin_size) * bin_size
         bucket = bins[bin_start]
         bucket["count"] += 1
-        score = record.nlp_sentiment_score
-        if score is None:
-            score = record.sentiment_score
+        score = (
+            record.nlp_sentiment_score
+            if record.nlp_sentiment_score is not None
+            else record.sentiment_score
+        )
         if score is not None:
             bucket["sent_sum"] += float(score)
             bucket["sent_count"] += 1
