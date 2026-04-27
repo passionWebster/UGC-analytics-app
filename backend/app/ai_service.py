@@ -13,18 +13,21 @@ AI 助手服务
 """
 import hashlib
 import json
+import re
 import threading
 import time
+from pathlib import Path
+from typing import Any
+
 import requests
-from typing import Optional, Dict, Any
-from fastapi import HTTPException
 from cachetools import TTLCache
+from fastapi import HTTPException
+from sqlmodel import Session
 
 from .config import settings
-from .logger import app_logger
 from .database import engine
+from .logger import app_logger
 from .models import AITelemetry
-from sqlmodel import Session
 
 # ──────────────────────────────────────────────────────────────────────────────
 # AI 响应缓存：最多缓存 128 条结果，每条 TTL 10 分钟
@@ -34,6 +37,51 @@ from sqlmodel import Session
 _ai_cache: TTLCache = TTLCache(maxsize=128, ttl=600)
 _ai_cache_lock = threading.RLock()
 
+_PROJECT_KNOWLEDGE_FILES = (
+    "README.md",
+    "backend/app/main.py",
+    "backend/app/config.py",
+    "backend/app/database.py",
+    "backend/app/models.py",
+    "backend/app/crud.py",
+    "backend/app/analytics.py",
+    "backend/app/ai_service.py",
+    "backend/app/routers/ai.py",
+    "backend/app/routers/analytics.py",
+    "backend/app/routers/crawler.py",
+    "backend/app/routers/auth.py",
+    "backend/app/routers/user_space.py",
+    "backend/app/scraper/crawler.py",
+    "frontend/src/router/index.ts",
+    "frontend/src/api/index.ts",
+    "frontend/src/components/AiChat.vue",
+    "frontend/src/views/Home.vue",
+    "frontend/src/views/Overview.vue",
+    "frontend/src/views/Report.vue",
+    "frontend/src/views/Status.vue",
+)
+
+# 语料分片上限：约等价于 6k~8k 中英混合 token，控制 prompt 体积与响应延迟。
+_MAX_KNOWLEDGE_CHARS_PER_FILE = 24000
+# RAG 返回的文档数量上限，避免提示词被检索片段挤满。
+_MAX_RAG_DOCS = 4
+# 每个文档最多保留的匹配行数，控制上下文可读性与 token 占用。
+_MAX_RAG_LINES_PER_DOC = 3
+# 单次检索最多使用的关键词数量，平衡召回与性能。
+_MAX_QUERY_TERMS = 12
+# 单行片段最大字符长度，避免把超长源码行直接拼入提示词。
+_MAX_SNIPPET_LINE_CHARS = 180
+_ASCII_IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+_CHINESE_TERM_PATTERN = re.compile(r"[\u4e00-\u9fff]{2,}")
+_PATH_MATCH_SCORE = 3
+_LINE_MATCH_SCORE = 2
+_PROJECT_CHAT_SYSTEM_INSTRUCTION = (
+    "你是 UGC-analytics-app 项目的技术助手。"
+    "你的回答必须优先依据提供的项目知识摘要与相关模块片段（RAG检索结果）。"
+    "回答项目问题时请尽量明确指出对应的模块、文件或接口路径。"
+    "如果上下文不足以确定答案，你必须先说明信息不足并提出澄清问题，严禁编造项目中不存在的实现。"
+)
+
 
 class AIService:
     """AI 助手服务类"""
@@ -42,10 +90,12 @@ class AIService:
         self.api_key = settings.doubao_api_key
         self.api_url = settings.doubao_api_url
         self.model = settings.doubao_model
+        self.repo_root = Path(__file__).resolve().parents[2]
+        self.knowledge_corpus = self._load_project_knowledge_corpus()
 
     # ── 公开方法 ────────────────────────────────────────────────────────────
 
-    def check_service_status(self) -> Dict[str, Any]:
+    def check_service_status(self) -> dict[str, Any]:
         """
         检查 AI 服务状态
 
@@ -58,7 +108,7 @@ class AIService:
             "model": self.model
         }
 
-    def chat(self, message: str, context: Optional[str] = None) -> str:
+    def chat(self, message: str, context: str | None = None) -> str:
         """
         通用问答：UGC流媒体平台数据分析助手人设。
 
@@ -72,12 +122,154 @@ class AIService:
         Raises:
             HTTPException: 服务不可用或请求失败
         """
+        project_context = self._build_project_context(message=message, context=context or "")
         system_prompt = (
-            "你是一个UGC流媒体平台数据分析助手，帮助用户理解平台番剧数据、用户行为分析报告和系统使用。"
+            _PROJECT_CHAT_SYSTEM_INSTRUCTION + "\n\n" + project_context
         )
-        if context:
-            system_prompt += f"\n\n当前上下文：{context}"
         return self._request_api(message=message, system_prompt=system_prompt)
+
+    def _build_project_context(self, message: str, context: str) -> str:
+        """
+        组装聊天上下文：项目知识摘要 + RAG 片段 + 调用方附加上下文。
+
+        Args:
+            message: 用户提问
+            context: 调用方传入的附加上下文
+
+        Returns:
+            可直接注入 system_prompt 的上下文文本
+        """
+        knowledge_summary = (
+            "项目名称：UGC-analytics-app。\n"
+            "后端：FastAPI（backend/app），核心包含 routers、crud、analytics、ai_service、scraper 子模块。\n"
+            "前端：Vue3 + TypeScript（frontend/src），核心包含 views、components/AiChat、api 与 router。\n"
+            "数据层：SQLite（SQLModel）为当前存储与数据事实来源。\n"
+            "AI 能力：/api/chat 通用对话，/api/ai/generate-insight 自动洞察，/api/ai/text-to-sql 自然语言转只读 SQL。"
+        )
+        rag_snippets = self._retrieve_relevant_snippets(message)
+        sections = [
+            "【项目知识摘要】",
+            knowledge_summary,
+            "【相关模块片段（RAG检索结果）】",
+            rag_snippets,
+        ]
+        if context.strip():
+            sections.extend(["【调用侧附加上下文】", context.strip()])
+        return "\n".join(sections)
+
+    def _load_project_knowledge_corpus(self) -> list[dict[str, str]]:
+        """
+        预加载项目知识语料，用于后续本地 RAG 检索。
+
+        Returns:
+            语料列表，每项包含 path 与 content
+        """
+        corpus: list[dict[str, str]] = []
+        for rel_path in _PROJECT_KNOWLEDGE_FILES:
+            file_path = self.repo_root / rel_path
+            if not file_path.exists() or not file_path.is_file():
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError as exc:
+                app_logger.warning("项目语料加载失败 path={} error={}", rel_path, exc)
+                continue
+            corpus.append(
+                {
+                    "path": rel_path,
+                    "content": content[:_MAX_KNOWLEDGE_CHARS_PER_FILE],
+                }
+            )
+        return corpus
+
+    def _extract_query_terms(self, message: str) -> list[str]:
+        """
+        从用户问题中提取检索关键词。
+
+        Args:
+            message: 用户提问文本
+
+        Returns:
+            去重后的关键词列表
+        """
+        lowered_message = message.lower()
+        ascii_terms = _ASCII_IDENTIFIER_PATTERN.findall(lowered_message)
+        han_terms = _CHINESE_TERM_PATTERN.findall(lowered_message)
+        terms: list[str] = []
+        for term in [*ascii_terms, *han_terms]:
+            normalized = term.lower()
+            if normalized not in terms:
+                terms.append(normalized)
+            if len(terms) >= _MAX_QUERY_TERMS:
+                break
+        return terms
+
+    def _retrieve_relevant_snippets(self, message: str) -> str:
+        """
+        在本地项目语料中检索与用户问题相关的片段，生成可注入提示词的证据文本。
+
+        Args:
+            message: 用户提问
+
+        Returns:
+            格式化后的检索片段文本
+        """
+        if not self.knowledge_corpus:
+            return "未加载到项目语料。"
+
+        terms = self._extract_query_terms(message)
+        if not terms:
+            return "未从问题中提取到明确关键词。"
+
+        ranked_docs: list[dict[str, Any]] = []
+        for doc in self.knowledge_corpus:
+            path = doc["path"]
+            content = doc["content"]
+            lines = content.splitlines()
+            lower_path = path.lower()
+            matched_lines: list[tuple[int, str]] = []
+            score = 0
+
+            for term in terms:
+                term_hit_path = term in lower_path
+                if term_hit_path:
+                    score += _PATH_MATCH_SCORE
+
+            for idx, line in enumerate(lines, start=1):
+                line_lower = line.lower()
+                line_term_hits = 0
+                for term in terms:
+                    if term in line_lower:
+                        line_term_hits += 1
+                if line_term_hits > 0:
+                    score += line_term_hits * _LINE_MATCH_SCORE
+                    if len(matched_lines) < _MAX_RAG_LINES_PER_DOC:
+                        compressed = " ".join(line.strip().split())
+                        matched_lines.append((idx, compressed[:_MAX_SNIPPET_LINE_CHARS]))
+
+            if score > 0:
+                ranked_docs.append(
+                    {
+                        "path": path,
+                        "score": score,
+                        "matches": matched_lines,
+                    }
+                )
+
+        if not ranked_docs:
+            return "未检索到强相关代码片段，请先澄清问题再结合项目知识摘要回答。"
+
+        ranked_docs.sort(key=lambda item: item["score"], reverse=True)
+        selected = ranked_docs[:_MAX_RAG_DOCS]
+        snippets: list[str] = []
+        for doc in selected:
+            snippets.append(f"- 文件: {doc['path']}")
+            if doc["matches"]:
+                for line_no, line in doc["matches"]:
+                    snippets.append(f"  - L{line_no}: {line}")
+            else:
+                snippets.append("  - 匹配到文件路径关键词，但未命中具体行内容")
+        return "\n".join(snippets)
 
     def generate_insight(self, data: Any, context_hint: str = "") -> str:
         """
@@ -183,7 +375,7 @@ class AIService:
 
         # ── 缓存命中检查（键包含 system_prompt，不同人设下不冲突）────────────
         cache_key = hashlib.sha256(
-            f"{message}||{system_prompt}".encode("utf-8")
+            f"{message}||{system_prompt}".encode()
         ).hexdigest()
         with _ai_cache_lock:
             cached = _ai_cache.get(cache_key)
@@ -333,10 +525,10 @@ class AIService:
     def _record_telemetry(
         self,
         api_type: str,
-        latency_ms: Optional[int],
+        latency_ms: int | None,
         is_success: bool,
-        token_usage: Optional[int] = None,
-        error_code: Optional[str] = None,
+        token_usage: int | None = None,
+        error_code: str | None = None,
     ) -> None:
         """
         持久化 AI 调用遥测数据。

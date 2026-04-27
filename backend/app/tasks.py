@@ -4,34 +4,32 @@ from datetime import datetime
 from typing import Any
 
 from sqlmodel import Session, select
+from sqlalchemy import func as sa_func
 
 from .config import settings
 from .database import engine
 from .logger import app_logger as logger
 from .models import DanmuRecord, EpisodeStats
-from .mongodb import DanmakuMongoRepository
 from .nlp_pipeline import aggregate_episode_nlp, process_text_record
 from .nlp_worker_pool import enqueue_nlp_task
 
-_mongo_repo = DanmakuMongoRepository()
 
-
-def _load_episode_doc_from_mongo(cid: str | None) -> dict[str, Any] | None:
-    """Load episode danmaku document from MongoDB by cid.
-
-    Args:
-        cid: Episode cid.
-
-    Returns:
-        MongoDB document dict when available, otherwise None.
-    """
-    if not cid:
-        return None
-    doc = _mongo_repo.get_danmaku_by_cid(cid)
-    if not doc:
-        return None
-    return doc if isinstance(doc, dict) else None
-
+def _has_usable_sqlite_danmaku(
+    session: Session,
+    season_id: int,
+    episode_number: int,
+    cid: str | None = None,
+) -> bool:
+    """Check whether target episode has usable SQLite danmaku text."""
+    query = select(DanmuRecord.id).where(
+        DanmuRecord.season_id == season_id,
+        DanmuRecord.episode_number == episode_number,
+        sa_func.length(sa_func.trim(DanmuRecord.content)) > 0,
+    )
+    if cid:
+        query = query.where(DanmuRecord.cid == cid)
+    row = session.exec(query.limit(1)).first()
+    return row is not None
 
 def run_episode_nlp_analysis(
     season_id: int,
@@ -81,27 +79,7 @@ def run_episode_nlp_analysis(
                 )
             ).all()
 
-            cid_candidate = None
-            if ep and ep.cid:
-                cid_candidate = str(ep.cid)
-            elif cid is not None:
-                cid_candidate = str(cid)
-            mongo_doc = _load_episode_doc_from_mongo(cid_candidate)
-            mongo_items = mongo_doc.get("danmaku_items") if isinstance(mongo_doc, dict) else None
-            if not isinstance(mongo_items, list):
-                mongo_items = None
-            mongo_payload_items = [item for item in (mongo_items or []) if isinstance(item, dict)]
-            mongo_texts = [
-                str(item.get("content", "")).strip()
-                for item in mongo_payload_items
-                if str(item.get("content", "")).strip()
-            ]
-            source = "mongodb" if mongo_texts else "sqlite"
-
-            if source == "mongodb":
-                processed = [process_text_record(text) for text in mongo_texts]
-                aggregate = aggregate_episode_nlp(processed)
-            elif sqlite_records:
+            if sqlite_records:
                 processed = [process_text_record(r.content) for r in sqlite_records]
                 aggregate = aggregate_episode_nlp(processed)
             else:
@@ -114,38 +92,12 @@ def run_episode_nlp_analysis(
                     session.commit()
                 return {"season_id": season_id, "episode_number": episode_number, "processed": 0}
 
-            if source == "sqlite":
-                for rec, item in zip(sqlite_records, processed):
-                    rec.cleaned_content = item.get("cleaned_text")
-                    rec.emotion_label = item.get("emotion_label")
-                    rec.nlp_sentiment_score = item.get("sentiment_score")
-                    rec.nlp_processed = True
-                    session.add(rec)
-            elif source == "mongodb" and mongo_payload_items:
-                processed_idx = 0
-                enriched_items = []
-                for raw_item in mongo_payload_items:
-                    content = str(raw_item.get("content", "")).strip()
-                    item = dict(raw_item)
-                    if content:
-                        nlp_item = {}
-                        if processed_idx < len(processed):
-                            nlp_item = processed[processed_idx]
-                            processed_idx += 1
-                        item["cleaned_content"] = nlp_item.get("cleaned_text")
-                        item["emotion_label"] = nlp_item.get("emotion_label")
-                        item["nlp_sentiment_score"] = nlp_item.get("sentiment_score")
-                    enriched_items.append(item)
-                resolved_bvid = ep.bvid if ep else None
-                if not resolved_bvid and isinstance(mongo_doc, dict):
-                    resolved_bvid = mongo_doc.get("bvid")
-                _mongo_repo.upsert_episode_danmaku(
-                    cid=str(cid_candidate or ""),
-                    season_id=season_id,
-                    episode_number=episode_number,
-                    bvid=resolved_bvid,
-                    danmaku_items=enriched_items,
-                )
+            for rec, item in zip(sqlite_records, processed):
+                rec.cleaned_content = item.get("cleaned_text")
+                rec.emotion_label = item.get("emotion_label")
+                rec.nlp_sentiment_score = item.get("sentiment_score")
+                rec.nlp_processed = True
+                session.add(rec)
 
             if ep:
                 ep.nlp_status = "success"
@@ -162,7 +114,7 @@ def run_episode_nlp_analysis(
                 "✅ NLP 分析完成 season_id={} episode={} source={} sample_size={}",
                 season_id,
                 episode_number,
-                source,
+                "sqlite",
                 aggregate.get("sample_size"),
             )
             return {
@@ -170,7 +122,7 @@ def run_episode_nlp_analysis(
                 "episode_number": episode_number,
                 "processed": aggregate.get("sample_size", 0),
                 "sample_size": aggregate.get("sample_size"),
-                "source": source,
+                "source": "sqlite",
             }
         except Exception:
             logger.exception("❌ NLP 分析失败 season_id={} episode={}", season_id, episode_number)
@@ -198,6 +150,21 @@ def enqueue_episode_nlp_task(
     Returns:
         Task ID when enqueue succeeds, otherwise None.
     """
+    with Session(engine) as session:
+        if not _has_usable_sqlite_danmaku(
+            session=session,
+            season_id=season_id,
+            episode_number=episode_number,
+            cid=cid,
+        ):
+            logger.info(
+                "ℹ️ 跳过 NLP 入队：SQLite 无可用弹幕 season_id={} episode={} cid={}",
+                season_id,
+                episode_number,
+                cid,
+            )
+            return None
+
     task_id = enqueue_nlp_task(season_id=season_id, episode_number=episode_number, cid=cid)
     if task_id:
         return task_id

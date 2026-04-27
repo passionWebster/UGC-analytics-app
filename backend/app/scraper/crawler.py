@@ -16,7 +16,6 @@ from sqlmodel import Session
 
 from ..config import settings
 from ..logger import scraper_logger as logger
-from ..mongodb import DanmakuMongoRepository
 from .anime_sync import AnimeSyncService
 from .comments import CommentsService
 from .constants import (
@@ -96,7 +95,6 @@ class BilibiliBangumiCrawler:
         if sessdata:
             self.http_session.cookies.set("SESSDATA", sessdata, domain=".bilibili.com")
             logger.info("🍪 已启用 SESSDATA Cookie（用于历史弹幕抓取）")
-        self.mongo_repo = DanmakuMongoRepository()
         self.override_retry_attempts: int | None = None
         self.request_counters: dict[str, int] = {"requests": 0, "retries": 0, "failed": 0}
         # 组合子服务：所有业务能力通过显式子服务入口访问。
