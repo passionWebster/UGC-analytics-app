@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlmodel import Session, select
+from sqlalchemy import func as sa_func
 
 from .config import settings
 from .database import engine
@@ -11,6 +12,24 @@ from .logger import app_logger as logger
 from .models import DanmuRecord, EpisodeStats
 from .nlp_pipeline import aggregate_episode_nlp, process_text_record
 from .nlp_worker_pool import enqueue_nlp_task
+
+
+def _has_usable_sqlite_danmaku(
+    session: Session,
+    season_id: int,
+    episode_number: int,
+    cid: str | None = None,
+) -> bool:
+    """Check whether target episode has usable SQLite danmaku text."""
+    query = select(DanmuRecord.id).where(
+        DanmuRecord.season_id == season_id,
+        DanmuRecord.episode_number == episode_number,
+        sa_func.length(sa_func.trim(DanmuRecord.content)) > 0,
+    )
+    if cid:
+        query = query.where(DanmuRecord.cid == cid)
+    row = session.exec(query.limit(1)).first()
+    return row is not None
 
 def run_episode_nlp_analysis(
     season_id: int,
@@ -131,6 +150,21 @@ def enqueue_episode_nlp_task(
     Returns:
         Task ID when enqueue succeeds, otherwise None.
     """
+    with Session(engine) as session:
+        if not _has_usable_sqlite_danmaku(
+            session=session,
+            season_id=season_id,
+            episode_number=episode_number,
+            cid=cid,
+        ):
+            logger.info(
+                "ℹ️ 跳过 NLP 入队：SQLite 无可用弹幕 season_id={} episode={} cid={}",
+                season_id,
+                episode_number,
+                cid,
+            )
+            return None
+
     task_id = enqueue_nlp_task(season_id=season_id, episode_number=episode_number, cid=cid)
     if task_id:
         return task_id

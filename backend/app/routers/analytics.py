@@ -507,7 +507,27 @@ def get_episode_analysis_with_cache(
     age_days = max(0, (datetime.now() - publish_anchor).days)
     is_recent = age_days <= _RECENT_EPISODE_DAYS
     is_frozen = age_days >= _FROZEN_EPISODE_DAYS
-    needs_nlp_refresh = _episode_needs_nlp_refresh(session, target_ep, cid, season_id)
+    has_source_data = _has_source_danmaku_data(session, cid, season_id)
+    needs_nlp_refresh = has_source_data and _episode_needs_nlp_refresh(session, target_ep, cid, season_id)
+
+    if not has_source_data:
+        background_tasks.add_task(_trigger_danmaku_scrape_for_episode, season_id, cid)
+        if cache_row is not None:
+            return {
+                "success": True,
+                "cached": True,
+                "stale": True,
+                "refresh_scheduled": False,
+                "age_days": age_days,
+                "message": "SQLite 暂无可用弹幕数据，已触发后台同步，当前先返回缓存结果",
+                "data": _load_episode_analysis_cache_payload(cache_row),
+            }
+        return {
+            "success": False,
+            "pending": True,
+            "message": "暂无可用弹幕数据，已触发后台数据同步，请稍后重试",
+            "data": {"timeline": {}, "wordcloud": {}},
+        }
 
     if needs_nlp_refresh:
         episode_number = _resolve_episode_number(session, target_ep)
@@ -563,15 +583,6 @@ def get_episode_analysis_with_cache(
             "refresh_scheduled": refresh_scheduled,
             "age_days": age_days,
             "data": _load_episode_analysis_cache_payload(cache_row),
-        }
-
-    if not _has_source_danmaku_data(session, cid, season_id):
-        background_tasks.add_task(_trigger_danmaku_scrape_for_episode, season_id, cid)
-        return {
-            "success": False,
-            "pending": True,
-            "message": "暂无可用弹幕数据，已触发后台数据同步，请稍后重试",
-            "data": {"timeline": {}, "wordcloud": {}},
         }
 
     timeline_data = get_episode_timeline_bins(
