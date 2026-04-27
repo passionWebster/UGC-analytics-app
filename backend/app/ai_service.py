@@ -164,7 +164,8 @@ class AIService:
                 continue
             try:
                 content = file_path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+            except OSError as exc:
+                app_logger.warning("项目语料加载失败 path={} error={}", rel_path, exc)
                 continue
             corpus.append(
                 {
@@ -188,8 +189,9 @@ class AIService:
         han_terms = _CHINESE_TERM_PATTERN.findall(message)
         terms: list[str] = []
         for term in [*ascii_terms, *han_terms]:
-            if term not in terms:
-                terms.append(term)
+            normalized = term.lower()
+            if normalized not in terms:
+                terms.append(normalized)
             if len(terms) >= _MAX_QUERY_TERMS:
                 break
         return terms
@@ -228,7 +230,7 @@ class AIService:
             for idx, line in enumerate(lines, start=1):
                 line_lower = line.lower()
                 for term in terms:
-                    if term.lower() in line_lower:
+                    if term in line_lower:
                         score += 2
                         if len(matched_lines) < _MAX_RAG_LINES_PER_DOC:
                             compressed = " ".join(line.strip().split())
@@ -245,7 +247,7 @@ class AIService:
                 )
 
         if not ranked_docs:
-            return "未检索到强相关代码片段，请结合项目知识摘要回答并先澄清问题。"
+            return "未检索到强相关代码片段，请先澄清问题再结合项目知识摘要回答。"
 
         ranked_docs.sort(key=lambda item: item["score"], reverse=True)
         selected = ranked_docs[:_MAX_RAG_DOCS]
