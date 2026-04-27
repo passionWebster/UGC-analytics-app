@@ -508,7 +508,9 @@ def get_episode_analysis_with_cache(
     is_recent = age_days <= _RECENT_EPISODE_DAYS
     is_frozen = age_days >= _FROZEN_EPISODE_DAYS
     has_source_data = _has_source_danmaku_data(session, cid, season_id)
-    needs_nlp_refresh = has_source_data and _episode_needs_nlp_refresh(session, target_ep, cid, season_id)
+    needs_nlp_refresh = False
+    if has_source_data:
+        needs_nlp_refresh = _episode_needs_nlp_refresh(session, target_ep, cid, season_id)
 
     if not has_source_data:
         background_tasks.add_task(_trigger_danmaku_scrape_for_episode, season_id, cid)
