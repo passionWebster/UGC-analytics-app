@@ -143,7 +143,7 @@ class AIService:
             "项目名称：UGC-analytics-app。\n"
             "后端：FastAPI（backend/app），核心包含 routers、crud、analytics、ai_service、scraper 子模块。\n"
             "前端：Vue3 + TypeScript（frontend/src），核心包含 views、components/AiChat、api 与 router。\n"
-            "数据层：SQLite 为主（SQLModel），并支持 MongoDB 存储原始弹幕。\n"
+            "数据层：SQLite（SQLModel）为当前存储与数据事实来源。\n"
             "AI 能力：/api/chat 通用对话，/api/ai/generate-insight 自动洞察，/api/ai/text-to-sql 自然语言转只读 SQL。"
         )
         rag_snippets = self._retrieve_relevant_snippets(message)
