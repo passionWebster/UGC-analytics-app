@@ -54,6 +54,7 @@ def create_db_and_tables():
     """
     SQLModel.metadata.create_all(engine)
     _add_missing_columns()
+    _ensure_indexes()
     logger.success(f"✅ 数据库已初始化")  # 使用 success 级别，控制台会显示绿色
 
 
@@ -225,6 +226,23 @@ def _add_missing_columns():
                     logger.info(f"  ✅ 迁移：已向 comment_records 表添加列 {col_name}")
                 except Exception as exc:
                     logger.warning(f"  ⚠️ 向 comment_records 表添加列 {col_name} 失败: {exc}")
+
+
+# 缺失索引补充定义（幂等）：加速按 (season_id, cid) 的弹幕判定与聚合查询
+_INDEX_STATEMENTS: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_danmu_records_season_cid ON danmu_records (season_id, cid)",
+)
+
+
+def _ensure_indexes() -> None:
+    """为已存在的表补充缺失索引；索引已存在时静默跳过。"""
+    with engine.connect() as conn:
+        for statement in _INDEX_STATEMENTS:
+            try:
+                conn.execute(sa_text(statement))
+                conn.commit()
+            except Exception as exc:
+                logger.warning(f"  ⚠️ 创建索引失败: {exc}")
 
 
 def get_session() -> Generator[Session, None, None]:

@@ -9,6 +9,37 @@ from sqlalchemy import func as sa_func
 from .models import DanmuRecord, CommentRecord, EpisodeStats
 from .logger import app_logger as logger
 
+
+def has_usable_danmaku(
+    session: Session,
+    *,
+    season_id: int,
+    cid: str | None = None,
+    episode_number: int | None = None,
+) -> bool:
+    """统一口径：判断指定范围内是否存在内容非空的弹幕行。
+
+    Args:
+        session: 数据库会话。
+        season_id: 番剧季 ID。
+        cid: 可选，按分集 CID 过滤。
+        episode_number: 可选，按集数过滤（与 NLP worker 的选择口径一致）。
+
+    Returns:
+        bool: 存在可用弹幕即返回 True。
+    """
+    query = select(sa_func.count(DanmuRecord.id)).where(
+        DanmuRecord.season_id == season_id,
+        sa_func.length(sa_func.trim(DanmuRecord.content)) > 0,
+    )
+    if cid is not None:
+        query = query.where(DanmuRecord.cid == cid)
+    if episode_number is not None:
+        query = query.where(DanmuRecord.episode_number == episode_number)
+    count_value = session.exec(query).one()
+    return bool(count_value and int(count_value) > 0)
+
+
 # ── SnowNLP 懒加载，避免在 import 阶段引发异常 ──────────────────────────────
 try:
     from snownlp import SnowNLP

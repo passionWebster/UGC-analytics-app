@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import threading
+import time
 from enum import Enum
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
@@ -24,9 +25,11 @@ from ..analytics import (
     get_episode_timeline_bins,
     get_season_character_trends,
     get_season_wordcloud,
+    has_usable_danmaku,
 )
 from ..tasks import enqueue_episode_nlp_task
 from ..auth import get_current_user
+from ..config import settings
 from ..database import get_session, engine
 from ..crud import AnalyticsService
 from ..models import Anime, EpisodeStats, TmdbAnimeInfo, User, EpisodeAnalysisCache, DanmuRecord
@@ -52,6 +55,11 @@ _ANALYTICS_CACHE: TTLCache = TTLCache(maxsize=512, ttl=3600)
 _ANALYTICS_CACHE_LOCK = threading.RLock()
 _RECENT_EPISODE_DAYS = 30
 _FROZEN_EPISODE_DAYS = 180
+
+# 后台弹幕抓取守卫：同一分集去重 + 冷却窗口（按进程生效；本仓库以单进程 uvicorn 运行）
+_DANMAKU_SCRAPE_INFLIGHT: set[str] = set()
+_DANMAKU_SCRAPE_LAST_TRIGGER: dict[str, float] = {}
+_DANMAKU_SCRAPE_GUARD_LOCK = threading.RLock()
 
 # 封面图片本地缓存目录
 _COVER_CACHE_DIR = os.path.join(
@@ -236,33 +244,12 @@ def _get_episode_publish_anchor(
     return target_ep.updated_at or datetime.now()
 
 
-def _has_source_danmaku_data(session: Session, cid: str, season_id: int) -> bool:
-    """判断分集是否存在可用弹幕源数据。
-
-    Args:
-        session: 数据库会话。
-        cid: 分集 CID。
-        season_id: 番剧季 ID。
-
-    Returns:
-        bool: SQLite 存在可用弹幕数据即返回 True。
-    """
-    sqlite_count = session.exec(
-        sql_select(sa_func.count(DanmuRecord.id)).where(
-            DanmuRecord.season_id == season_id,
-            DanmuRecord.cid == cid,
-            sa_func.length(sa_func.trim(DanmuRecord.content)) > 0,
-        )
-    ).one()
-    return bool(sqlite_count and int(sqlite_count) > 0)
-
-
 def _episode_needs_nlp_refresh(session: Session, target_ep: EpisodeStats, cid: str, season_id: int) -> bool:
     """判断单集是否需要补跑 NLP。
 
     触发条件包括：
     1) 分集状态未成功或缺少处理时间；
-    2) SQLite 中不存在可用情感字段。
+    2) SQLite 中仍存在未完成 NLP 打分的弹幕行（含增量重抓新增的行）。
 
     Args:
         session: 数据库会话。
@@ -275,14 +262,15 @@ def _episode_needs_nlp_refresh(session: Session, target_ep: EpisodeStats, cid: s
     """
     if target_ep.nlp_status != "success" or target_ep.nlp_processed_at is None:
         return True
-    sqlite_sentiment_count = session.exec(
+    unscored_count = session.exec(
         sql_select(sa_func.count(DanmuRecord.id)).where(
             DanmuRecord.season_id == season_id,
             DanmuRecord.cid == cid,
-            (DanmuRecord.nlp_sentiment_score.is_not(None)) | (DanmuRecord.sentiment_score.is_not(None)),
+            sa_func.length(sa_func.trim(DanmuRecord.content)) > 0,
+            (DanmuRecord.nlp_processed.is_(False)) | (DanmuRecord.nlp_sentiment_score.is_(None)),
         )
     ).one()
-    return not bool(sqlite_sentiment_count and int(sqlite_sentiment_count) > 0)
+    return bool(unscored_count and int(unscored_count) > 0)
 
 
 def _resolve_episode_number(session: Session, target_ep: EpisodeStats) -> int:
@@ -386,35 +374,62 @@ def _trigger_danmaku_scrape_for_episode(
     season_id: int,
     cid: str,
 ) -> None:
-    from ..scraper import create_crawler
+    """后台抓取指定分集弹幕，带进程内去重与冷却守卫。
 
-    with Session(engine) as bg_session:
-        try:
-            episodes = bg_session.exec(
-                sql_select(EpisodeStats)
-                .where(EpisodeStats.season_id == season_id)
-                .order_by(EpisodeStats.id)
-            ).all()
-            if not episodes:
-                return
-            target_index = next((idx for idx, item in enumerate(episodes, start=1) if str(item.cid or "") == cid), None)
-            if target_index is None:
-                logger.warning("⚠️ skip background scrape: cid not found season_id={} cid={}", season_id, cid)
-                return
-            crawler = create_crawler(bg_session)
-            crawler.comments.scrape_danmaku_and_comments(
-                season_id=season_id,
-                max_episodes=target_index,
-                comment_limit=50,
-                include_comment_replies=True,
-                nested_reply_limit=20,
-                mode="incremental",
-                sentiment_fn=None,
-                run_nlp_async=True,
+    说明：守卫状态保存在进程内存中（本仓库以单进程 uvicorn 运行）；
+    多 worker 部署时每个进程各自允许触发一次抓取。
+    """
+    guard_key = f"{season_id}:{cid}"
+    now = time.monotonic()
+    with _DANMAKU_SCRAPE_GUARD_LOCK:
+        if guard_key in _DANMAKU_SCRAPE_INFLIGHT:
+            logger.info("⏭️ 跳过后台抓取：同一分集任务进行中 season_id={} cid={}", season_id, cid)
+            return
+        last_trigger = _DANMAKU_SCRAPE_LAST_TRIGGER.get(guard_key)
+        if last_trigger is not None and (now - last_trigger) < settings.danmaku_scrape_cooldown_seconds:
+            logger.info(
+                "⏭️ 跳过后台抓取：冷却窗口内 season_id={} cid={} elapsed={:.0f}s",
+                season_id,
+                cid,
+                now - last_trigger,
             )
-            logger.info("✅ background danmaku scrape triggered season_id={} target_episode={}", season_id, target_index)
-        except Exception as exc:
-            logger.warning("⚠️ background danmaku scrape failed season_id={} cid={} err={}", season_id, cid, exc)
+            return
+        _DANMAKU_SCRAPE_INFLIGHT.add(guard_key)
+        _DANMAKU_SCRAPE_LAST_TRIGGER[guard_key] = now
+
+    try:
+        from ..scraper import create_crawler
+
+        with Session(engine) as bg_session:
+            try:
+                episodes = bg_session.exec(
+                    sql_select(EpisodeStats)
+                    .where(EpisodeStats.season_id == season_id)
+                    .order_by(EpisodeStats.id)
+                ).all()
+                if not episodes:
+                    return
+                target_index = next((idx for idx, item in enumerate(episodes, start=1) if str(item.cid or "") == cid), None)
+                if target_index is None:
+                    logger.warning("⚠️ skip background scrape: cid not found season_id={} cid={}", season_id, cid)
+                    return
+                crawler = create_crawler(bg_session)
+                crawler.comments.scrape_danmaku_and_comments(
+                    season_id=season_id,
+                    max_episodes=target_index,
+                    comment_limit=50,
+                    include_comment_replies=True,
+                    nested_reply_limit=20,
+                    mode="incremental",
+                    sentiment_fn=None,
+                    run_nlp_async=True,
+                )
+                logger.info("✅ background danmaku scrape triggered season_id={} target_episode={}", season_id, target_index)
+            except Exception as exc:
+                logger.warning("⚠️ background danmaku scrape failed season_id={} cid={} err={}", season_id, cid, exc)
+    finally:
+        with _DANMAKU_SCRAPE_GUARD_LOCK:
+            _DANMAKU_SCRAPE_INFLIGHT.discard(guard_key)
 
 @router.get("/episode/{cid}/timeline", response_model=dict)
 def get_episode_timeline(
@@ -507,23 +522,13 @@ def get_episode_analysis_with_cache(
     age_days = max(0, (datetime.now() - publish_anchor).days)
     is_recent = age_days <= _RECENT_EPISODE_DAYS
     is_frozen = age_days >= _FROZEN_EPISODE_DAYS
-    has_source_data = _has_source_danmaku_data(session, cid, season_id)
+    has_source_data = has_usable_danmaku(session, season_id=season_id, cid=cid)
     needs_nlp_refresh = False
     if has_source_data:
         needs_nlp_refresh = _episode_needs_nlp_refresh(session, target_ep, cid, season_id)
 
     if not has_source_data:
         background_tasks.add_task(_trigger_danmaku_scrape_for_episode, season_id, cid)
-        if cache_row is not None:
-            return {
-                "success": True,
-                "cached": True,
-                "stale": True,
-                "refresh_scheduled": False,
-                "age_days": age_days,
-                "message": "SQLite 暂无可用弹幕数据，已触发后台同步，当前先返回缓存结果",
-                "data": _load_episode_analysis_cache_payload(cache_row),
-            }
         return {
             "success": False,
             "pending": True,
@@ -533,28 +538,51 @@ def get_episode_analysis_with_cache(
 
     if needs_nlp_refresh:
         episode_number = _resolve_episode_number(session, target_ep)
-        background_tasks.add_task(
-            enqueue_episode_nlp_task,
-            season_id,
-            episode_number,
-            cid,
+        # 与 NLP worker 选择口径一致地预检一次，避免响应里承诺了实际会被跳过的任务
+        can_process = has_usable_danmaku(
+            session,
+            season_id=season_id,
+            episode_number=episode_number,
         )
+        if can_process:
+            background_tasks.add_task(
+                enqueue_episode_nlp_task,
+                season_id,
+                episode_number,
+                cid,
+            )
+        else:
+            # 数据存在但按集数口径不可用（键不一致等），触发一次重抓以修正数据
+            background_tasks.add_task(_trigger_danmaku_scrape_for_episode, season_id, cid)
         if cache_row is not None:
             return {
                 "success": True,
                 "cached": True,
                 "stale": True,
+                "refresh_scheduled": can_process,
+                "age_days": age_days,
+                "message": (
+                    "检测到该集情感数据待刷新，已触发后台 NLP，当前先返回缓存结果"
+                    if can_process
+                    else "检测到该集情感数据待刷新，但暂无可处理的弹幕，已触发后台同步，当前先返回缓存结果"
+                ),
+                "data": _load_episode_analysis_cache_payload(cache_row),
+            }
+        if can_process:
+            return {
+                "success": False,
+                "pending": True,
                 "refresh_scheduled": True,
                 "age_days": age_days,
-                "message": "检测到该集情感数据待刷新，已触发后台 NLP，当前先返回缓存结果",
-                "data": _load_episode_analysis_cache_payload(cache_row),
+                "message": "已触发后台 NLP 分析，请稍后重试",
             }
         return {
             "success": False,
             "pending": True,
-            "refresh_scheduled": True,
+            "refresh_scheduled": False,
             "age_days": age_days,
-            "message": "已触发后台 NLP 分析，请稍后重试",
+            "message": "暂无可用弹幕数据，已触发后台数据同步，请稍后重试",
+            "data": {"timeline": {}, "wordcloud": {}},
         }
 
     if cache_row is not None:
