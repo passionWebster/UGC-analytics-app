@@ -192,6 +192,28 @@ class CommentsService:
                 break
         return comment_list[:limit]
 
+    def _load_existing_danmaku_keys(self, season_id: int, cid: str) -> set[tuple[str, Any, Any, str]]:
+        """查询指定分集已入库弹幕的去重键集合：(content, video_time, timestamp, sender_hash)。"""
+        return {
+            (
+                str(row[0] or ""),
+                row[1],
+                row[2],
+                str(row[3] or ""),
+            )
+            for row in self.session.exec(
+                select(
+                    DanmuRecord.content,
+                    DanmuRecord.video_time,
+                    DanmuRecord.timestamp,
+                    DanmuRecord.sender_hash,
+                ).where(
+                    DanmuRecord.season_id == season_id,
+                    DanmuRecord.cid == cid,
+                )
+            ).all()
+        }
+
     def scrape_danmaku_and_comments(
         self,
         season_id: int,
@@ -270,7 +292,6 @@ class CommentsService:
 
         danmu_saved = 0
         comment_saved = 0
-        mongo_saved = 0
 
         for ep_index, ep in enumerate(episodes, start=1):
             logger.info("▶️ 开始处理剧集 episode={} bvid={} cid={}", ep_index, ep.bvid, ep.cid)
@@ -290,10 +311,10 @@ class CommentsService:
                         ep.cid, publish_ts=pubdate_ts
                     )
 
-                    # 去重：同一集中仅移除完全重复的弹幕（文本+时间+发送者）
+                    # 去重：current 与 history 合并后，仅移除完全重复的弹幕（文本+时间+发送者）
                     seen_keys: set[tuple[str, Any, Any, str]] = set()
                     dedup: list[dict] = []
-                    for d in current_danmaku:
+                    for d in [*current_danmaku, *history_danmaku]:
                         # video_time 表示视频内时间点；timestamp 表示发送时间，两者共同用于精确去重。
                         key = self._crawler.danmaku._make_danmaku_dedup_key(d)
                         if key in seen_keys:
@@ -301,53 +322,47 @@ class CommentsService:
                         seen_keys.add(key)
                         dedup.append(d)
 
-                    records = []
                     existing_keys: set[tuple[str, Any, Any, str]] = set()
                     if mode != "full":
-                        existing_keys = {
-                            (
-                                str(row[0] or ""),
-                                row[1],
-                                row[2],
-                                str(row[3] or ""),
-                            )
-                            for row in self.session.exec(
-                                select(
-                                    DanmuRecord.content,
-                                    DanmuRecord.video_time,
-                                    DanmuRecord.timestamp,
-                                    DanmuRecord.sender_hash,
-                                ).where(
-                                    DanmuRecord.season_id == season_id,
-                                    DanmuRecord.cid == ep.cid,
-                                )
-                            ).all()
-                        }
+                        existing_keys = self._load_existing_danmaku_keys(season_id, ep.cid)
+
+                    pending: list[tuple[dict[str, Any], DanmuRecord]] = []
                     for d in dedup:
                         key = self._crawler.danmaku._make_danmaku_dedup_key(d)
                         if key in existing_keys:
                             continue
-                        existing_keys.add(key)
                         score = None
                         if callable(sentiment_fn):
                             try:
                                 score = sentiment_fn(d["content"])
                             except Exception as exc:
                                 logger.warning("⚠️ 弹幕情感函数执行失败 content_len={} error={}", len(d["content"]), exc)
-                        records.append(
-                            DanmuRecord(
-                                season_id=season_id,
-                                episode_number=ep_index,
-                                cid=ep.cid,
-                                content=d["content"],
-                                video_time=d.get("video_time"),
-                                timestamp=d.get("timestamp"),
-                                sender_hash=d.get("sender_hash"),
-                                sentiment_score=score,
+                        pending.append(
+                            (
+                                d,
+                                DanmuRecord(
+                                    season_id=season_id,
+                                    episode_number=ep_index,
+                                    cid=ep.cid,
+                                    content=d["content"],
+                                    video_time=d.get("video_time"),
+                                    timestamp=d.get("timestamp"),
+                                    sender_hash=d.get("sender_hash"),
+                                    sentiment_score=score,
+                                ),
                             )
                         )
 
                     with sqlite_write_lock:
+                        records = [record for _, record in pending]
+                        if mode != "full":
+                            # 锁内二次过滤，闭合并发抓取的 check-then-insert 竞争
+                            fresh_keys = self._load_existing_danmaku_keys(season_id, ep.cid)
+                            records = [
+                                record
+                                for d, record in pending
+                                if self._crawler.danmaku._make_danmaku_dedup_key(d) not in fresh_keys
+                            ]
                         self.session.add_all(records)
                         self.session.commit()
                     danmu_saved += len(records)
@@ -443,21 +458,25 @@ class CommentsService:
                     try:
                         from ..tasks import enqueue_episode_nlp_task
 
-                        task_id = enqueue_episode_nlp_task(
+                        outcome = enqueue_episode_nlp_task(
                             season_id=season_id,
                             episode_number=ep_index,
                             cid=str(ep.cid) if ep.cid else None,
                         )
-                        if task_id:
+                        if outcome.status == "enqueued":
                             logger.info(
                                 "  🧠 NLP 任务已派发 episode={} season_id={} task_id={}",
                                 ep_index,
                                 season_id,
-                                task_id,
+                                outcome.task_id,
+                            )
+                        elif outcome.status == "local":
+                            logger.info(
+                                "  🧠 NLP 本地执行完成 episode={} season_id={}", ep_index, season_id
                             )
                         else:
                             logger.info(
-                                "  🧠 NLP 本地执行完成 episode={} season_id={}", ep_index, season_id
+                                "  ⏭️ 跳过 NLP（无可用弹幕） episode={} season_id={}", ep_index, season_id
                             )
                     except Exception as exc:
                         logger.warning(
@@ -500,7 +519,6 @@ class CommentsService:
         return {
             "danmu_saved": danmu_saved,
             "comment_saved": comment_saved,
-            "mongo_saved": mongo_saved,
             "retry_count": self.request_counters["retries"],
             "failed_requests": self.request_counters["failed"],
         }

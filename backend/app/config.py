@@ -51,12 +51,8 @@ class Settings(BaseSettings):
     crawler_nested_reply_limit: int = 20
     crawler_nested_reply_pages: int = 2
     crawler_history_months: int = 24
-
-    # MongoDB 配置（原始弹幕文档存储）
-    mongodb_uri: Optional[str] = os.getenv("MONGODB_URI")
-    mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "ugc_streaming_analytics")
-    mongodb_danmaku_collection: str = os.getenv("MONGODB_DANMAKU_COLLECTION", "danmaku_raw")
-    mongodb_connect_timeout_ms: int = 3000
+    # 后台弹幕抓取触发的冷却窗口（秒）：同一分集在该窗口内不重复触发
+    danmaku_scrape_cooldown_seconds: int = 600
     
     # 公开数据采集配置
     crawler_pages_to_fetch: int = 5  # 每个分类同步页数

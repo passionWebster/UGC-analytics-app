@@ -29,6 +29,13 @@ from .database import engine
 from .logger import app_logger
 from .models import AITelemetry
 
+try:
+    import jieba
+
+    _JIEBA_AVAILABLE = True
+except ImportError:
+    _JIEBA_AVAILABLE = False
+
 # ──────────────────────────────────────────────────────────────────────────────
 # AI 响应缓存：最多缓存 128 条结果，每条 TTL 10 分钟
 # 以 (message, system_prompt) 的 SHA256 摘要为键，确保不同人设下不冲突
@@ -46,14 +53,17 @@ _PROJECT_KNOWLEDGE_FILES = (
     "backend/app/crud.py",
     "backend/app/analytics.py",
     "backend/app/ai_service.py",
+    "backend/app/tasks.py",
     "backend/app/routers/ai.py",
     "backend/app/routers/analytics.py",
     "backend/app/routers/crawler.py",
     "backend/app/routers/auth.py",
     "backend/app/routers/user_space.py",
     "backend/app/scraper/crawler.py",
+    "backend/app/scraper/danmaku.py",
+    "backend/app/scraper/comments.py",
     "frontend/src/router/index.ts",
-    "frontend/src/api/index.ts",
+    "frontend/src/api/axios.ts",
     "frontend/src/components/AiChat.vue",
     "frontend/src/views/Home.vue",
     "frontend/src/views/Overview.vue",
@@ -61,8 +71,9 @@ _PROJECT_KNOWLEDGE_FILES = (
     "frontend/src/views/Status.vue",
 )
 
-# 语料分片上限：约等价于 6k~8k 中英混合 token，控制 prompt 体积与响应延迟。
-_MAX_KNOWLEDGE_CHARS_PER_FILE = 24000
+# 语料安全上限：仅防御异常超大文件，正常模块远小于该值（当前最大约 5.6 万字符）。
+# 注：该上限只影响检索索引体积，注入提示词的仅为命中的少量行。
+_MAX_KNOWLEDGE_CHARS_PER_FILE = 200_000
 # RAG 返回的文档数量上限，避免提示词被检索片段挤满。
 _MAX_RAG_DOCS = 4
 # 每个文档最多保留的匹配行数，控制上下文可读性与 token 占用。
@@ -72,15 +83,32 @@ _MAX_QUERY_TERMS = 12
 # 单行片段最大字符长度，避免把超长源码行直接拼入提示词。
 _MAX_SNIPPET_LINE_CHARS = 180
 _ASCII_IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
-_CHINESE_TERM_PATTERN = re.compile(r"[\u4e00-\u9fff]{2,}")
+_CJK_RUN_PATTERN = re.compile(r"[\u4e00-\u9fff]+")
 _PATH_MATCH_SCORE = 3
 _LINE_MATCH_SCORE = 2
 _PROJECT_CHAT_SYSTEM_INSTRUCTION = (
-    "你是 UGC-analytics-app 项目的技术助手。"
-    "你的回答必须优先依据提供的项目知识摘要与相关模块片段（RAG检索结果）。"
-    "回答项目问题时请尽量明确指出对应的模块、文件或接口路径。"
-    "如果上下文不足以确定答案，你必须先说明信息不足并提出澄清问题，严禁编造项目中不存在的实现。"
+    "你是 UGC-analytics-app 平台的双能力助手：既能进行平台数据问答与分析"
+    "（番剧排行、播放趋势、弹幕情感、留存等），也能解答项目代码与实现问题。"
+    "回答项目代码问题时，必须优先依据提供的项目知识摘要与相关模块片段（RAG检索结果），"
+    "并尽量明确指出对应的模块、文件或接口路径；若片段不足以确定实现细节，"
+    "先说明信息不足并提出澄清问题，严禁编造项目中不存在的实现。"
+    "回答平台数据类问题时，请正常作答并结合提供的上下文进行解读，不要声称信息不足；"
+    "在缺少实时数据时须说明数据口径或假设，不要编造具体数字。"
 )
+
+
+def _segment_cjk_run(run: str) -> list[str]:
+    """将一段连续中文切分为检索词：优先 jieba 分词，不可用时退化为二元滑窗。"""
+    if _JIEBA_AVAILABLE:
+        try:
+            tokens = [token for token in jieba.lcut(run) if len(token) >= 2]
+            if tokens:
+                return tokens
+        except Exception as exc:
+            app_logger.debug("jieba 分词失败，退化为二元滑窗：{}", exc)
+    if len(run) < 2:
+        return []
+    return [run[index:index + 2] for index in range(len(run) - 1)]
 
 
 class AIService:
@@ -168,6 +196,7 @@ class AIService:
         for rel_path in _PROJECT_KNOWLEDGE_FILES:
             file_path = self.repo_root / rel_path
             if not file_path.exists() or not file_path.is_file():
+                app_logger.warning("项目语料文件缺失，已跳过 path={}", rel_path)
                 continue
             try:
                 content = file_path.read_text(encoding="utf-8", errors="ignore")
@@ -184,24 +213,31 @@ class AIService:
 
     def _extract_query_terms(self, message: str) -> list[str]:
         """
-        从用户问题中提取检索关键词。
+        从用户问题中提取检索关键词：ASCII 标识符 + 中文分词。
 
         Args:
             message: 用户提问文本
 
         Returns:
-            去重后的关键词列表
+            去重后的关键词列表（ASCII 与中文词交错，避免一方被上限挤掉）
         """
         lowered_message = message.lower()
         ascii_terms = _ASCII_IDENTIFIER_PATTERN.findall(lowered_message)
-        han_terms = _CHINESE_TERM_PATTERN.findall(lowered_message)
+        cjk_terms: list[str] = []
+        for run in _CJK_RUN_PATTERN.findall(lowered_message):
+            cjk_terms.extend(_segment_cjk_run(run))
+
         terms: list[str] = []
-        for term in [*ascii_terms, *han_terms]:
-            normalized = term.lower()
-            if normalized not in terms:
-                terms.append(normalized)
-            if len(terms) >= _MAX_QUERY_TERMS:
-                break
+        # 交错合并两路关键词，保证大量标识符出现时中文词仍参与检索
+        for index in range(max(len(ascii_terms), len(cjk_terms))):
+            for source in (ascii_terms, cjk_terms):
+                if index >= len(source):
+                    continue
+                normalized = source[index].lower()
+                if normalized not in terms:
+                    terms.append(normalized)
+                if len(terms) >= _MAX_QUERY_TERMS:
+                    return terms
         return terms
 
     def _retrieve_relevant_snippets(self, message: str) -> str:

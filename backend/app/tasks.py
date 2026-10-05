@@ -1,11 +1,11 @@
 """NLP task orchestration: run analysis and enqueue async worker tasks."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlmodel import Session, select
-from sqlalchemy import func as sa_func
 
+from .analytics import has_usable_danmaku
 from .config import settings
 from .database import engine
 from .logger import app_logger as logger
@@ -14,22 +14,15 @@ from .nlp_pipeline import aggregate_episode_nlp, process_text_record
 from .nlp_worker_pool import enqueue_nlp_task
 
 
-def _has_usable_sqlite_danmaku(
-    session: Session,
-    season_id: int,
-    episode_number: int,
-    cid: str | None = None,
-) -> bool:
-    """Check whether target episode has usable SQLite danmaku text."""
-    query = select(DanmuRecord.id).where(
-        DanmuRecord.season_id == season_id,
-        DanmuRecord.episode_number == episode_number,
-        sa_func.length(sa_func.trim(DanmuRecord.content)) > 0,
-    )
-    if cid:
-        query = query.where(DanmuRecord.cid == cid)
-    row = session.exec(query.limit(1)).first()
-    return row is not None
+class NlpEnqueueOutcome(NamedTuple):
+    """NLP 入队三态结果。
+
+    status 取值：enqueued（已派发）/ local（本地兜底执行）/ skipped（未执行）。
+    """
+
+    status: str
+    task_id: str | None = None
+
 
 def run_episode_nlp_analysis(
     season_id: int,
@@ -139,7 +132,7 @@ def enqueue_episode_nlp_task(
     season_id: int,
     episode_number: int,
     cid: str | None = None,
-) -> str | None:
+) -> NlpEnqueueOutcome:
     """Enqueue NLP task to worker pool, with optional local fallback execution.
 
     Args:
@@ -148,14 +141,15 @@ def enqueue_episode_nlp_task(
         cid: Optional episode cid.
 
     Returns:
-        Task ID when enqueue succeeds, otherwise None.
+        NlpEnqueueOutcome: 三态结果（enqueued / local / skipped）。
     """
+    # 守卫口径与 NLP worker 保持一致（season_id + episode_number），
+    # 避免与路由侧 cid 口径不一致导致任务被静默跳过。
     with Session(engine) as session:
-        if not _has_usable_sqlite_danmaku(
-            session=session,
+        if not has_usable_danmaku(
+            session,
             season_id=season_id,
             episode_number=episode_number,
-            cid=cid,
         ):
             logger.info(
                 "ℹ️ 跳过 NLP 入队：SQLite 无可用弹幕 season_id={} episode={} cid={}",
@@ -163,11 +157,11 @@ def enqueue_episode_nlp_task(
                 episode_number,
                 cid,
             )
-            return None
+            return NlpEnqueueOutcome("skipped")
 
     task_id = enqueue_nlp_task(season_id=season_id, episode_number=episode_number, cid=cid)
     if task_id:
-        return task_id
+        return NlpEnqueueOutcome("enqueued", task_id)
     if settings.nlp_async_fallback_local:
         logger.warning(
             "⚠️ NLP 任务入队失败，降级本地执行 season_id={} episode={}",
@@ -175,4 +169,10 @@ def enqueue_episode_nlp_task(
             episode_number,
         )
         run_episode_nlp_analysis(season_id=season_id, episode_number=episode_number, cid=cid)
-    return None
+        return NlpEnqueueOutcome("local")
+    logger.warning(
+        "⚠️ NLP 任务入队失败且未启用本地兜底 season_id={} episode={}",
+        season_id,
+        episode_number,
+    )
+    return NlpEnqueueOutcome("skipped")
